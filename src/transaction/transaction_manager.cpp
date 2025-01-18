@@ -20,14 +20,15 @@ std::unordered_map<txn_id_t, Transaction *> TransactionManager::txn_map = {};
  * @param {Transaction*} txn 事务指针，空指针代表需要创建新事务，否则开始已有事务
  * @param {LogManager*} log_manager 日志管理器指针
  */
-Transaction * TransactionManager::begin(Transaction* txn, LogManager* log_manager) {
+Transaction *TransactionManager::begin(Transaction *txn, LogManager *log_manager)
+{
     // Todo:
     // 1. 判断传入事务参数是否为空指针
     // 2. 如果为空指针，创建新事务
     // 3. 把开始事务加入到全局事务表中
     // 4. 返回当前事务指针
     // 如果需要支持MVCC请在上述过程中添加代码
-    
+
     return nullptr;
 }
 
@@ -36,7 +37,8 @@ Transaction * TransactionManager::begin(Transaction* txn, LogManager* log_manage
  * @param {Transaction*} txn 需要提交的事务
  * @param {LogManager*} log_manager 日志管理器指针
  */
-void TransactionManager::commit(Transaction* txn, LogManager* log_manager) {
+void TransactionManager::commit(Transaction *txn, LogManager *log_manager)
+{
     // Todo:
     // 1. 如果存在未提交的写操作，提交所有的写操作
     // 2. 释放所有锁
@@ -44,7 +46,6 @@ void TransactionManager::commit(Transaction* txn, LogManager* log_manager) {
     // 4. 把事务日志刷入磁盘中
     // 5. 更新事务状态
     // 如果需要支持MVCC请在上述过程中添加代码
-
 }
 
 /**
@@ -52,7 +53,8 @@ void TransactionManager::commit(Transaction* txn, LogManager* log_manager) {
  * @param {Transaction *} txn 需要回滚的事务
  * @param {LogManager} *log_manager 日志管理器指针
  */
-void TransactionManager::abort(Transaction * txn, LogManager *log_manager) {
+void TransactionManager::abort(Transaction *txn, LogManager *log_manager)
+{
     // Todo:
     // 1. 回滚所有写操作
     // 2. 释放所有锁
@@ -60,5 +62,4 @@ void TransactionManager::abort(Transaction * txn, LogManager *log_manager) {
     // 4. 把事务日志刷入磁盘中
     // 5. 更新事务状态
     // 如果需要支持MVCC请在上述过程中添加代码
-    
 }

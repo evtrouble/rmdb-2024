@@ -2094,8 +2094,8 @@ yyreduce:
 
   case 65: /* opt_order_clause: ORDER BY order_clause  */
 #line 366 "/mnt/d/phd1/database_competition/db2024/rmdb/src/parser/yacc.y"
-    { 
-        (yyval.sv_orderby) = (yyvsp[0].sv_orderby); 
+    {
+        (yyval.sv_orderby) = (yyvsp[0].sv_orderby);
     }
 #line 2101 "/mnt/d/phd1/database_competition/db2024/rmdb/src/parser/yacc.tab.cpp"
     break;
@@ -2108,7 +2108,7 @@ yyreduce:
 
   case 67: /* order_clause: col opt_asc_desc  */
 #line 374 "/mnt/d/phd1/database_competition/db2024/rmdb/src/parser/yacc.y"
-    { 
+    {
         (yyval.sv_orderby) = std::make_shared<OrderBy>((yyvsp[-1].sv_col), (yyvsp[0].sv_orderby_dir));
     }
 #line 2115 "/mnt/d/phd1/database_competition/db2024/rmdb/src/parser/yacc.tab.cpp"
