@@ -54,3 +54,16 @@ deploy/
 *.pb.h
 *.pb.cc
 
+# cmake
+bin/
+*.pc
+*.cmake
+CMakeLists.txt.user
+CMakeCache.txt
+CMakeFiles
+CMakeScripts
+Testing
+Makefile
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
