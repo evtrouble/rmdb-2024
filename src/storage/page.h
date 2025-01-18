@@ -51,7 +51,7 @@ struct std::hash<PageId> {
 class Page {
     friend class BufferPoolManager;
 
-   public:
+    public:
     
     Page() { reset_memory(); }
 
