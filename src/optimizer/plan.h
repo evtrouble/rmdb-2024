@@ -50,23 +50,20 @@ class Plan
 {
 public:
     PlanTag tag;
+    Plan(PlanTag tag) : tag(tag){}
     virtual ~Plan() = default;
 };
 
 class ScanPlan : public Plan
 {
     public:
-        ScanPlan(PlanTag tag, SmManager *sm_manager, std::string tab_name, std::vector<Condition> conds, std::vector<std::string> index_col_names)
+        ScanPlan(PlanTag tag, SmManager *sm_manager, const std::string &tab_name, const std::vector<Condition> &conds, const std::vector<std::string> &index_col_names)
+            : Plan(tag), tab_name_(std::move(tab_name)), conds_(std::move(conds)), index_col_names_(std::move(index_col_names))
         {
-            Plan::tag = tag;
-            tab_name_ = std::move(tab_name);
-            conds_ = std::move(conds);
             TabMeta &tab = sm_manager->db_.get_table(tab_name_);
             cols_ = tab.cols;
             len_ = cols_.back().offset + cols_.back().len;
             fed_conds_ = conds_;
-            index_col_names_ = index_col_names;
-        
         }
         ~ScanPlan(){}
         // 以下变量同ScanExecutor中的变量
@@ -76,18 +73,14 @@ class ScanPlan : public Plan
         size_t len_;                               
         std::vector<Condition> fed_conds_;
         std::vector<std::string> index_col_names_;
-    
 };
 
 class JoinPlan : public Plan
 {
     public:
-        JoinPlan(PlanTag tag, std::shared_ptr<Plan> left, std::shared_ptr<Plan> right, std::vector<Condition> conds)
+        JoinPlan(PlanTag tag, std::shared_ptr<Plan> left, std::shared_ptr<Plan> right, const std::vector<Condition> &conds)
+            : Plan(tag), left_(std::move(left)), right_(std::move(right)), conds_(std::move(conds))
         {
-            Plan::tag = tag;
-            left_ = std::move(left);
-            right_ = std::move(right);
-            conds_ = std::move(conds);
             type = INNER_JOIN;
         }
         ~JoinPlan(){}
@@ -104,50 +97,34 @@ class JoinPlan : public Plan
 class ProjectionPlan : public Plan
 {
     public:
-        ProjectionPlan(PlanTag tag, std::shared_ptr<Plan> subplan, std::vector<TabCol> sel_cols)
-        {
-            Plan::tag = tag;
-            subplan_ = std::move(subplan);
-            sel_cols_ = std::move(sel_cols);
-        }
+        ProjectionPlan(PlanTag tag, std::shared_ptr<Plan> subplan, const std::vector<TabCol> &sel_cols)
+            : Plan(tag), subplan_(std::move(subplan)), sel_cols_(std::move(sel_cols)){}
         ~ProjectionPlan(){}
         std::shared_ptr<Plan> subplan_;
         std::vector<TabCol> sel_cols_;
-        
 };
 
 class SortPlan : public Plan
 {
     public:
-        SortPlan(PlanTag tag, std::shared_ptr<Plan> subplan, TabCol sel_col, bool is_desc)
-        {
-            Plan::tag = tag;
-            subplan_ = std::move(subplan);
-            sel_col_ = sel_col;
-            is_desc_ = is_desc;
-        }
+        SortPlan(PlanTag tag, std::shared_ptr<Plan> subplan, const TabCol &sel_col, bool is_desc)
+            : Plan(tag), subplan_(std::move(subplan)), sel_col_(std::move(sel_col)), is_desc_(is_desc){}
         ~SortPlan(){}
         std::shared_ptr<Plan> subplan_;
         TabCol sel_col_;
         bool is_desc_;
-        
 };
 
 // dml语句，包括insert; delete; update; select语句　
 class DMLPlan : public Plan
 {
     public:
-        DMLPlan(PlanTag tag, std::shared_ptr<Plan> subplan,std::string tab_name,
-                std::vector<Value> values, std::vector<Condition> conds,
-                std::vector<SetClause> set_clauses)
-        {
-            Plan::tag = tag;
-            subplan_ = std::move(subplan);
-            tab_name_ = std::move(tab_name);
-            values_ = std::move(values);
-            conds_ = std::move(conds);
-            set_clauses_ = std::move(set_clauses);
-        }
+        DMLPlan(PlanTag tag, std::shared_ptr<Plan> subplan, const std::string &tab_name,
+            const std::vector<Value> &values, const std::vector<Condition> &conds,
+            const std::vector<SetClause> &set_clauses)
+                : Plan(tag), subplan_(std::move(subplan)), tab_name_(std::move(tab_name)),
+                values_(std::move(values)), conds_(std::move(conds)), 
+                set_clauses_(std::move(set_clauses)) {}
         ~DMLPlan(){}
         std::shared_ptr<Plan> subplan_;
         std::string tab_name_;
@@ -160,13 +137,10 @@ class DMLPlan : public Plan
 class DDLPlan : public Plan
 {
     public:
-        DDLPlan(PlanTag tag, std::string tab_name, std::vector<std::string> col_names, std::vector<ColDef> cols)
-        {
-            Plan::tag = tag;
-            tab_name_ = std::move(tab_name);
-            cols_ = std::move(cols);
-            tab_col_names_ = std::move(col_names);
-        }
+        DDLPlan(PlanTag tag, const std::string &tab_name, const std::vector<std::string> &col_names, 
+            const std::vector<ColDef> &cols)
+            : Plan(tag), tab_name_(std::move(tab_name)), tab_col_names_(std::move(col_names)), 
+            cols_(std::move(cols)){}
         ~DDLPlan(){}
         std::string tab_name_;
         std::vector<std::string> tab_col_names_;
@@ -177,11 +151,8 @@ class DDLPlan : public Plan
 class OtherPlan : public Plan
 {
     public:
-        OtherPlan(PlanTag tag, std::string tab_name)
-        {
-            Plan::tag = tag;
-            tab_name_ = std::move(tab_name);            
-        }
+        OtherPlan(PlanTag tag, const std::string &tab_name)
+            : Plan(tag), tab_name_(std::move(tab_name)){}
         ~OtherPlan(){}
         std::string tab_name_;
 };
@@ -190,11 +161,8 @@ class OtherPlan : public Plan
 class SetKnobPlan : public Plan
 {
     public:
-        SetKnobPlan(ast::SetKnobType knob_type, bool bool_value) {
-            Plan::tag = T_SetKnob;
-            set_knob_type_ = knob_type;
-            bool_value_ = bool_value;
-        }
+        SetKnobPlan(ast::SetKnobType knob_type, bool bool_value) 
+            : Plan(T_SetKnob), set_knob_type_(knob_type), bool_value_(bool_value){}
     ast::SetKnobType set_knob_type_;
     bool bool_value_;
 };
@@ -207,6 +175,5 @@ class plannerInfo{
     std::shared_ptr<Plan> plan;
     std::vector<std::shared_ptr<Plan>> table_scan_executors;
     std::vector<SetClause> set_clauses;
-    plannerInfo(std::shared_ptr<ast::SelectStmt> parse_):parse(std::move(parse_)){}
-
+    plannerInfo(std::shared_ptr<ast::SelectStmt> parse_) : parse(std::move(parse_)){}
 };

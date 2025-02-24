@@ -306,8 +306,7 @@ void SmManager::create_index(const std::string& tab_name, const std::vector<std:
     }
 
     ihs_.emplace(index_name, std::move(ih));
-    IndexMeta indexMeta = {tab_name, tot_col_len, static_cast<int>(cols.size()), std::move(cols)};
-    tab.indexes.emplace_back(indexMeta);
+    tab.indexes.emplace_back(tab_name, tot_col_len, static_cast<int>(cols.size()), cols);
 
     flush_meta();
 }

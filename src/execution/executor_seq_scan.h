@@ -31,17 +31,15 @@ class SeqScanExecutor : public AbstractExecutor {
     SmManager *sm_manager_;
 
    public:
-    SeqScanExecutor(SmManager *sm_manager, std::string tab_name, std::vector<Condition> conds, Context *context) {
-        sm_manager_ = sm_manager;
-        tab_name_ = std::move(tab_name);
-        conds_ = std::move(conds);
+    SeqScanExecutor(SmManager *sm_manager, const std::string &tab_name, 
+            const std::vector<Condition> &conds, Context *context) 
+        : AbstractExecutor(context), tab_name_(std::move(tab_name)), 
+        conds_(std::move(conds)), sm_manager_(sm_manager)
+    {
         TabMeta &tab = sm_manager_->db_.get_table(tab_name_);
         fh_ = sm_manager_->fhs_.at(tab_name_).get();
         cols_ = tab.cols;
         len_ = cols_.back().offset + cols_.back().len;
-
-        context_ = context;
-
         fed_conds_ = conds_;
     }
 

@@ -21,6 +21,8 @@ class AbstractExecutor {
 
     Context *context_;
 
+    AbstractExecutor() = default;
+    AbstractExecutor(Context *context) : context_(context) {}
     virtual ~AbstractExecutor() = default;
 
     virtual size_t tupleLen() const { return 0; };

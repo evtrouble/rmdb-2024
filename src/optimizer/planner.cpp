@@ -23,11 +23,11 @@ See the Mulan PSL v2 for more details. */
 #include "record_printer.h"
 
 // 目前的索引匹配规则为：完全匹配索引字段，且全部为单点查询，不会自动调整where条件的顺序
-bool Planner::get_index_cols(std::string tab_name, std::vector<Condition> curr_conds, std::vector<std::string>& index_col_names) {
+bool Planner::get_index_cols(std::string &tab_name, std::vector<Condition> &curr_conds, std::vector<std::string>& index_col_names) {
     index_col_names.clear();
     for(auto& cond: curr_conds) {
         if(cond.is_rhs_val && cond.op == OP_EQ && cond.lhs_col.tab_name.compare(tab_name) == 0)
-            index_col_names.push_back(cond.lhs_col.col_name);
+            index_col_names.emplace_back(cond.lhs_col.col_name);
     }
     TabMeta& tab = sm_manager_->db_.get_table(tab_name);
     if(tab.is_index(index_col_names)) return true;
@@ -41,7 +41,7 @@ bool Planner::get_index_cols(std::string tab_name, std::vector<Condition> curr_c
  * @param tab_names 表名
  * @return std::vector<Condition>
  */
-std::vector<Condition> pop_conds(std::vector<Condition> &conds, std::string tab_names) {
+std::vector<Condition> pop_conds(std::vector<Condition> &conds, std::string &tab_names) {
     // auto has_tab = [&](const std::string &tab_name) {
     //     return std::find(tab_names.begin(), tab_names.end(), tab_name) != tab_names.end();
     // };
@@ -101,7 +101,7 @@ int push_conds(Condition *cond, std::shared_ptr<Plan> plan)
     return false;
 }
 
-std::shared_ptr<Plan> pop_scan(int *scantbl, std::string table, std::vector<std::string> &joined_tables, 
+std::shared_ptr<Plan> pop_scan(int *scantbl, std::string &table, std::vector<std::string> &joined_tables, 
                 std::vector<std::shared_ptr<Plan>> plans)
 {
     for (size_t i = 0; i < plans.size(); i++) {
@@ -136,8 +136,6 @@ std::shared_ptr<Plan> Planner::physical_optimization(std::shared_ptr<Query> quer
 
     return plan;
 }
-
-
 
 std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query)
 {
@@ -258,7 +256,6 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query)
     }
 
     return table_join_executors;
-
 }
 
 
@@ -301,7 +298,6 @@ std::shared_ptr<Plan> Planner::generate_select_plan(std::shared_ptr<Query> query
     std::shared_ptr<Plan> plannerRoot = physical_optimization(query, context);
     plannerRoot = std::make_shared<ProjectionPlan>(T_Projection, std::move(plannerRoot), 
                                                         std::move(sel_cols));
-
     return plannerRoot;
 }
 
@@ -317,7 +313,7 @@ std::shared_ptr<Plan> Planner::do_planner(std::shared_ptr<Query> query, Context 
                 ColDef col_def = {.name = sv_col_def->col_name,
                                   .type = interp_sv_type(sv_col_def->type_len->type),
                                   .len = sv_col_def->type_len->len};
-                col_defs.push_back(col_def);
+                col_defs.emplace_back(col_def);
             } else {
                 throw InternalError("Unexpected field type");
             }

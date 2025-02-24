@@ -35,15 +35,14 @@ class IndexScanExecutor : public AbstractExecutor {
     SmManager *sm_manager_;
 
    public:
-    IndexScanExecutor(SmManager *sm_manager, std::string tab_name, std::vector<Condition> conds, std::vector<std::string> index_col_names,
-                    Context *context) {
-        sm_manager_ = sm_manager;
-        context_ = context;
-        tab_name_ = std::move(tab_name);
+    IndexScanExecutor(SmManager *sm_manager, const std::string &tab_name, 
+        const std::vector<Condition> &conds, const std::vector<std::string> &index_col_names,
+        Context *context) 
+        : AbstractExecutor(context), tab_name_(std::move(tab_name)),conds_(std::move(conds)), 
+        index_col_names_(std::move(index_col_names)), sm_manager_(sm_manager)
+    {
         tab_ = sm_manager_->db_.get_table(tab_name_);
-        conds_ = std::move(conds);
         // index_no_ = index_no;
-        index_col_names_ = index_col_names; 
         index_meta_ = *(tab_.get_index_meta(index_col_names_));
         fh_ = sm_manager_->fhs_.at(tab_name_).get();
         cols_ = tab_.cols;

@@ -65,13 +65,15 @@ int IxNodeHandle::upper_bound(const char *target) const {
  * @return 目标key是否存在
  */
 bool IxNodeHandle::leaf_lookup(const char *key, Rid **value) {
-    // Todo:
     // 1. 在叶子节点中获取目标key所在位置
+    auto key_id = lower_bound(key);
     // 2. 判断目标key是否存在
+    if(key_id == page_hdr->num_key)
+        return false;
     // 3. 如果存在，获取key对应的Rid，并赋值给传出参数value
     // 提示：可以调用lower_bound()和get_rid()函数。
-
-    return false;
+    *value = get_rid(key_id);
+    return true;
 }
 
 /**
@@ -82,12 +84,9 @@ bool IxNodeHandle::leaf_lookup(const char *key, Rid **value) {
 page_id_t IxNodeHandle::internal_lookup(const char *key) {
     // Todo:
     // 1. 查找当前非叶子节点中目标key所在孩子节点（子树）的位置
-    int id = upper_bound(key);
-    get_rid()
     // 2. 获取该孩子节点（子树）所在页面的编号
     // 3. 返回页面编号
-
-    return -1;
+    return get_rid(upper_bound(key) - 1)->page_no;
 }
 
 /**
@@ -167,7 +166,9 @@ IxIndexHandle::IxIndexHandle(DiskManager *disk_manager, BufferPoolManager *buffe
     disk_manager_->read_page(fd, IX_FILE_HDR_PAGE, buf, PAGE_SIZE);
     file_hdr_ = new IxFileHdr();
     file_hdr_->deserialize(buf);
-    
+
+    delete buf;
+
     // disk_manager管理的fd对应的文件中，设置从file_hdr_->num_pages开始分配page_no
     int now_page_no = disk_manager_->get_fd2pageno(fd);
     disk_manager_->set_fd2pageno(fd, now_page_no + 1);
@@ -186,10 +187,15 @@ std::pair<IxNodeHandle *, bool> IxIndexHandle::find_leaf_page(const char *key, O
                                                             Transaction *transaction, bool find_first) {
     // Todo:
     // 1. 获取根节点
+    auto root = fetch_node(file_hdr_->root_page_);
     // 2. 从根节点开始不断向下查找目标key
-    // 3. 找到包含该key值的叶子结点停止查找，并返回叶子节点
-
-    return std::make_pair(nullptr, false);
+    while (!root->page_hdr->is_leaf)
+    {
+        page_id_t page_no = root->internal_lookup(key);
+        buffer_pool_manager_->unpin_page(root->get_page_id(), false);
+        root = fetch_node(page_no);
+    }
+    return std::make_pair(root, true);
 }
 
 /**

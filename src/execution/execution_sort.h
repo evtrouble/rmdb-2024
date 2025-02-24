@@ -25,12 +25,10 @@ class SortExecutor : public AbstractExecutor {
     std::unique_ptr<RmRecord> current_tuple;
 
    public:
-    SortExecutor(std::unique_ptr<AbstractExecutor> prev, TabCol sel_cols, bool is_desc) {
-        prev_ = std::move(prev);
+    SortExecutor(std::unique_ptr<AbstractExecutor> prev, const TabCol &sel_cols, bool is_desc) 
+        : prev_(std::move(prev)), tuple_num(0), is_desc_(is_desc)
+    {
         cols_ = prev_->get_col_offset(sel_cols);
-        is_desc_ = is_desc;
-        tuple_num = 0;
-        used_tuple.clear();
     }
 
     void beginTuple() override { 

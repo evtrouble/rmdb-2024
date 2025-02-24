@@ -25,16 +25,15 @@ class InsertExecutor : public AbstractExecutor {
     SmManager *sm_manager_;
 
    public:
-    InsertExecutor(SmManager *sm_manager, const std::string &tab_name, std::vector<Value> values, Context *context) {
-        sm_manager_ = sm_manager;
-        tab_ = sm_manager_->db_.get_table(tab_name);
-        values_ = values;
-        tab_name_ = tab_name;
+    InsertExecutor(SmManager *sm_manager, const std::string &tab_name, const std::vector<Value> &values, Context *context) 
+        : AbstractExecutor(context), values_(std::move(values)),
+        tab_name_(std::move(tab_name)), sm_manager_(sm_manager)
+    {
+        tab_ = sm_manager_->db_.get_table(tab_name_);
         if (values.size() != tab_.cols.size()) {
             throw InvalidValueCountError();
         }
-        fh_ = sm_manager_->fhs_.at(tab_name).get();
-        context_ = context;
+        fh_ = sm_manager_->fhs_.at(tab_name_).get();
     };
 
     std::unique_ptr<RmRecord> Next() override {

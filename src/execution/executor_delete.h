@@ -25,15 +25,13 @@ class DeleteExecutor : public AbstractExecutor {
     SmManager *sm_manager_;
 
    public:
-    DeleteExecutor(SmManager *sm_manager, const std::string &tab_name, std::vector<Condition> conds,
-                   std::vector<Rid> rids, Context *context) {
-        sm_manager_ = sm_manager;
-        tab_name_ = tab_name;
-        tab_ = sm_manager_->db_.get_table(tab_name);
-        fh_ = sm_manager_->fhs_.at(tab_name).get();
-        conds_ = conds;
-        rids_ = rids;
-        context_ = context;
+    DeleteExecutor(SmManager *sm_manager, const std::string &tab_name, const std::vector<Condition> &conds,
+                   const std::vector<Rid> &rids, Context *context) 
+        : AbstractExecutor(context), conds_(std::move(conds)), rids_(std::move(rids)), 
+        tab_name_(std::move(tab_name)), sm_manager_(sm_manager)
+    {
+        tab_ = sm_manager_->db_.get_table(tab_name_);
+        fh_ = sm_manager_->fhs_.at(tab_name_).get();
     }
 
     std::unique_ptr<RmRecord> Next() override {

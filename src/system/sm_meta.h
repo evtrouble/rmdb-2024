@@ -47,7 +47,7 @@ struct IndexMeta {
     std::vector<ColMeta> cols;      // 索引包含的字段
 
     IndexMeta() = default;
-    IndexMeta(const std::string &tab_name, int col_tot_len, int col_num, std::vector<ColMeta> &&cols)
+    IndexMeta(const std::string &tab_name, int col_tot_len, int col_num, std::vector<ColMeta> &cols)
         : tab_name(tab_name), col_tot_len(col_tot_len), col_num(col_num), cols(std::move(cols))
     {}
 
@@ -64,7 +64,7 @@ struct IndexMeta {
         for(int i = 0; i < index.col_num; ++i) {
             ColMeta col;
             is >> col;
-            index.cols.push_back(col);
+            index.cols.emplace_back(std::move(col));
         }
         return is;
     }
@@ -78,8 +78,7 @@ struct TabMeta {
 
     TabMeta(){}
 
-    TabMeta(const TabMeta &other) {
-        name = other.name;
+    TabMeta(const TabMeta &other) : name(other.name) {
         for(auto &col : other.cols) cols.emplace_back(col);
     }
 
@@ -117,10 +116,9 @@ struct TabMeta {
             }
             if(i == compare_index_cols.size()) return index;
         }
-        std::vector<std::string> col_names;
-        col_names.reserve(compare_index_cols.size());
-        for (auto &col : compare_index_cols)
-            col_names.emplace_back(col.name);
+        std::vector<std::string> col_names(compare_index_cols.size());
+        for (size_t id = 0; id < compare_index_cols.size(); id++)
+            col_names[id] = std::move(compare_index_cols[id].name);
         throw IndexNotFoundError(name, col_names);
     }
 
@@ -171,7 +169,7 @@ struct TabMeta {
         for(size_t i = 0; i < n; ++i) {
             IndexMeta index;
             is >> index;
-            tab.indexes.push_back(index);
+            tab.indexes.emplace_back(std::move(index));
         }
         return is;
     }

@@ -63,7 +63,7 @@ private:
     }
 
     template<typename T>
-    static void print_node_list(std::vector<T> nodes, int offset) {
+    static void print_node_list(std::vector<T> &nodes, int offset) {
         std::cout << offset2string(offset);
         offset += 2;
         std::cout << "LIST\n";

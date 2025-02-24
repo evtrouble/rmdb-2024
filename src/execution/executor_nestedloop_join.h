@@ -27,20 +27,17 @@ class NestedLoopJoinExecutor : public AbstractExecutor {
 
    public:
     NestedLoopJoinExecutor(std::unique_ptr<AbstractExecutor> left, std::unique_ptr<AbstractExecutor> right, 
-                            std::vector<Condition> conds) {
-        left_ = std::move(left);
-        right_ = std::move(right);
+                            const std::vector<Condition> &conds)
+        : left_(std::move(left)), right_(std::move(right)), 
+        fed_conds_(std::move(conds)), isend(false)
+    {
         len_ = left_->tupleLen() + right_->tupleLen();
         cols_ = left_->cols();
         auto right_cols = right_->cols();
         for (auto &col : right_cols) {
             col.offset += left_->tupleLen();
         }
-
         cols_.insert(cols_.end(), right_cols.begin(), right_cols.end());
-        isend = false;
-        fed_conds_ = std::move(conds);
-
     }
 
     void beginTuple() override {
