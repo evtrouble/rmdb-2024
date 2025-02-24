@@ -22,8 +22,16 @@ int IxNodeHandle::lower_bound(const char *target) const {
     // Todo:
     // 查找当前节点中第一个大于等于target的key，并返回key的位置给上层
     // 提示: 可以采用多种查找方式，如顺序遍历、二分查找等；使用ix_compare()函数进行比较
-
-    return -1;
+    int left = 0, right = page_hdr->num_key;
+    while (left < right)
+    {
+        int mid = (right + left) >> 1;
+        if (ix_compare(target, get_key(mid), file_hdr->col_types_, file_hdr->col_lens_) >= 0)
+            right = mid;
+        else
+            left = mid + 1;
+    }
+    return left;
 }
 
 /**
@@ -36,8 +44,16 @@ int IxNodeHandle::upper_bound(const char *target) const {
     // Todo:
     // 查找当前节点中第一个大于target的key，并返回key的位置给上层
     // 提示: 可以采用多种查找方式：顺序遍历、二分查找等；使用ix_compare()函数进行比较
-
-    return -1;
+    int left = 1, right = page_hdr->num_key;
+    while (left < right)
+    {
+        int mid = (right + left) >> 1;
+        if (ix_compare(target, get_key(mid), file_hdr->col_types_, file_hdr->col_lens_) > 0)
+            right = mid;
+        else
+            left = mid + 1;
+    }
+    return left;
 }
 
 /**
@@ -66,6 +82,8 @@ bool IxNodeHandle::leaf_lookup(const char *key, Rid **value) {
 page_id_t IxNodeHandle::internal_lookup(const char *key) {
     // Todo:
     // 1. 查找当前非叶子节点中目标key所在孩子节点（子树）的位置
+    int id = upper_bound(key);
+    get_rid()
     // 2. 获取该孩子节点（子树）所在页面的编号
     // 3. 返回页面编号
 

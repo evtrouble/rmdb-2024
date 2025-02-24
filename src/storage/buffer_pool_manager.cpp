@@ -16,10 +16,9 @@ See the Mulan PSL v2 for more details. */
  * @param {frame_id_t*} frame_id 帧页id指针,返回成功找到的可替换帧id
  */
 bool BufferPoolManager::find_victim_page(frame_id_t* frame_id) {
-    // Todo:
     // 1 使用BufferPoolManager::free_list_判断缓冲池是否已满需要淘汰页面
-    // 1.1 未满获得frame
     if(!free_list_.empty()) {
+    // 1.1 未满获得frame
         *frame_id = free_list_.front();
         free_list_.pop_front();
         return true;
@@ -35,7 +34,6 @@ bool BufferPoolManager::find_victim_page(frame_id_t* frame_id) {
  * @param {frame_id_t} new_frame_id 新的帧frame_id
  */
 void BufferPoolManager::update_page(Page *page, PageId new_page_id, frame_id_t new_frame_id) {
-    // Todo:
     // 1 如果是脏页，写回磁盘，并且把dirty置为false
     if(page->is_dirty_) {
         disk_manager_->write_page(page->id_.fd, page->id_.page_no, page->data_, PAGE_SIZE);
@@ -43,7 +41,7 @@ void BufferPoolManager::update_page(Page *page, PageId new_page_id, frame_id_t n
     }
     // 2 更新page table
     page_table_.erase(page->id_);
-    page_table_.at(new_page_id) = new_frame_id;
+    page_table_.emplace(new_page_id, new_frame_id);
     // 3 重置page的data，更新page id
     page->reset_memory();
     page->pin_count_ = 0;
@@ -59,7 +57,6 @@ void BufferPoolManager::update_page(Page *page, PageId new_page_id, frame_id_t n
  */
 Page* BufferPoolManager::fetch_page(PageId page_id) {
     std::lock_guard lock{latch_};
-    //Todo:
     // 1.     从page_table_中搜寻目标页
     // 1.1    若目标页有被page_table_记录，则将其所在frame固定(pin)，并返回目标页。
     auto iter = page_table_.find(page_id);
@@ -93,7 +90,6 @@ Page* BufferPoolManager::fetch_page(PageId page_id) {
  * @param {bool} is_dirty 若目标page应该被标记为dirty则为true，否则为false
  */
 bool BufferPoolManager::unpin_page(PageId page_id, bool is_dirty) {
-    // Todo:
     // 0. lock latch
     std::lock_guard lock{latch_};
     // 1. 尝试在page_table_中搜寻page_id对应的页P
@@ -122,7 +118,6 @@ bool BufferPoolManager::unpin_page(PageId page_id, bool is_dirty) {
  * @param {PageId} page_id 目标页的page_id，不能为INVALID_PAGE_ID
  */
 bool BufferPoolManager::flush_page(PageId page_id) {
-    // Todo:
     // 0. lock latch
     std::lock_guard lock{latch_};
     // 1. 查找页表,尝试获取目标页P
@@ -156,7 +151,7 @@ Page* BufferPoolManager::new_page(PageId* page_id) {
     update_page(&page, *page_id, new_frame);
     // 4.   固定frame，更新pin_count_
     replacer_->pin(new_frame);
-    page.pin_count_++;
+    page.pin_count_ = 1;
     // 5.   返回获得的page
     return &page;
 }

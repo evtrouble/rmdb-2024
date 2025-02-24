@@ -47,6 +47,8 @@ inline int ix_compare(const char* a, const char* b, const std::vector<ColType>& 
 }
 
 /* 管理B+树中的每个节点 */
+// 结点内有n个元素就会n个子结点（经典b+树，更适合需要频繁插入和删除操作的情况，tpc-c测试中select
+// 占比较少，只有4%）；每个元素是子结点元素里的最小值。
 class IxNodeHandle {
     friend class IxIndexHandle;
     friend class IxScan;

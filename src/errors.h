@@ -132,6 +132,11 @@ class IndexExistsError : public RMDBError {
     }
 };
 
+class IndexEntryAlreadyExistError : public RMDBError {
+    public:
+    IndexEntryAlreadyExistError() : RMDBError("Index entry already exist") {}
+};
+
 // QL errors
 class InvalidValueCountError : public RMDBError {
    public:

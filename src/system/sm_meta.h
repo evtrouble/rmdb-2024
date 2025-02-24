@@ -46,6 +46,11 @@ struct IndexMeta {
     int col_num;                    // 索引字段数量
     std::vector<ColMeta> cols;      // 索引包含的字段
 
+    IndexMeta() = default;
+    IndexMeta(const std::string &tab_name, int col_tot_len, int col_num, std::vector<ColMeta> &&cols)
+        : tab_name(tab_name), col_tot_len(col_tot_len), col_num(col_num), cols(std::move(cols))
+    {}
+
     friend std::ostream &operator<<(std::ostream &os, const IndexMeta &index) {
         os << index.tab_name << " " << index.col_tot_len << " " << index.col_num;
         for(auto& col: index.cols) {
@@ -75,7 +80,7 @@ struct TabMeta {
 
     TabMeta(const TabMeta &other) {
         name = other.name;
-        for(auto col : other.cols) cols.push_back(col);
+        for(auto &col : other.cols) cols.emplace_back(col);
     }
 
     /* 判断当前表中是否存在名为col_name的字段 */
@@ -101,6 +106,24 @@ struct TabMeta {
     }
 
     /* 根据字段名称集合获取索引元数据 */
+    std::vector<IndexMeta>::iterator get_index_meta(const std::vector<ColMeta>& compare_index_cols) {
+        for(auto index = indexes.begin(); index != indexes.end(); ++index) {
+            if((*index).col_num != (int)compare_index_cols.size()) continue;
+            auto& index_cols = (*index).cols;
+            size_t i = 0;
+            for(; i < index_cols.size(); ++i) {
+                if(index_cols[i].name.compare(compare_index_cols[i].name) != 0) 
+                    break;
+            }
+            if(i == compare_index_cols.size()) return index;
+        }
+        std::vector<std::string> col_names;
+        col_names.reserve(compare_index_cols.size());
+        for (auto &col : compare_index_cols)
+            col_names.emplace_back(col.name);
+        throw IndexNotFoundError(name, col_names);
+    }
+
     std::vector<IndexMeta>::iterator get_index_meta(const std::vector<std::string>& col_names) {
         for(auto index = indexes.begin(); index != indexes.end(); ++index) {
             if((*index).col_num != (int)col_names.size()) continue;
