@@ -82,9 +82,12 @@ class IxManager {
         IxFileHdr* fhdr = new IxFileHdr(IX_NO_PAGE, IX_INIT_NUM_PAGES, IX_INIT_ROOT_PAGE,
                                 col_num, col_tot_len, btree_order, (btree_order + 1) * col_tot_len,
                                 IX_INIT_ROOT_PAGE, IX_INIT_ROOT_PAGE);
-        for(int i = 0; i < col_num; ++i) {
-            fhdr->col_types_.push_back(index_cols[i].type);
-            fhdr->col_lens_.push_back(index_cols[i].len);
+        fhdr->col_types_.reserve(col_num);
+        fhdr->col_lens_.reserve(col_num);
+        for (int i = 0; i < col_num; ++i)
+        {
+            fhdr->col_types_.emplace_back(index_cols[i].type);
+            fhdr->col_lens_.emplace_back(index_cols[i].len);
         }
         fhdr->update_tot_len();
         

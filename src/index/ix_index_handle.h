@@ -173,11 +173,12 @@ class IxIndexHandle {
 
    public:
     IxIndexHandle(DiskManager *disk_manager, BufferPoolManager *buffer_pool_manager, int fd);
+    ~IxIndexHandle() { delete file_hdr_; }
 
     // for search
     bool get_value(const char *key, std::vector<Rid> *result, Transaction *transaction);
 
-    std::pair<IxNodeHandle *, bool> find_leaf_page(const char *key, Operation operation, Transaction *transaction,
+    std::pair<IxNodeHandle, bool> find_leaf_page(const char *key, Operation operation, Transaction *transaction,
                                                  bool find_first = false);
 
     // for insert
@@ -214,9 +215,9 @@ class IxIndexHandle {
     bool is_empty() const { return file_hdr_->root_page_ == IX_NO_PAGE; }
 
     // for get/create node
-    IxNodeHandle *fetch_node(int page_no) const;
+    IxNodeHandle fetch_node(int page_no) const;
 
-    IxNodeHandle *create_node();
+    IxNodeHandle create_node();
 
     // for maintain data structure
     void maintain_parent(IxNodeHandle *node);

@@ -183,7 +183,7 @@ void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, 
                 col_str = std::string((char *)rec_buf, col.len);
                 col_str.resize(strlen(col_str.c_str()));
             }
-            columns.push_back(col_str);
+            columns.emplace_back(std::move(col_str));
         }
         // print record into buffer
         rec_printer.print_record(columns, context);

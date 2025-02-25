@@ -275,7 +275,7 @@ std::shared_ptr<Plan> Planner::generate_sort_plan(std::shared_ptr<Query> query, 
     TabCol sel_col;
     for (auto &col : all_cols) {
         if(col.name.compare(x->order->cols->col_name) == 0 )
-        sel_col = {.tab_name = col.tab_name, .col_name = col.name};
+        sel_col = TabCol(col.tab_name, col.name);
     }
     return std::make_shared<SortPlan>(T_Sort, std::move(plan), sel_col, 
                                     x->order->orderby_dir == ast::OrderBy_DESC);
@@ -307,14 +307,16 @@ std::shared_ptr<Plan> Planner::do_planner(std::shared_ptr<Query> query, Context 
     std::shared_ptr<Plan> plannerRoot;
     if (auto x = std::dynamic_pointer_cast<ast::CreateTable>(query->parse)) {
         // create table;
-        std::vector<ColDef> col_defs;
-        for (auto &field : x->fields) {
-            if (auto sv_col_def = std::dynamic_pointer_cast<ast::ColDef>(field)) {
-                ColDef col_def = {.name = sv_col_def->col_name,
-                                  .type = interp_sv_type(sv_col_def->type_len->type),
-                                  .len = sv_col_def->type_len->len};
-                col_defs.emplace_back(col_def);
-            } else {
+        std::vector<ColDef> col_defs(x->fields.size());
+        for (size_t id = 0; id < x->fields.size(); id++)
+        {
+            if (auto sv_col_def = std::dynamic_pointer_cast<ast::ColDef>(x->fields[id])) {
+                col_defs[id].name = std::move(sv_col_def->col_name);
+                col_defs[id].type = interp_sv_type(sv_col_def->type_len->type);
+                col_defs[id].len = sv_col_def->type_len->len;
+            }
+            else
+            {
                 throw InternalError("Unexpected field type");
             }
         }

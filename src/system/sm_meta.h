@@ -163,7 +163,7 @@ struct TabMeta {
         for (size_t i = 0; i < n; i++) {
             ColMeta col;
             is >> col;
-            tab.cols.push_back(col);
+            tab.cols.emplace_back(std::move(col));
         }
         is >> n;
         for(size_t i = 0; i < n; ++i) {

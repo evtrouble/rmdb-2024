@@ -24,17 +24,19 @@ class ProjectionExecutor : public AbstractExecutor {
 
    public:
     ProjectionExecutor(std::unique_ptr<AbstractExecutor> prev, const std::vector<TabCol> &sel_cols) 
-        : prev_(std::move(prev)), cols_(sel_cols.size()), sel_idxs_(sel_cols.size())
+        : prev_(std::move(prev))
     {
         size_t curr_offset = 0;
         auto &prev_cols = prev_->cols();
-        for (size_t id = 0; id < sel_cols.size(); id++)
+        cols_.reserve(sel_cols.size());
+        sel_idxs_.reserve(sel_cols.size());
+        for (auto &sel_col : sel_cols)
         {
-            auto pos = get_col(prev_cols, sel_cols[id]);
-            sel_idxs_[id] = pos - prev_cols.begin();
-            cols_[id] = *pos;
-            cols_[id].offset = curr_offset;
-            curr_offset += cols_[id].len;
+            auto pos = get_col(prev_cols, sel_col);
+            sel_idxs_.emplace_back(pos - prev_cols.begin());
+            cols_.emplace_back(std::move(*pos));
+            cols_.back().offset = curr_offset;
+            curr_offset += cols_.back().len;
         }
         len_ = curr_offset;
     }

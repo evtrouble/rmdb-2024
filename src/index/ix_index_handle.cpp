@@ -183,16 +183,16 @@ IxIndexHandle::IxIndexHandle(DiskManager *disk_manager, BufferPoolManager *buffe
  * @note need to Unlatch and unpin the leaf node outside!
  * 注意：用了FindLeafPage之后一定要unlatch叶结点，否则下次latch该结点会堵塞！
  */
-std::pair<IxNodeHandle *, bool> IxIndexHandle::find_leaf_page(const char *key, Operation operation,
+std::pair<IxNodeHandle, bool> IxIndexHandle::find_leaf_page(const char *key, Operation operation,
                                                             Transaction *transaction, bool find_first) {
     // Todo:
     // 1. 获取根节点
     auto root = fetch_node(file_hdr_->root_page_);
     // 2. 从根节点开始不断向下查找目标key
-    while (!root->page_hdr->is_leaf)
+    while (!root.page_hdr->is_leaf)
     {
-        page_id_t page_no = root->internal_lookup(key);
-        buffer_pool_manager_->unpin_page(root->get_page_id(), false);
+        page_id_t page_no = root.internal_lookup(key);
+        buffer_pool_manager_->unpin_page(root.get_page_id(), false);
         root = fetch_node(page_no);
     }
     return std::make_pair(root, true);
@@ -385,12 +385,12 @@ bool IxIndexHandle::coalesce(IxNodeHandle **neighbor_node, IxNodeHandle **node, 
  * @note iid和rid存的不是一个东西，rid是上层传过来的记录位置，iid是索引内部生成的索引槽位置
  */
 Rid IxIndexHandle::get_rid(const Iid &iid) const {
-    IxNodeHandle *node = fetch_node(iid.page_no);
-    if (iid.slot_no >= node->get_size()) {
+    IxNodeHandle node = fetch_node(iid.page_no);
+    if (iid.slot_no >= node.get_size()) {
         throw IndexEntryNotFoundError();
     }
-    buffer_pool_manager_->unpin_page(node->get_page_id(), false);  // unpin it!
-    return *node->get_rid(iid.slot_no);
+    buffer_pool_manager_->unpin_page(node.get_page_id(), false);  // unpin it!
+    return *node.get_rid(iid.slot_no);
 }
 
 /**
@@ -424,9 +424,9 @@ Iid IxIndexHandle::upper_bound(const char *key) {
  * @return Iid
  */
 Iid IxIndexHandle::leaf_end() const {
-    IxNodeHandle *node = fetch_node(file_hdr_->last_leaf_);
-    Iid iid = {.page_no = file_hdr_->last_leaf_, .slot_no = node->get_size()};
-    buffer_pool_manager_->unpin_page(node->get_page_id(), false);  // unpin it!
+    IxNodeHandle node = fetch_node(file_hdr_->last_leaf_);
+    Iid iid = {.page_no = file_hdr_->last_leaf_, .slot_no = node.get_size()};
+    buffer_pool_manager_->unpin_page(node.get_page_id(), false);  // unpin it!
     return iid;
 }
 
@@ -448,11 +448,9 @@ Iid IxIndexHandle::leaf_begin() const {
  * @return IxNodeHandle*
  * @note pin the page, remember to unpin it outside!
  */
-IxNodeHandle *IxIndexHandle::fetch_node(int page_no) const {
+IxNodeHandle IxIndexHandle::fetch_node(int page_no) const {
     Page *page = buffer_pool_manager_->fetch_page(PageId{fd_, page_no});
-    IxNodeHandle *node = new IxNodeHandle(file_hdr_, page);
-    
-    return node;
+    return IxNodeHandle(file_hdr_, page);
 }
 
 /**
@@ -465,15 +463,13 @@ IxNodeHandle *IxIndexHandle::fetch_node(int page_no) const {
  * 在最开始插入时，一直是create node，那么first_page_no一直没变，一直是IX_NO_PAGE
  * 与Record的处理不同，Record将未插入满的记录页认为是free_page
  */
-IxNodeHandle *IxIndexHandle::create_node() {
-    IxNodeHandle *node;
+IxNodeHandle IxIndexHandle::create_node() {
     file_hdr_->num_pages_++;
 
     PageId new_page_id = {.fd = fd_, .page_no = INVALID_PAGE_ID};
     // 从3开始分配page_no，第一次分配之后，new_page_id.page_no=3，file_hdr_.num_pages=4
     Page *page = buffer_pool_manager_->new_page(&new_page_id);
-    node = new IxNodeHandle(file_hdr_, page);
-    return node;
+    return IxNodeHandle(file_hdr_, page);
 }
 
 /**
@@ -482,21 +478,21 @@ IxNodeHandle *IxIndexHandle::create_node() {
  * @param node
  */
 void IxIndexHandle::maintain_parent(IxNodeHandle *node) {
-    IxNodeHandle *curr = node;
-    while (curr->get_parent_page_no() != IX_NO_PAGE) {
+    IxNodeHandle curr = *node;
+    while (curr.get_parent_page_no() != IX_NO_PAGE) {
         // Load its parent
-        IxNodeHandle *parent = fetch_node(curr->get_parent_page_no());
-        int rank = parent->find_child(curr);
-        char *parent_key = parent->get_key(rank);
-        char *child_first_key = curr->get_key(0);
+        IxNodeHandle parent = fetch_node(curr.get_parent_page_no());
+        int rank = parent.find_child(&curr);
+        char *parent_key = parent.get_key(rank);
+        char *child_first_key = curr.get_key(0);
         if (memcmp(parent_key, child_first_key, file_hdr_->col_tot_len_) == 0) {
-            assert(buffer_pool_manager_->unpin_page(parent->get_page_id(), true));
+            assert(buffer_pool_manager_->unpin_page(parent.get_page_id(), true));
             break;
         }
         memcpy(parent_key, child_first_key, file_hdr_->col_tot_len_);  // 修改了parent node
         curr = parent;
 
-        assert(buffer_pool_manager_->unpin_page(parent->get_page_id(), true));
+        assert(buffer_pool_manager_->unpin_page(parent.get_page_id(), true));
     }
 }
 
@@ -508,13 +504,13 @@ void IxIndexHandle::maintain_parent(IxNodeHandle *node) {
 void IxIndexHandle::erase_leaf(IxNodeHandle *leaf) {
     assert(leaf->is_leaf_page());
 
-    IxNodeHandle *prev = fetch_node(leaf->get_prev_leaf());
-    prev->set_next_leaf(leaf->get_next_leaf());
-    buffer_pool_manager_->unpin_page(prev->get_page_id(), true);
+    IxNodeHandle prev = fetch_node(leaf->get_prev_leaf());
+    prev.set_next_leaf(leaf->get_next_leaf());
+    buffer_pool_manager_->unpin_page(prev.get_page_id(), true);
 
-    IxNodeHandle *next = fetch_node(leaf->get_next_leaf());
-    next->set_prev_leaf(leaf->get_prev_leaf());  // 注意此处是SetPrevLeaf()
-    buffer_pool_manager_->unpin_page(next->get_page_id(), true);
+    IxNodeHandle next = fetch_node(leaf->get_next_leaf());
+    next.set_prev_leaf(leaf->get_prev_leaf());  // 注意此处是SetPrevLeaf()
+    buffer_pool_manager_->unpin_page(next.get_page_id(), true);
 }
 
 /**
@@ -533,8 +529,8 @@ void IxIndexHandle::maintain_child(IxNodeHandle *node, int child_idx) {
     if (!node->is_leaf_page()) {
         //  Current node is inner node, load its child and set its parent to current node
         int child_page_no = node->value_at(child_idx);
-        IxNodeHandle *child = fetch_node(child_page_no);
-        child->set_parent_page_no(node->get_page_no());
-        buffer_pool_manager_->unpin_page(child->get_page_id(), true);
+        IxNodeHandle child = fetch_node(child_page_no);
+        child.set_parent_page_no(node->get_page_no());
+        buffer_pool_manager_->unpin_page(child.get_page_id(), true);
     }
 }

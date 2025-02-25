@@ -134,6 +134,10 @@ public:
         memcpy(table_name_, table_name.c_str(), table_name_size_);
         log_tot_len_ += sizeof(size_t) + table_name_size_;
     }
+    ~InsertLogRecord(){
+        if(table_name_ != nullptr)
+            delete[] table_name_;
+    }
 
     // 把insert日志记录序列化到dest中
     void serialize(char* dest) const override {

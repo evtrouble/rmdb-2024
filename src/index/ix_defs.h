@@ -101,17 +101,21 @@ public:
         col_num_ = *reinterpret_cast<const int*>(src + offset);
         offset += sizeof(int);
         std::cout << col_num_ << "\n";
-        for(int i = 0; i < col_num_; ++i) {
+        col_types_.reserve(col_num_);
+        for (int i = 0; i < col_num_; ++i)
+        {
             // col_types_[i] = *reinterpret_cast<const ColType*>(src + offset);
             ColType type = *reinterpret_cast<const ColType*>(src + offset);
             offset += sizeof(ColType);
-            col_types_.push_back(type);
+            col_types_.emplace_back(type);
         }
-        for(int i = 0; i < col_num_; ++i) {
+        col_lens_.reserve(col_num_);
+        for (int i = 0; i < col_num_; ++i)
+        {
             // col_lens_[i] = *reinterpret_cast<const int*>(src + offset);
             int len = *reinterpret_cast<const int*>(src + offset);
             offset += sizeof(int);
-            col_lens_.push_back(len);
+            col_lens_.emplace_back(len);
         }
         col_tot_len_ = *reinterpret_cast<const int*>(src + offset);
         offset += sizeof(int);

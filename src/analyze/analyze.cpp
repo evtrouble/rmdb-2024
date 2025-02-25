@@ -25,18 +25,20 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
         /** TODO: 检查表是否存在 */
 
         // 处理target list，再target list中添加上表名，例如 a.id
-        for (auto &sv_sel_col : x->cols) {
-            TabCol sel_col = {.tab_name = sv_sel_col->tab_name, .col_name = sv_sel_col->col_name};
-            query->cols.push_back(sel_col);
+        query->cols.reserve(x->cols.size());
+        for (auto &sv_sel_col : x->cols)
+        {
+            query->cols.emplace_back(TabCol(sv_sel_col->tab_name, sv_sel_col->col_name));
         }
-        
+
         std::vector<ColMeta> all_cols;
         get_all_cols(query->tables, all_cols);
         if (query->cols.empty()) {
             // select all columns
-            for (auto &col : all_cols) {
-                TabCol sel_col = {.tab_name = col.tab_name, .col_name = col.name};
-                query->cols.push_back(sel_col);
+            query->cols.reserve(all_cols.size());
+            for (auto &col : all_cols)
+            {
+                query->cols.emplace_back(TabCol(col.tab_name,  col.name));
             }
         } else {
             // infer table name from column name
@@ -56,8 +58,10 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
         check_clause({x->tab_name}, query->conds);        
     } else if (auto x = std::dynamic_pointer_cast<ast::InsertStmt>(parse)) {
         // 处理insert 的values值
-        for (auto &sv_val : x->vals) {
-            query->values.push_back(convert_sv_value(sv_val));
+        query->values.reserve(x->vals.size());
+        for (auto &sv_val : x->vals)
+        {
+            query->values.emplace_back(convert_sv_value(sv_val));
         }
     } else {
         // do nothing
@@ -102,16 +106,16 @@ void Analyze::get_clause(const std::vector<std::shared_ptr<ast::BinaryExpr>> &sv
     conds.clear();
     for (auto &expr : sv_conds) {
         Condition cond;
-        cond.lhs_col = {.tab_name = expr->lhs->tab_name, .col_name = expr->lhs->col_name};
+        cond.lhs_col = TabCol(expr->lhs->tab_name, expr->lhs->col_name);
         cond.op = convert_sv_comp_op(expr->op);
         if (auto rhs_val = std::dynamic_pointer_cast<ast::Value>(expr->rhs)) {
             cond.is_rhs_val = true;
             cond.rhs_val = convert_sv_value(rhs_val);
         } else if (auto rhs_col = std::dynamic_pointer_cast<ast::Col>(expr->rhs)) {
             cond.is_rhs_val = false;
-            cond.rhs_col = {.tab_name = rhs_col->tab_name, .col_name = rhs_col->col_name};
+            cond.rhs_col = TabCol(rhs_col->tab_name, rhs_col->col_name);
         }
-        conds.push_back(cond);
+        conds.emplace_back(std::move(cond));
     }
 }
 
