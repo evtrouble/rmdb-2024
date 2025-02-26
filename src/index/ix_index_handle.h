@@ -49,7 +49,8 @@ inline int ix_compare(const char* a, const char* b, const std::vector<ColType>& 
 /* 管理B+树中的每个节点 */
 // 结点内有n个元素就会n个子结点（经典b+树，更适合需要频繁插入和删除操作的情况，tpc-c测试中select
 // 占比较少，只有4%）；每个元素是子结点元素里的最小值。
-class IxNodeHandle {
+class IxNodeHandle
+{
     friend class IxIndexHandle;
     friend class IxScan;
 
@@ -147,10 +148,10 @@ class IxNodeHandle {
      * @param child
      * @return int
      */
-    int find_child(IxNodeHandle *child) {
+    int find_child(IxNodeHandle &child) {
         int rid_idx;
         for (rid_idx = 0; rid_idx < page_hdr->num_key; rid_idx++) {
-            if (get_rid(rid_idx)->page_no == child->get_page_no()) {
+            if (get_rid(rid_idx)->page_no == child.get_page_no()) {
                 break;
             }
         }
@@ -169,7 +170,6 @@ class IxIndexHandle {
     BufferPoolManager *buffer_pool_manager_;
     int fd_;                                    // 存储B+树的文件
     IxFileHdr* file_hdr_;                       // 存了root_page，但其初始化为2（第0页存FILE_HDR_PAGE，第1页存LEAF_HEADER_PAGE）
-    std::mutex root_latch_;
 
    public:
     IxIndexHandle(DiskManager *disk_manager, BufferPoolManager *buffer_pool_manager, int fd);
@@ -178,21 +178,20 @@ class IxIndexHandle {
     // for search
     bool get_value(const char *key, std::vector<Rid> *result, Transaction *transaction);
 
-    std::pair<IxNodeHandle, bool> find_leaf_page(const char *key, Operation operation, Transaction *transaction,
-                                                 bool find_first = false);
+    IxNodeHandle find_leaf_page(const char *key, Operation operation, Transaction *transaction,
+                                                 bool find_first = true);
 
     // for insert
     page_id_t insert_entry(const char *key, const Rid &value, Transaction *transaction);
 
-    IxNodeHandle *split(IxNodeHandle *node);
+    IxNodeHandle split(IxNodeHandle &node);
 
-    void insert_into_parent(IxNodeHandle *old_node, const char *key, IxNodeHandle *new_node, Transaction *transaction);
+    void insert_into_parent(IxNodeHandle &old_node, const char *key, IxNodeHandle &new_node);
 
     // for delete
     bool delete_entry(const char *key, Transaction *transaction);
 
-    bool coalesce_or_redistribute(IxNodeHandle *node, Transaction *transaction = nullptr,
-                                bool *root_is_latched = nullptr);
+    bool coalesce_or_redistribute(IxNodeHandle &node, Transaction *transaction);
     bool adjust_root(IxNodeHandle *old_root_node);
 
     void redistribute(IxNodeHandle *neighbor_node, IxNodeHandle *node, IxNodeHandle *parent, int index);
@@ -214,6 +213,8 @@ class IxIndexHandle {
 
     bool is_empty() const { return file_hdr_->root_page_ == IX_NO_PAGE; }
 
+    bool is_safe(IxNodeHandle *node, Operation operation);
+
     // for get/create node
     IxNodeHandle fetch_node(int page_no) const;
 
@@ -227,6 +228,8 @@ class IxIndexHandle {
     void release_node_handle(IxNodeHandle &node);
 
     void maintain_child(IxNodeHandle *node, int child_idx);
+
+    void release_all_xlock(std::shared_ptr<std::deque<Page*>> page_set);
 
     // for index test
     Rid get_rid(const Iid &iid) const;

@@ -71,11 +71,26 @@ class Page {
 
     inline void set_page_lsn(lsn_t page_lsn) { memcpy(get_data() + OFFSET_LSN, &page_lsn, sizeof(lsn_t)); }
 
-   private:
+    void lock_sx() {
+        shared_latch_.lock_shared();
+        latch_.lock();
+    }
+    void unlock_sx(){
+        latch_.unlock();
+        shared_latch_.unlock_shared();
+    }
+    void lock_s() { shared_latch_.lock_shared(); }
+    void unlock_s() { shared_latch_.unlock_shared(); }
+    void lock_x() { latch_.lock(); }
+    void unlock_x() { latch_.unlock(); }
+
+private:
     void reset_memory() { memset(data_, OFFSET_PAGE_START, PAGE_SIZE); }  // 将data_的PAGE_SIZE个字节填充为0
 
     /** page的唯一标识符 */
     PageId id_;
+    std::shared_mutex shared_latch_;
+    std::mutex latch_;
 
     /** The actual data that is stored within a page.
      *  该页面在bufferPool中的偏移地址

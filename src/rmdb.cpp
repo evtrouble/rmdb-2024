@@ -177,7 +177,7 @@ void *client_handler(void *sock_fd) {
         if (write(fd, data_send, offset + 1) == -1) {
             break;
         }
-        // 如果是单挑语句，需要按照一个完整的事务来执行，所以执行完当前语句后，自动提交事务
+        // 如果是单条语句，需要按照一个完整的事务来执行，所以执行完当前语句后，自动提交事务
         if(context->txn_->get_txn_mode() == false)
         {
             txn_manager->commit(context->txn_, context->log_mgr_);

@@ -56,17 +56,20 @@ void BufferPoolManager::update_page(Page *page, PageId new_page_id, frame_id_t n
  * @param {PageId} page_id 需要获取的页的PageId
  */
 Page* BufferPoolManager::fetch_page(PageId page_id) {
-    std::lock_guard lock{latch_};
     // 1.     从page_table_中搜寻目标页
     // 1.1    若目标页有被page_table_记录，则将其所在frame固定(pin)，并返回目标页。
-    auto iter = page_table_.find(page_id);
-    if (iter != page_table_.end())
     {
-        replacer_->pin(iter->second);
-        Page &page = pages_[iter->second];
-        page.pin_count_++;
-        return &page;
+        std::shared_lock lock{latch_};
+        auto iter = page_table_.find(page_id);
+        if (iter != page_table_.end())
+        {
+            replacer_->pin(iter->second);
+            Page &page = pages_[iter->second];
+            page.pin_count_++;
+            return &page;
+        }
     }
+    std::unique_lock lock{latch_};
     // 1.2    否则，尝试调用find_victim_page获得一个可用的frame，若失败则返回nullptr
     frame_id_t frame_id;
     if(!find_victim_page(&frame_id))
@@ -91,7 +94,7 @@ Page* BufferPoolManager::fetch_page(PageId page_id) {
  */
 bool BufferPoolManager::unpin_page(PageId page_id, bool is_dirty) {
     // 0. lock latch
-    std::lock_guard lock{latch_};
+    std::unique_lock lock{latch_};
     // 1. 尝试在page_table_中搜寻page_id对应的页P
     auto iter = page_table_.find(page_id);
     // 1.1 P在页表中不存在 return false
@@ -119,7 +122,7 @@ bool BufferPoolManager::unpin_page(PageId page_id, bool is_dirty) {
  */
 bool BufferPoolManager::flush_page(PageId page_id) {
     // 0. lock latch
-    std::lock_guard lock{latch_};
+    std::unique_lock lock{latch_};
     // 1. 查找页表,尝试获取目标页P
     // 1.1 目标页P没有被page_table_记录 ，返回false
     auto iter = page_table_.find(page_id);
@@ -139,7 +142,7 @@ bool BufferPoolManager::flush_page(PageId page_id) {
  * @param {PageId*} page_id 当成功创建一个新的page时存储其page_id
  */
 Page* BufferPoolManager::new_page(PageId* page_id) {
-    std::lock_guard lock{latch_};
+    std::unique_lock lock{latch_};
     // 1.   获得一个可用的frame，若无法获得则返回nullptr
     frame_id_t new_frame;
     if(!find_victim_page(&new_frame))

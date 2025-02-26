@@ -40,6 +40,12 @@ struct RmRecord {
     bool allocated_ = false;    // 是否已经为数据分配空间
 
     RmRecord() = default;
+    RmRecord(const char *data, int size) : size(size)
+    {
+        this->data = new char[size];
+        memcpy(this->data, data, size);
+        allocated_ = true;
+    }
 
     RmRecord(const RmRecord& other) {
         size = other.size;
