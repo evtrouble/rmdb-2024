@@ -32,9 +32,6 @@ struct Rid {
     int page_no;
     int slot_no;
 
-    Rid() = default;
-    Rid(int page_no) : page_no(page_no), slot_no(-1){}
-
     friend bool operator==(const Rid &x, const Rid &y) {
         return x.page_no == y.page_no && x.slot_no == y.slot_no;
     }

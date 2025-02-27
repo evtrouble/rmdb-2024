@@ -170,8 +170,9 @@ class IxIndexHandle {
     BufferPoolManager *buffer_pool_manager_;
     int fd_;                                    // 存储B+树的文件
     IxFileHdr* file_hdr_;                       // 存了root_page，但其初始化为2（第0页存FILE_HDR_PAGE，第1页存LEAF_HEADER_PAGE）
+    std::shared_mutex root_lacth_;
 
-   public:
+public:
     IxIndexHandle(DiskManager *disk_manager, BufferPoolManager *buffer_pool_manager, int fd);
     ~IxIndexHandle() { delete file_hdr_; }
 
@@ -189,15 +190,14 @@ class IxIndexHandle {
     void insert_into_parent(IxNodeHandle &old_node, const char *key, IxNodeHandle &new_node);
 
     // for delete
-    bool delete_entry(const char *key, Transaction *transaction);
+    bool delete_entry(const char *key, const Rid &value, Transaction *transaction);
 
     bool coalesce_or_redistribute(IxNodeHandle &node, Transaction *transaction);
-    bool adjust_root(IxNodeHandle *old_root_node);
+    bool adjust_root(IxNodeHandle &old_root_node);
 
-    void redistribute(IxNodeHandle *neighbor_node, IxNodeHandle *node, IxNodeHandle *parent, int index);
+    void redistribute(IxNodeHandle &neighbor_node, IxNodeHandle &node, IxNodeHandle &parent, int index);
 
-    bool coalesce(IxNodeHandle **neighbor_node, IxNodeHandle **node, IxNodeHandle **parent, int index,
-                  Transaction *transaction, bool *root_is_latched);
+    bool coalesce(IxNodeHandle &neighbor_node, IxNodeHandle &node, IxNodeHandle &parent, int index, Transaction *transaction);
 
     Iid lower_bound(const char *key);
 
@@ -213,7 +213,7 @@ class IxIndexHandle {
 
     bool is_empty() const { return file_hdr_->root_page_ == IX_NO_PAGE; }
 
-    bool is_safe(IxNodeHandle *node, Operation operation);
+    bool is_safe(IxNodeHandle &node, Operation operation);
 
     // for get/create node
     IxNodeHandle fetch_node(int page_no) const;
@@ -221,15 +221,15 @@ class IxIndexHandle {
     IxNodeHandle create_node();
 
     // for maintain data structure
-    void maintain_parent(IxNodeHandle *node);
+    void maintain_parent(IxNodeHandle &node);
 
-    void erase_leaf(IxNodeHandle *leaf);
+    void erase_leaf(IxNodeHandle &leaf);
 
     void release_node_handle(IxNodeHandle &node);
 
-    void maintain_child(IxNodeHandle *node, int child_idx);
+    void maintain_child(IxNodeHandle &node, int child_idx);
 
-    void release_all_xlock(std::shared_ptr<std::deque<Page*>> page_set);
+    void release_all_xlock(std::shared_ptr<std::deque<Page*>> page_set, bool dirty);
 
     // for index test
     Rid get_rid(const Iid &iid) const;
