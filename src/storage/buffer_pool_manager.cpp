@@ -165,24 +165,27 @@ Page* BufferPoolManager::new_page(PageId* page_id) {
  * @param {PageId} page_id 目标页
  */
 bool BufferPoolManager::delete_page(PageId page_id) {
-    // 1.   在page_table_中查找目标页，若不存在返回true
-    auto iter = page_table_.find(page_id);
-    if (iter == page_table_.end())
-        return true;
+    frame_id_t frame_id;
+    {
+        std::unique_lock lock{latch_};
+        // 1.   在page_table_中查找目标页，若不存在返回true
+        auto iter = page_table_.find(page_id);
+        if (iter == page_table_.end())
+            return true;
+        frame_id = iter->second;
+            // 2.   若目标页的pin_count不为0，则返回false
+        Page &page = pages_[frame_id];
+        if(page.pin_count_)
+            return false;
 
-    // 2.   若目标页的pin_count不为0，则返回false
-    Page &page = pages_[iter->second];
-    if(page.pin_count_)
-        return false;
-
+        page_table_.erase(iter);
+    }
     // 3.   将目标页数据写回磁盘，从页表中删除目标页，重置其元数据，将其加入free_list_，返回true
-    disk_manager_->write_page(page_id.fd, page_id.page_no, page.data_, PAGE_SIZE);
-    page_table_.erase(page_id);
-    page.reset_memory();
-    page.id_ = {.fd = -1, .page_no = INVALID_PAGE_ID};
-    page.is_dirty_ = false;
-    page.pin_count_ = 0;
-    free_list_.emplace_back(iter->second);
+    {
+        std::lock_guard lockqueue(queueMutex);
+        tasks.emplace(frame_id);
+    }
+    condition.notify_one();
     return true;
 }
 
@@ -191,13 +194,39 @@ bool BufferPoolManager::delete_page(PageId page_id) {
  * @param {int} fd 文件句柄
  */
 void BufferPoolManager::flush_all_pages(int fd) {
-    std::lock_guard lock{latch_};
+    std::unique_lock lock{latch_};
     for (auto& [page_id, frame_id] : page_table_) {
         if(page_id.fd == fd){
             Page &page = pages_[frame_id];
             // 将page数据写回磁盘
             disk_manager_->write_page(fd, page_id.page_no, page.data_, PAGE_SIZE);      
             page.is_dirty_ = false;   
+        }
+    }
+}
+
+void BufferPoolManager::cleaning()
+{
+    while (true)
+    {
+        frame_id_t frame_id;
+        {
+            std::unique_lock lock(queueMutex);
+            condition.wait(lock, [this]() { return !tasks.empty() || terminate; });
+            if(terminate)break;
+            frame_id = tasks.front();
+            tasks.pop();
+        }
+        Page &page = pages_[frame_id];
+        PageId page_id = page.get_page_id();
+        disk_manager_->write_page(page_id.fd, page_id.page_no, page.data_, PAGE_SIZE);
+        page.reset_memory();
+        page.id_ = {.fd = -1, .page_no = INVALID_PAGE_ID};
+        page.is_dirty_ = false;
+        page.pin_count_ = 0;
+        {
+            std::unique_lock lock{latch_};
+            free_list_.emplace_back(frame_id);
         }
     }
 }

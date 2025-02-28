@@ -17,6 +17,10 @@ See the Mulan PSL v2 for more details. */
 #include <unordered_map>
 #include <vector>
 #include <shared_mutex>
+#include <atomic>
+#include <future>
+#include <thread>
+#include <queue>
 
 #include "disk_manager.h"
 #include "errors.h"
@@ -33,10 +37,16 @@ class BufferPoolManager {
     DiskManager *disk_manager_;
     Replacer *replacer_;    // buffer_pool的置换策略，当前赛题中为LRU置换策略
     std::shared_mutex latch_;      // 用于共享数据结构的并发控制
+    
+    std::queue<frame_id_t> tasks;
+    std::mutex queueMutex;
+    std::thread cleaning_thread_;
+    std::condition_variable condition;
+    std::atomic<bool> terminate; 
 
-   public:
+public:
     BufferPoolManager(size_t pool_size, DiskManager *disk_manager)
-        : pool_size_(pool_size), disk_manager_(disk_manager) {
+        : pool_size_(pool_size), disk_manager_(disk_manager), terminate(false) {
         // 为buffer pool分配一块连续的内存空间
         pages_ = new Page[pool_size_];
         // 可以被Replacer改变
@@ -51,9 +61,14 @@ class BufferPoolManager {
         for (size_t i = 0; i < pool_size_; ++i) {
             free_list_.emplace_back(static_cast<frame_id_t>(i));  // static_cast转换数据类型
         }
+        cleaning_thread_ = std::thread(&BufferPoolManager::cleaning, this);
     }
 
     ~BufferPoolManager() {
+        terminate = true;
+        condition.notify_all(); 
+        if(cleaning_thread_.joinable())
+            cleaning_thread_.join();
         delete[] pages_;
         delete replacer_;
     }
@@ -81,4 +96,6 @@ class BufferPoolManager {
     bool find_victim_page(frame_id_t* frame_id);
 
     void update_page(Page* page, PageId new_page_id, frame_id_t new_frame_id);
+
+    void cleaning();
 };
