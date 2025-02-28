@@ -15,8 +15,6 @@ See the Mulan PSL v2 for more details. */
 
 enum class Operation { FIND = 0, INSERT, DELETE };  // 三种操作：查找、插入、删除
 
-static const bool binary_search = false;
-
 inline int ix_compare(const char *a, const char *b, ColType type, int col_len) {
     switch (type) {
         case TYPE_INT: {
@@ -89,8 +87,6 @@ class IxNodeHandle
 
     page_id_t get_next_leaf() { return page_hdr->next_leaf; }
 
-    page_id_t get_prev_leaf() { return page_hdr->prev_leaf; }
-
     page_id_t get_parent_page_no() { return page_hdr->parent; }
 
     bool is_leaf_page() { return page_hdr->is_leaf; }
@@ -98,8 +94,6 @@ class IxNodeHandle
     bool is_root_page() { return get_parent_page_no() == INVALID_PAGE_ID; }
 
     void set_next_leaf(page_id_t page_no) { page_hdr->next_leaf = page_no; }
-
-    void set_prev_leaf(page_id_t page_no) { page_hdr->prev_leaf = page_no; }
 
     void set_parent_page_no(page_id_t parent) { page_hdr->parent = parent; }
 
@@ -158,6 +152,8 @@ class IxNodeHandle
         assert(rid_idx < page_hdr->num_key);
         return rid_idx;
     }
+
+    bool is_safe(Operation operation);
 };
 
 /* B+树 */
@@ -203,17 +199,15 @@ public:
 
     Iid upper_bound(const char *key);
 
-    Iid leaf_end() const;
+    Iid leaf_end();
 
-    Iid leaf_begin() const;
+    Iid leaf_begin();
 
    private:
     // 辅助函数
     void update_root_page_no(page_id_t root) { file_hdr_->root_page_ = root; }
 
     bool is_empty() const { return file_hdr_->root_page_ == IX_NO_PAGE; }
-
-    bool is_safe(IxNodeHandle &node, Operation operation);
 
     // for get/create node
     IxNodeHandle fetch_node(int page_no) const;
@@ -224,8 +218,6 @@ public:
     void maintain_parent(IxNodeHandle &node);
 
     void erase_leaf(IxNodeHandle &leaf);
-
-    void release_node_handle(IxNodeHandle &node);
 
     void maintain_child(IxNodeHandle &node, int child_idx);
 

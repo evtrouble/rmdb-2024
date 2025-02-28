@@ -79,9 +79,8 @@ class IxManager {
         assert(btree_order > 2);
 
         // Create file header and write to file
-        IxFileHdr* fhdr = new IxFileHdr(IX_NO_PAGE, IX_INIT_NUM_PAGES, IX_INIT_ROOT_PAGE,
-                                col_num, col_tot_len, btree_order, (btree_order + 1) * col_tot_len,
-                                IX_INIT_ROOT_PAGE, IX_INIT_ROOT_PAGE);
+        IxFileHdr* fhdr = new IxFileHdr(IX_INIT_ROOT_PAGE, col_num, col_tot_len, btree_order,
+            (btree_order + 1) * col_tot_len);
         fhdr->col_types_.reserve(col_num);
         fhdr->col_lens_.reserve(col_num);
         for (int i = 0; i < col_num; ++i)
@@ -100,33 +99,29 @@ class IxManager {
 
         char page_buf[PAGE_SIZE];  // 在内存中初始化page_buf中的内容，然后将其写入磁盘
         memset(page_buf, 0, PAGE_SIZE);
-        // 注意leaf header页号为1，也标记为叶子结点，其前一个/后一个叶子均指向root node
+        // 注意leaf header页号为1，也标记为叶子结点，其后一个叶子指向root node
         // Create leaf list header page and write to file
         {
             memset(page_buf, 0, PAGE_SIZE);
             auto phdr = reinterpret_cast<IxPageHdr *>(page_buf);
             *phdr = {
-                .next_free_page_no = IX_NO_PAGE,
                 .parent = IX_NO_PAGE,
                 .num_key = 0,
                 .is_leaf = true,
-                .prev_leaf = IX_INIT_ROOT_PAGE,
                 .next_leaf = IX_INIT_ROOT_PAGE,
             };
             disk_manager_->write_page(fd, IX_LEAF_HEADER_PAGE, page_buf, PAGE_SIZE);
         }
-        // 注意root node页号为2，也标记为叶子结点，其前一个/后一个叶子均指向leaf header
+        // 注意root node页号为2，也标记为叶子结点，其后一个叶子指向leaf header
         // Create root node and write to file
         {
             memset(page_buf, 0, PAGE_SIZE);
             auto phdr = reinterpret_cast<IxPageHdr *>(page_buf);
             *phdr = {
-                .next_free_page_no = IX_NO_PAGE,
                 .parent = IX_NO_PAGE,
                 .num_key = 0,
                 .is_leaf = true,
-                .prev_leaf = IX_LEAF_HEADER_PAGE,
-                .next_leaf = IX_LEAF_HEADER_PAGE,
+                .next_leaf = IX_LEAF_HEADER_PAGE
             };
             // Must write PAGE_SIZE here in case of future fetch_node()
             disk_manager_->write_page(fd, IX_INIT_ROOT_PAGE, page_buf, PAGE_SIZE);

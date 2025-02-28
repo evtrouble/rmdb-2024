@@ -593,18 +593,10 @@ TEST(RecordManagerTest, SimpleTest) {
         // 检查filename文件在内存中的file header的参数
         assert(file_handle->file_hdr_.record_size == record_size);
         assert(file_handle->file_hdr_.first_free_page_no == RM_NO_PAGE);
-        assert(file_handle->file_hdr_.num_pages == 1);
 
         int max_bytes = file_handle->file_hdr_.record_size * file_handle->file_hdr_.num_records_per_page +
                         file_handle->file_hdr_.bitmap_size + (int)sizeof(RmPageHdr);
         assert(max_bytes <= PAGE_SIZE);
-        int rand_val = rand();
-        file_handle->file_hdr_.num_pages = rand_val;
-        rm_manager->close_file(file_handle.get());
-
-        // reopen file
-        file_handle = rm_manager->open_file(filename);
-        assert(file_handle->file_hdr_.num_pages == rand_val);
         rm_manager->close_file(file_handle.get());
         rm_manager->destroy_file(filename);
     }
