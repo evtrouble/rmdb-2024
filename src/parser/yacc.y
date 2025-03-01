@@ -3,11 +3,20 @@
 #include "yacc.tab.h"
 #include <iostream>
 #include <memory>
-
+#include <cstring>
 int yylex(YYSTYPE *yylval, YYLTYPE *yylloc);
 
 void yyerror(YYLTYPE *locp, const char* s) {
-    std::cerr << "Parser Error at line " << locp->first_line << " column " << locp->first_column << ": " << s << std::endl;
+    //std::cerr << "Parser Error at line " << locp->first_line << " column " << locp->first_column << ": " << s << std::endl;
+        std::string error_msg = "Parser Error at line " + std::to_string(locp->first_line) +
+                           " column " + std::to_string(locp->first_column) + ": " + s + "\n";
+    std::cerr << error_msg;
+
+    // 将错误信息保存到全局变量中，以便后续传递给客户端
+    extern char *g_error_msg;
+    if (g_error_msg != nullptr) {
+        strcpy(g_error_msg, error_msg.c_str());
+    }
 }
 
 using namespace ast;
@@ -250,7 +259,7 @@ optWhereClause:
     ;
 
 whereClause:
-        condition 
+        condition
     {
         $$ = std::vector<std::shared_ptr<BinaryExpr>>{$1};
     }
@@ -362,25 +371,25 @@ tableList:
     ;
 
 opt_order_clause:
-    ORDER BY order_clause      
-    { 
-        $$ = $3; 
+    ORDER BY order_clause
+    {
+        $$ = $3;
     }
     |   /* epsilon */ { /* ignore*/ }
     ;
 
 order_clause:
-      col  opt_asc_desc 
-    { 
+      col  opt_asc_desc
+    {
         $$ = std::make_shared<OrderBy>($1, $2);
     }
-    ;   
+    ;
 
 opt_asc_desc:
     ASC          { $$ = OrderBy_ASC;     }
     |  DESC      { $$ = OrderBy_DESC;    }
     |       { $$ = OrderBy_DEFAULT; }
-    ;    
+    ;
 
 set_knob_type:
     ENABLE_NESTLOOP { $$ = EnableNestLoop; }

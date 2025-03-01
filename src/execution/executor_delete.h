@@ -15,18 +15,20 @@ See the Mulan PSL v2 for more details. */
 #include "index/ix.h"
 #include "system/sm.h"
 
-class DeleteExecutor : public AbstractExecutor {
-   private:
-    TabMeta tab_;                   // 表的元数据
-    std::vector<Condition> conds_;  // delete的条件
-    RmFileHandle *fh_;              // 表的数据文件句柄
-    std::vector<Rid> rids_;         // 需要删除的记录的位置
-    std::string tab_name_;          // 表名称
+class DeleteExecutor : public AbstractExecutor
+{
+private:
+    TabMeta tab_;                  // 表的元数据
+    std::vector<Condition> conds_; // delete的条件
+    RmFileHandle *fh_;             // 表的数据文件句柄
+    std::vector<Rid> rids_;        // 需要删除的记录的位置
+    std::string tab_name_;         // 表名称
     SmManager *sm_manager_;
 
-   public:
+public:
     DeleteExecutor(SmManager *sm_manager, const std::string &tab_name, std::vector<Condition> conds,
-                   std::vector<Rid> rids, Context *context) {
+                   std::vector<Rid> rids, Context *context)
+    {
         sm_manager_ = sm_manager;
         tab_name_ = tab_name;
         tab_ = sm_manager_->db_.get_table(tab_name);
@@ -36,7 +38,36 @@ class DeleteExecutor : public AbstractExecutor {
         context_ = context;
     }
 
-    std::unique_ptr<RmRecord> Next() override {
+    std::unique_ptr<RmRecord> Next() override
+    {
+        // 遍历所有需要删除的记录
+        for (auto &rid : rids_)
+        {
+            // 获取要删除的记录
+            RmRecord rec = *fh_->get_record(rid, context_);
+
+            // 删除相关的索引
+            for (auto &index : tab_.indexes)
+            {
+                auto ih = sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get();
+
+                // 构建索引键
+                char *key = new char[index.col_tot_len];
+                int offset = 0;
+                for (size_t i = 0; i < index.col_num; ++i)
+                {
+                    memcpy(key + offset, rec.data + index.cols[i].offset, index.cols[i].len);
+                    offset += index.cols[i].len;
+                }
+
+                // 删除索引项
+                ih->delete_entry(key, context_->txn_);
+                delete[] key;
+            }
+
+            // 删除记录
+            fh_->delete_record(rid, context_);
+        }
         return nullptr;
     }
 

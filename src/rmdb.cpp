@@ -26,8 +26,10 @@ See the Mulan PSL v2 for more details. */
 
 #define SOCK_PORT 8765
 #define MAX_CONN_LIMIT 8
+#define MAX_ERROR_MESSAGE 1024
 
 static bool should_exit = false;
+char *g_error_msg = nullptr; // 用于存储语法错误信息
 
 // 构建全局所需的管理器对象
 auto disk_manager = std::make_unique<DiskManager>();
@@ -64,6 +66,7 @@ void SetTransaction(txn_id_t *txn_id, Context *context)
         context->txn_->get_state() == TransactionState::ABORTED)
     {
         context->txn_ = txn_manager->begin(nullptr, context->log_mgr_);
+        printf("context->txn_->get_transaction_id(): %d\n", context->txn_->get_transaction_id());
         *txn_id = context->txn_->get_transaction_id();
         context->txn_->set_txn_mode(false);
     }
@@ -87,10 +90,15 @@ void *client_handler(void *sock_fd)
     std::string output = "establish client connection, sockfd: " + std::to_string(fd) + "\n";
     std::cout << output;
 
+    // 初始化错误消息缓冲区
+    g_error_msg = new char[MAX_ERROR_MESSAGE];
+    memset(g_error_msg, 0, MAX_ERROR_MESSAGE);
+
     while (true)
     {
         std::cout << "Waiting for request..." << std::endl;
         memset(data_recv, 0, BUFFER_LENGTH);
+        memset(g_error_msg, 0, MAX_ERROR_MESSAGE); // 清空错误消息
 
         i_recvBytes = read(fd, data_recv, BUFFER_LENGTH);
 
@@ -104,7 +112,7 @@ void *client_handler(void *sock_fd)
             std::cout << "Client read error!" << std::endl;
             break;
         }
-        
+
         printf("i_recvBytes: %d \n ", i_recvBytes);
 
         if (strcmp(data_recv, "exit") == 0)
@@ -184,6 +192,15 @@ void *client_handler(void *sock_fd)
                 }
             }
         }
+        else
+        {
+            // 解析出错，将错误信息发送给客户端
+            if (g_error_msg[0] != '\0')
+            {
+                strcpy(data_send, g_error_msg);
+                offset = strlen(g_error_msg);
+            }
+        }
         if (finish_analyze == false)
         {
             yy_delete_buffer(buf);
@@ -202,7 +219,10 @@ void *client_handler(void *sock_fd)
         }
     }
 
-    // Clear
+    // 清理资源
+    delete[] g_error_msg;
+    g_error_msg = nullptr;
+
     std::cout << "Terminating current client_connection..." << std::endl;
     close(fd);          // close a file descriptor.
     pthread_exit(NULL); // terminate calling thread!
@@ -266,7 +286,7 @@ void start_server()
             std::cout << "Accept error!" << std::endl;
             continue; // ignore current socket ,continue while loop.
         }
-        
+
         // 和客户端建立连接，并开启一个线程负责处理客户端请求
         if (pthread_create(&thread_id, nullptr, &client_handler, (void *)(&sockfd)) != 0)
         {
@@ -282,7 +302,7 @@ void start_server()
     {
         printf("%s\n", strerror(errno));
     }
-//    assert(ret != -1);
+    //    assert(ret != -1);
     sm_manager->close_db();
     std::cout << " DB has been closed.\n";
     std::cout << "Server shuts down." << std::endl;
@@ -325,7 +345,7 @@ int main(int argc, char **argv)
         recovery->analyze();
         recovery->redo();
         recovery->undo();
-        
+
         // 开启服务端，开始接受客户端连接
         start_server();
     }

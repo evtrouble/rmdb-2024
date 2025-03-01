@@ -305,86 +305,86 @@ std::shared_ptr<Plan> Planner::generate_select_plan(std::shared_ptr<Query> query
     return plannerRoot;
 }
 
-// 生成DDL语句和DML语句的查询执行计划
-std::shared_ptr<Plan> Planner::do_planner(std::shared_ptr<Query> query, Context *context)
-{
-    std::shared_ptr<Plan> plannerRoot;
-    if (auto x = std::dynamic_pointer_cast<ast::CreateTable>(query->parse)) {
-        // create table;
-        std::vector<ColDef> col_defs;
-        for (auto &field : x->fields) {
-            if (auto sv_col_def = std::dynamic_pointer_cast<ast::ColDef>(field)) {
-                ColDef col_def = {.name = sv_col_def->col_name,
-                                  .type = interp_sv_type(sv_col_def->type_len->type),
-                                  .len = sv_col_def->type_len->len};
-                col_defs.push_back(col_def);
-            } else {
-                throw InternalError("Unexpected field type");
+    // 生成DDL语句和DML语句的查询执行计划
+    std::shared_ptr<Plan> Planner::do_planner(std::shared_ptr<Query> query, Context *context)
+    {
+        std::shared_ptr<Plan> plannerRoot;
+        if (auto x = std::dynamic_pointer_cast<ast::CreateTable>(query->parse)) {
+            // create table;
+            std::vector<ColDef> col_defs;
+            for (auto &field : x->fields) {
+                if (auto sv_col_def = std::dynamic_pointer_cast<ast::ColDef>(field)) {
+                    ColDef col_def = {.name = sv_col_def->col_name,
+                                    .type = interp_sv_type(sv_col_def->type_len->type),
+                                    .len = sv_col_def->type_len->len};
+                    col_defs.push_back(col_def);
+                } else {
+                    throw InternalError("Unexpected field type");
+                }
             }
-        }
-        plannerRoot = std::make_shared<DDLPlan>(T_CreateTable, x->tab_name, std::vector<std::string>(), col_defs);
-    } else if (auto x = std::dynamic_pointer_cast<ast::DropTable>(query->parse)) {
-        // drop table;
-        plannerRoot = std::make_shared<DDLPlan>(T_DropTable, x->tab_name, std::vector<std::string>(), std::vector<ColDef>());
-    } else if (auto x = std::dynamic_pointer_cast<ast::CreateIndex>(query->parse)) {
-        // create index;
-        plannerRoot = std::make_shared<DDLPlan>(T_CreateIndex, x->tab_name, x->col_names, std::vector<ColDef>());
-    } else if (auto x = std::dynamic_pointer_cast<ast::DropIndex>(query->parse)) {
-        // drop index
-        plannerRoot = std::make_shared<DDLPlan>(T_DropIndex, x->tab_name, x->col_names, std::vector<ColDef>());
-    } else if (auto x = std::dynamic_pointer_cast<ast::InsertStmt>(query->parse)) {
-        // insert;
-        plannerRoot = std::make_shared<DMLPlan>(T_Insert, std::shared_ptr<Plan>(),  x->tab_name,  
-                                                    query->values, std::vector<Condition>(), std::vector<SetClause>());
-    } else if (auto x = std::dynamic_pointer_cast<ast::DeleteStmt>(query->parse)) {
-        // delete;
-        // 生成表扫描方式
-        std::shared_ptr<Plan> table_scan_executors;
-        // 只有一张表，不需要进行物理优化了
-        // int index_no = get_indexNo(x->tab_name, query->conds);
-        std::vector<std::string> index_col_names;
-        bool index_exist = get_index_cols(x->tab_name, query->conds, index_col_names);
-        
-        if (index_exist == false) {  // 该表没有索引
+            plannerRoot = std::make_shared<DDLPlan>(T_CreateTable, x->tab_name, std::vector<std::string>(), col_defs);
+        } else if (auto x = std::dynamic_pointer_cast<ast::DropTable>(query->parse)) {
+            // drop table;
+            plannerRoot = std::make_shared<DDLPlan>(T_DropTable, x->tab_name, std::vector<std::string>(), std::vector<ColDef>());
+        } else if (auto x = std::dynamic_pointer_cast<ast::CreateIndex>(query->parse)) {
+            // create index;
+            plannerRoot = std::make_shared<DDLPlan>(T_CreateIndex, x->tab_name, x->col_names, std::vector<ColDef>());
+        } else if (auto x = std::dynamic_pointer_cast<ast::DropIndex>(query->parse)) {
+            // drop index
+            plannerRoot = std::make_shared<DDLPlan>(T_DropIndex, x->tab_name, x->col_names, std::vector<ColDef>());
+        } else if (auto x = std::dynamic_pointer_cast<ast::InsertStmt>(query->parse)) {
+            // insert;
+            plannerRoot = std::make_shared<DMLPlan>(T_Insert, std::shared_ptr<Plan>(),  x->tab_name,  
+                                                        query->values, std::vector<Condition>(), std::vector<SetClause>());
+        } else if (auto x = std::dynamic_pointer_cast<ast::DeleteStmt>(query->parse)) {
+            // delete;
+            // 生成表扫描方式
+            std::shared_ptr<Plan> table_scan_executors;
+            // 只有一张表，不需要进行物理优化了
+            // int index_no = get_indexNo(x->tab_name, query->conds);
+            std::vector<std::string> index_col_names;
+            bool index_exist = get_index_cols(x->tab_name, query->conds, index_col_names);
+            
+            if (index_exist == false) {  // 该表没有索引
+                index_col_names.clear();
+                table_scan_executors = 
+                    std::make_shared<ScanPlan>(T_SeqScan, sm_manager_, x->tab_name, query->conds, index_col_names);
+            } else {  // 存在索引
+                table_scan_executors =
+                    std::make_shared<ScanPlan>(T_IndexScan, sm_manager_, x->tab_name, query->conds, index_col_names);
+            }
+
+            plannerRoot = std::make_shared<DMLPlan>(T_Delete, table_scan_executors, x->tab_name,  
+                                                    std::vector<Value>(), query->conds, std::vector<SetClause>());
+        } else if (auto x = std::dynamic_pointer_cast<ast::UpdateStmt>(query->parse)) {
+            // update;
+            // 生成表扫描方式
+            std::shared_ptr<Plan> table_scan_executors;
+            // 只有一张表，不需要进行物理优化了
+            // int index_no = get_indexNo(x->tab_name, query->conds);
+            std::vector<std::string> index_col_names;
+            bool index_exist = get_index_cols(x->tab_name, query->conds, index_col_names);
+
+            if (index_exist == false) {  // 该表没有索引
             index_col_names.clear();
-            table_scan_executors = 
-                std::make_shared<ScanPlan>(T_SeqScan, sm_manager_, x->tab_name, query->conds, index_col_names);
-        } else {  // 存在索引
-            table_scan_executors =
-                std::make_shared<ScanPlan>(T_IndexScan, sm_manager_, x->tab_name, query->conds, index_col_names);
+                table_scan_executors = 
+                    std::make_shared<ScanPlan>(T_SeqScan, sm_manager_, x->tab_name, query->conds, index_col_names);
+            } else {  // 存在索引
+                table_scan_executors =
+                    std::make_shared<ScanPlan>(T_IndexScan, sm_manager_, x->tab_name, query->conds, index_col_names);
+            }
+            plannerRoot = std::make_shared<DMLPlan>(T_Update, table_scan_executors, x->tab_name,
+                                                        std::vector<Value>(), query->conds, 
+                                                        query->set_clauses);
+        } else if (auto x = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse)) {
+
+            std::shared_ptr<plannerInfo> root = std::make_shared<plannerInfo>(x);
+            // 生成select语句的查询执行计划
+            std::shared_ptr<Plan> projection = generate_select_plan(std::move(query), context);
+            plannerRoot = std::make_shared<DMLPlan>(T_select, projection, std::string(), std::vector<Value>(),
+                                                        std::vector<Condition>(), std::vector<SetClause>());
+        } else {
+            throw InternalError("Unexpected AST root");
         }
-
-        plannerRoot = std::make_shared<DMLPlan>(T_Delete, table_scan_executors, x->tab_name,  
-                                                std::vector<Value>(), query->conds, std::vector<SetClause>());
-    } else if (auto x = std::dynamic_pointer_cast<ast::UpdateStmt>(query->parse)) {
-        // update;
-        // 生成表扫描方式
-        std::shared_ptr<Plan> table_scan_executors;
-        // 只有一张表，不需要进行物理优化了
-        // int index_no = get_indexNo(x->tab_name, query->conds);
-        std::vector<std::string> index_col_names;
-        bool index_exist = get_index_cols(x->tab_name, query->conds, index_col_names);
-
-        if (index_exist == false) {  // 该表没有索引
-        index_col_names.clear();
-            table_scan_executors = 
-                std::make_shared<ScanPlan>(T_SeqScan, sm_manager_, x->tab_name, query->conds, index_col_names);
-        } else {  // 存在索引
-            table_scan_executors =
-                std::make_shared<ScanPlan>(T_IndexScan, sm_manager_, x->tab_name, query->conds, index_col_names);
-        }
-        plannerRoot = std::make_shared<DMLPlan>(T_Update, table_scan_executors, x->tab_name,
-                                                     std::vector<Value>(), query->conds, 
-                                                     query->set_clauses);
-    } else if (auto x = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse)) {
-
-        std::shared_ptr<plannerInfo> root = std::make_shared<plannerInfo>(x);
-        // 生成select语句的查询执行计划
-        std::shared_ptr<Plan> projection = generate_select_plan(std::move(query), context);
-        plannerRoot = std::make_shared<DMLPlan>(T_select, projection, std::string(), std::vector<Value>(),
-                                                    std::vector<Condition>(), std::vector<SetClause>());
-    } else {
-        throw InternalError("Unexpected AST root");
+        return plannerRoot;
     }
-    return plannerRoot;
-}

@@ -28,8 +28,11 @@ bool BufferPoolManager::find_victim_page(frame_id_t *frame_id)
     }
 
     bool found = replacer_->victim(frame_id);
-    if (found) {
-    } else {
+    if (found)
+    {
+    }
+    else
+    {
     }
     debug_log.close();
     return found;
@@ -69,7 +72,6 @@ void BufferPoolManager::update_page(Page *page, PageId new_page_id, frame_id_t n
 Page *BufferPoolManager::fetch_page(PageId page_id)
 {
     std::scoped_lock lock{latch_};
-    std::ofstream debug_log("storage_test.log", std::ios::out | std::ios::app);
 
     auto it = page_table_.find(page_id);
     if (it != page_table_.end())
@@ -78,14 +80,12 @@ Page *BufferPoolManager::fetch_page(PageId page_id)
         Page *page = &pages_[frame_id];
         page->pin_count_++;
         replacer_->pin(frame_id);
-        debug_log.close();
         return page;
     }
 
     frame_id_t frame_id;
     if (!find_victim_page(&frame_id))
     {
-        debug_log.close();
         return nullptr;
     }
 
@@ -94,7 +94,6 @@ Page *BufferPoolManager::fetch_page(PageId page_id)
     {
         if (page->pin_count_ > 0)
         {
-            debug_log.close();
             return nullptr;
         }
 
@@ -113,7 +112,6 @@ Page *BufferPoolManager::fetch_page(PageId page_id)
     page_table_[page_id] = frame_id;
     replacer_->pin(frame_id);
 
-    debug_log.close();
     return page;
 }
 

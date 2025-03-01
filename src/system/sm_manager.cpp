@@ -36,40 +36,28 @@ bool SmManager::is_dir(const std::string &db_name)
  */
 void SmManager::create_db(const std::string &db_name)
 {
-    if (is_dir(db_name))
+    // 检查数据库是否已存在
+    if (disk_manager_->is_dir(db_name))
     {
         throw DatabaseExistsError(db_name);
     }
-    // 为数据库创建一个子目录
-    std::string cmd = "mkdir " + db_name;
-    if (system(cmd.c_str()) < 0)
-    { // 创建一个名为db_name的目录
-        throw UnixError();
-    }
-    if (chdir(db_name.c_str()) < 0)
-    { // 进入名为db_name的目录
-        throw UnixError();
-    }
-    // 创建系统目录
+
+    // 创建数据库目录
+    disk_manager_->create_dir(db_name);
+
+    // 创建数据库元数据
     DbMeta *new_db = new DbMeta();
     new_db->name_ = db_name;
 
-    // 注意，此处ofstream会在当前目录创建(如果没有此文件先创建)和打开一个名为DB_META_NAME的文件
-    std::ofstream ofs(DB_META_NAME);
-
-    // 将new_db中的信息，按照定义好的operator<<操作符，写入到ofs打开的DB_META_NAME文件中
-    ofs << *new_db; // 注意：此处重载了操作符<<
-
+    // 创建并写入元数据文件
+    std::string meta_path = db_name + "/" + DB_META_NAME;
+    std::ofstream ofs(meta_path);
+    ofs << *new_db;
     delete new_db;
 
     // 创建日志文件
-    disk_manager_->create_file(LOG_FILE_NAME);
-
-    // 回到根目录
-    if (chdir("..") < 0)
-    {
-        throw UnixError();
-    }
+    std::string log_path = db_name + "/" + LOG_FILE_NAME;
+    disk_manager_->create_file(log_path);
 }
 
 /**
@@ -78,15 +66,11 @@ void SmManager::create_db(const std::string &db_name)
  */
 void SmManager::drop_db(const std::string &db_name)
 {
-    if (!is_dir(db_name))
+    if (!disk_manager_->is_dir(db_name))
     {
         throw DatabaseNotFoundError(db_name);
     }
-    std::string cmd = "rm -r " + db_name;
-    if (system(cmd.c_str()) < 0)
-    {
-        throw UnixError();
-    }
+    disk_manager_->destroy_dir(db_name);
 }
 
 /**
@@ -95,6 +79,31 @@ void SmManager::drop_db(const std::string &db_name)
  */
 void SmManager::open_db(const std::string &db_name)
 {
+    if (!disk_manager_->is_dir(db_name))
+    {
+        throw DatabaseNotFoundError(db_name);
+    }
+
+    // 加载数据库元数据
+    std::string meta_path = db_name + "/" + DB_META_NAME;
+    std::ifstream ifs(meta_path);
+    if (!ifs)
+    {
+        throw UnixError();
+    }
+    ifs >> db_;
+
+    // 重新打开所有表文件
+    for (const auto &table_entry : db_.tabs_)
+    {
+        const std::string &tab_name = table_entry.first;
+        std::string table_path = db_name + "/" + tab_name;
+        fhs_.emplace(tab_name, rm_manager_->open_file(table_path));
+    }
+
+    // 打开日志文件
+    std::string log_path = db_name + "/" + LOG_FILE_NAME;
+    disk_manager_->open_file(log_path);
 }
 
 /**
@@ -102,8 +111,8 @@ void SmManager::open_db(const std::string &db_name)
  */
 void SmManager::flush_meta()
 {
-    // 默认清空文件
-    std::ofstream ofs(DB_META_NAME);
+    std::string meta_path = db_.name_ + "/" + DB_META_NAME;
+    std::ofstream ofs(meta_path);
     ofs << db_;
 }
 
@@ -112,6 +121,18 @@ void SmManager::flush_meta()
  */
 void SmManager::close_db()
 {
+    // 将元数据写入磁盘
+    flush_meta();
+
+    // 关闭所有表对应的文件句柄
+    for (auto &file_handle : fhs_)
+    {
+        rm_manager_->close_file(file_handle.second.get());
+    }
+    fhs_.clear();
+
+    // 关闭日志文件
+    disk_manager_->close_file(disk_manager_->get_file_fd(LOG_FILE_NAME));
 }
 
 /**
@@ -120,8 +141,9 @@ void SmManager::close_db()
  */
 void SmManager::show_tables(Context *context)
 {
+    std::string output_path = db_.name_ + "/output.txt";
     std::fstream outfile;
-    outfile.open("output.txt", std::ios::out | std::ios::app);
+    outfile.open(output_path, std::ios::out | std::ios::app);
     outfile << "| Tables |\n";
     RecordPrinter printer(1);
     printer.print_separator(context);
@@ -174,6 +196,15 @@ void SmManager::create_table(const std::string &tab_name, const std::vector<ColD
     {
         throw TableExistsError(tab_name);
     }
+
+    std::string table_path = db_.name_ + "/" + tab_name;
+
+    // 先检查文件是否存在
+    if (disk_manager_->is_file(table_path))
+    {
+        throw FileExistsError(tab_name);
+    }
+
     // Create table meta
     int curr_offset = 0;
     TabMeta tab;
@@ -190,11 +221,10 @@ void SmManager::create_table(const std::string &tab_name, const std::vector<ColD
         tab.cols.push_back(col);
     }
     // Create & open record file
-    int record_size = curr_offset; // record_size就是col meta所占的大小（表的元数据也是以记录的形式进行存储的）
-    rm_manager_->create_file(tab_name, record_size);
+    int record_size = curr_offset;
+    rm_manager_->create_file(table_path, record_size);
     db_.tabs_[tab_name] = tab;
-    // fhs_[tab_name] = rm_manager_->open_file(tab_name);
-    fhs_.emplace(tab_name, rm_manager_->open_file(tab_name));
+    fhs_.emplace(tab_name, rm_manager_->open_file(table_path));
 
     flush_meta();
 }
@@ -206,6 +236,32 @@ void SmManager::create_table(const std::string &tab_name, const std::vector<ColD
  */
 void SmManager::drop_table(const std::string &tab_name, Context *context)
 {
+    // 检查表是否存在
+    if (!db_.is_table(tab_name))
+    {
+        throw TableNotFoundError(tab_name);
+    }
+
+    std::string table_path = db_.name_ + "/" + tab_name;
+
+    // 检查文件是否存在
+    if (!disk_manager_->is_file(table_path))
+    {
+        throw InternalError("Table file not found: " + table_path);
+    }
+
+    // 删除表文件
+    rm_manager_->close_file(fhs_[tab_name].get());
+    rm_manager_->destroy_file(table_path);
+
+    // 从文件句柄映射中删除
+    fhs_.erase(tab_name);
+
+    // 从数据库元数据中删除表信息
+    db_.tabs_.erase(tab_name);
+
+    // 将更新后的元数据写入磁盘
+    flush_meta();
 }
 
 /**
