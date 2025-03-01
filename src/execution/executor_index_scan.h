@@ -28,6 +28,12 @@ class IndexScanExecutor : public AbstractExecutor {
 
     std::vector<std::string> index_col_names_;  // index scan涉及到的索引包含的字段
     IndexMeta index_meta_;                      // index scan涉及到的索引元数据
+    bool range_scan_;
+    char *lower_key_;
+    char *upper_key_;
+
+    Iid lower_position_{}; // 用于存储索引扫描的起始位置
+    Iid upper_position_{}; // 用于存储索引扫描的结束位置
 
     Rid rid_;
     std::unique_ptr<RecScan> scan_;
@@ -38,7 +44,7 @@ class IndexScanExecutor : public AbstractExecutor {
     IndexScanExecutor(SmManager *sm_manager, const std::string &tab_name, 
         const std::vector<Condition> &conds, const std::vector<std::string> &index_col_names,
         Context *context) 
-        : AbstractExecutor(context), tab_name_(std::move(tab_name)),conds_(std::move(conds)), 
+        : AbstractExecutor(context), tab_name_(std::move(tab_name)), 
         index_col_names_(std::move(index_col_names)), sm_manager_(sm_manager)
     {
         tab_ = sm_manager_->db_.get_table(tab_name_);
@@ -51,15 +57,36 @@ class IndexScanExecutor : public AbstractExecutor {
             {OP_EQ, OP_EQ}, {OP_NE, OP_NE}, {OP_LT, OP_GT}, {OP_GT, OP_LT}, {OP_LE, OP_GE}, {OP_GE, OP_LE},
         };
 
-        for (auto &cond : conds_) {
-            if (cond.lhs_col.tab_name != tab_name_) {
-                // lhs is on other table, now rhs must be on this table
-                assert(!cond.is_rhs_val && cond.rhs_col.tab_name == tab_name_);
-                // swap lhs and rhs
-                std::swap(cond.lhs_col, cond.rhs_col);
-                cond.op = swap_op.at(cond.op);
-            }
-        }
+        
+        // std::unordered_map<std::string, std::vector<size_t>> conds_map;
+        // for (size_t id = 0; id < conds.size(); id++) {
+        //     auto iter = conds_map.try_emplace(
+        //         std::move(conds.at(id).lhs_col.col_name), std::vector<size_t>()).first;
+        //     iter->second.emplace_back(id);
+        // }
+
+        // size_t col_id;
+        // for (col_id = 0; col_id < index_col_names_.size(); col_id++)
+        // {
+        //     auto iter = conds_map.find(index_col_names_[col_id]);
+        //     if (iter == conds_map.end())
+        //         break;
+        //     for(auto id : iter->second) {
+
+        //     }
+        // }
+        // for (auto &cond : conds_)
+        //     for (auto &cond : conds_)
+        //     {
+        //         if (cond.lhs_col.tab_name != tab_name_)
+        //         {
+        //             // lhs is on other table, now rhs must be on this table
+        //             assert(!cond.is_rhs_val && cond.rhs_col.tab_name == tab_name_);
+        //             // swap lhs and rhs
+        //             std::swap(cond.lhs_col, cond.rhs_col);
+        //             cond.op = swap_op.at(cond.op);
+        //         }
+        //     }
         fed_conds_ = conds_;
     }
 

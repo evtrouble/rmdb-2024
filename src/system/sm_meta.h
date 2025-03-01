@@ -15,6 +15,7 @@ See the Mulan PSL v2 for more details. */
 #include <map>
 #include <string>
 #include <vector>
+#include <unordered_map>
 
 #include "errors.h"
 #include "sm_defs.h"
@@ -26,7 +27,7 @@ struct ColMeta {
     ColType type;           // 字段类型
     int len;                // 字段长度
     int offset;             // 字段位于记录中的偏移量
-    bool index;             /** unused */
+    bool index;
 
     friend std::ostream &operator<<(std::ostream &os, const ColMeta &col) {
         // ColMeta中有各个基本类型的变量，然后调用重载的这些变量的操作符<<（具体实现逻辑在defs.h）
@@ -45,11 +46,16 @@ struct IndexMeta {
     int col_tot_len;                // 索引字段长度总和
     int col_num;                    // 索引字段数量
     std::vector<ColMeta> cols;      // 索引包含的字段
+    std::unordered_map<std::string, size_t> cols_map;      // 索引包含的字段
 
     IndexMeta() = default;
     IndexMeta(const std::string &tab_name, int col_tot_len, int col_num, std::vector<ColMeta> &cols)
         : tab_name(tab_name), col_tot_len(col_tot_len), col_num(col_num), cols(std::move(cols))
-    {}
+    {
+        for (size_t id = 0; id < this->cols.size(); id++) {
+            cols_map.emplace(this->cols.at(id).name, id);
+        }
+    }
 
     friend std::ostream &operator<<(std::ostream &os, const IndexMeta &index) {
         os << index.tab_name << " " << index.col_tot_len << " " << index.col_num;
@@ -61,7 +67,9 @@ struct IndexMeta {
 
     friend std::istream &operator>>(std::istream &is, IndexMeta &index) {
         is >> index.tab_name >> index.col_tot_len >> index.col_num;
-        for(int i = 0; i < index.col_num; ++i) {
+        index.cols.reserve(index.col_num);
+        for (int i = 0; i < index.col_num; ++i)
+        {
             ColMeta col;
             is >> col;
             index.cols.emplace_back(std::move(col));
@@ -79,7 +87,9 @@ struct TabMeta {
     TabMeta(){}
 
     TabMeta(const TabMeta &other) : name(other.name) {
-        for(auto &col : other.cols) cols.emplace_back(col);
+        cols.reserve(other.cols.size());
+        for (auto &col : other.cols)
+            cols.emplace_back(col);
     }
 
     /* 判断当前表中是否存在名为col_name的字段 */
@@ -160,13 +170,17 @@ struct TabMeta {
     friend std::istream &operator>>(std::istream &is, TabMeta &tab) {
         size_t n;
         is >> tab.name >> n;
-        for (size_t i = 0; i < n; i++) {
+        tab.cols.reserve(n);
+        for (size_t i = 0; i < n; i++)
+        {
             ColMeta col;
             is >> col;
             tab.cols.emplace_back(std::move(col));
         }
         is >> n;
-        for(size_t i = 0; i < n; ++i) {
+        tab.indexes.reserve(n);
+        for (size_t i = 0; i < n; ++i)
+        {
             IndexMeta index;
             is >> index;
             tab.indexes.emplace_back(std::move(index));
@@ -191,7 +205,7 @@ class DbMeta {
     bool is_table(const std::string &tab_name) const { return tabs_.find(tab_name) != tabs_.end(); }
 
     void SetTabMeta(const std::string &tab_name, const TabMeta &meta) {
-        tabs_[tab_name] = meta;
+        tabs_.emplace(tab_name, meta);
     }
 
     /* 获取指定名称表的元数据 */
@@ -219,7 +233,7 @@ class DbMeta {
         for (size_t i = 0; i < n; i++) {
             TabMeta tab;
             is >> tab;
-            db_meta.tabs_[tab.name] = tab;
+            db_meta.tabs_.emplace(tab.name, tab);
         }
         return is;
     }

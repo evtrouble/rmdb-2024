@@ -265,7 +265,7 @@ std::shared_ptr<Plan> Planner::generate_sort_plan(std::shared_ptr<Query> query, 
     if(!x->has_sort) {
         return plan;
     }
-    std::vector<std::string> tables = query->tables;
+    std::vector<std::string> &tables = query->tables;
     std::vector<ColMeta> all_cols;
     for (auto &sel_tab_name : tables) {
         // 这里db_不能写成get_db(), 注意要传指针
@@ -274,8 +274,8 @@ std::shared_ptr<Plan> Planner::generate_sort_plan(std::shared_ptr<Query> query, 
     }
     TabCol sel_col;
     for (auto &col : all_cols) {
-        if(col.name.compare(x->order->cols->col_name) == 0 )
-        sel_col = TabCol(col.tab_name, col.name);
+        if(col.name.compare(x->order->cols->col_name) == 0)
+            sel_col = TabCol(col.tab_name, col.name);
     }
     return std::make_shared<SortPlan>(T_Sort, std::move(plan), sel_col, 
                                     x->order->orderby_dir == ast::OrderBy_DESC);
@@ -291,7 +291,7 @@ std::shared_ptr<Plan> Planner::generate_sort_plan(std::shared_ptr<Query> query, 
  */
 std::shared_ptr<Plan> Planner::generate_select_plan(std::shared_ptr<Query> query, Context *context) {
     //逻辑优化
-    query = logical_optimization(std::move(query), context);
+    // query = logical_optimization(std::move(query), context);
 
     //物理优化
     auto sel_cols = query->cols;

@@ -81,8 +81,9 @@ void QlManager::run_cmd_utility(std::shared_ptr<Plan> plan, txn_id_t *txn_id, Co
         switch(x->tag) {
             case T_Help:
             {
-                memcpy(context->data_send_ + *(context->offset_), help_info, strlen(help_info));
-                *(context->offset_) = strlen(help_info);
+                size_t len = strlen(help_info);
+                memcpy(context->data_send_ + *(context->offset_), help_info, len);
+                *(context->offset_) = len;
                 break;
             }
             case T_ShowTable:
@@ -181,7 +182,7 @@ void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, 
                 col_str = std::to_string(*(float *)rec_buf);
             } else if (col.type == TYPE_STRING) {
                 col_str = std::string((char *)rec_buf, col.len);
-                col_str.resize(strlen(col_str.c_str()));
+                col_str.resize(col_str.length());
             }
             columns.emplace_back(std::move(col_str));
         }

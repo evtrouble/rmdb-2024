@@ -25,7 +25,7 @@ See the Mulan PSL v2 for more details. */
 #include "analyze/analyze.h"
 
 #define SOCK_PORT 8765
-#define MAX_CONN_LIMIT 8
+#define MAX_CONN_LIMIT 256
 
 static bool should_exit = false;
 
@@ -80,32 +80,37 @@ void *client_handler(void *sock_fd) {
     // 记录客户端当前正在执行的事务ID
     txn_id_t txn_id = INVALID_TXN_ID;
 
+#ifdef DEBUG
     std::string output = "establish client connection, sockfd: " + std::to_string(fd) + "\n";
     std::cout << output;
+#endif
 
-    while (true) {
+    while (true)
+    {
 #ifdef DEBUG
         std::cout << "Waiting for request..." << std::endl;
 #endif
-        
-        memset(data_recv, 0, BUFFER_LENGTH);
-
         i_recvBytes = read(fd, data_recv, BUFFER_LENGTH);
 
         if (i_recvBytes == 0) {
+#ifdef DEBUG
             std::cout << "Maybe the client has closed" << std::endl;
+#endif
             break;
         }
         if (i_recvBytes == -1) {
             std::cout << "Client read error!" << std::endl;
             break;
         }
-#ifdef DEBUG        
+        data_recv[i_recvBytes] = '\0';
+#ifdef DEBUG
         printf("i_recvBytes: %d \n ", i_recvBytes);
 #endif
 
         if (strcmp(data_recv, "exit") == 0) {
+#ifdef DEBUG
             std::cout << "Client exit." << std::endl;
+#endif
             break;
         }
         if (strcmp(data_recv, "crash") == 0) {
@@ -115,7 +120,6 @@ void *client_handler(void *sock_fd) {
 #ifdef DEBUG
         std::cout << "Read from client " << fd << ": " << data_recv << std::endl;
 #endif
-        memset(data_send, '\0', BUFFER_LENGTH);
         offset = 0;
 
         // 开启事务，初始化系统所需的上下文信息（包括事务对象指针、锁管理器指针、日志管理器指针、存放结果的buffer、记录结果长度的变量）
@@ -172,24 +176,28 @@ void *client_handler(void *sock_fd) {
                 }
             }
         }
-        if(finish_analyze == false) {
+        if(!finish_analyze) {
             yy_delete_buffer(buf);
             pthread_mutex_unlock(buffer_mutex);
         }
         // future TODO: 格式化 sql_handler.result, 传给客户端
         // send result with fixed format, use protobuf in the future
-        if (write(fd, data_send, offset + 1) == -1) {
+        data_send[offset] = '\0';
+        if (write(fd, data_send, offset + 1) == -1)
+        {
             break;
         }
         // 如果是单条语句，需要按照一个完整的事务来执行，所以执行完当前语句后，自动提交事务
-        if(context->txn_->get_txn_mode() == false)
+        if(!context->txn_->get_txn_mode())
         {
             txn_manager->commit(context->txn_, context->log_mgr_);
         }
     }
 
     // Clear
+#ifdef DEBUG
     std::cout << "Terminating current client_connection..." << std::endl;
+#endif
     delete[] data_send;
     close(fd);           // close a file descriptor.
     pthread_exit(NULL);  // terminate calling thread!
