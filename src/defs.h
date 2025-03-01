@@ -39,20 +39,30 @@ struct Rid {
     friend bool operator!=(const Rid &x, const Rid &y) { return !(x == y); }
 };
 
-enum ColType {
-    TYPE_INT, TYPE_FLOAT, TYPE_STRING
+inline std::ostream &operator<<(std::ostream &os, const Rid &rid)
+{
+    os << "(" << rid.page_no << ", " << rid.slot_no << ")";
+    return os;
+}
+
+enum ColType
+{
+    TYPE_INT,
+    TYPE_FLOAT,
+    TYPE_STRING
 };
 
-inline std::string coltype2str(ColType type) {
+inline std::string coltype2str(ColType type)
+{
     std::map<ColType, std::string> m = {
-            {TYPE_INT,    "INT"},
-            {TYPE_FLOAT,  "FLOAT"},
-            {TYPE_STRING, "STRING"}
-    };
+        {TYPE_INT, "INT"},
+        {TYPE_FLOAT, "FLOAT"},
+        {TYPE_STRING, "STRING"}};
     return m.at(type);
 }
 
-class RecScan {
+class RecScan
+{
 public:
     virtual ~RecScan() = default;
 

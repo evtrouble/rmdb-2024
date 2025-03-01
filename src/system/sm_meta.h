@@ -15,7 +15,6 @@ See the Mulan PSL v2 for more details. */
 #include <map>
 #include <string>
 #include <vector>
-#include <unordered_map>
 
 #include "errors.h"
 #include "sm_defs.h"
@@ -27,7 +26,7 @@ struct ColMeta {
     ColType type;           // 字段类型
     int len;                // 字段长度
     int offset;             // 字段位于记录中的偏移量
-    bool index;
+    bool index;             /** unused */
 
     friend std::ostream &operator<<(std::ostream &os, const ColMeta &col) {
         // ColMeta中有各个基本类型的变量，然后调用重载的这些变量的操作符<<（具体实现逻辑在defs.h）
@@ -46,18 +45,13 @@ struct IndexMeta {
     int col_tot_len;                // 索引字段长度总和
     int col_num;                    // 索引字段数量
     std::vector<ColMeta> cols;      // 索引包含的字段
-    std::unordered_map<std::string, size_t> cols_map;      // 索引包含的字段
 
     IndexMeta() = default;
-    IndexMeta(const std::string &tab_name, int col_tot_len, int col_num, std::vector<ColMeta> &cols)
-        : tab_name(tab_name), col_tot_len(col_tot_len), col_num(col_num), cols(std::move(cols))
+    IndexMeta(const std::string &tab_name, int col_tot_len, int col_num, const std::vector<ColMeta>& cols)
+        : tab_name(std::move(tab_name)), col_tot_len(col_tot_len), col_num(col_num),
+        cols(std::move(cols)) {}
+    friend std::ostream &operator<<(std::ostream &os, const IndexMeta &index)
     {
-        for (size_t id = 0; id < this->cols.size(); id++) {
-            cols_map.emplace(this->cols.at(id).name, id);
-        }
-    }
-
-    friend std::ostream &operator<<(std::ostream &os, const IndexMeta &index) {
         os << index.tab_name << " " << index.col_tot_len << " " << index.col_num;
         for(auto& col: index.cols) {
             os << "\n" << col;

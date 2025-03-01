@@ -22,7 +22,7 @@ class Bitmap {
     static void init(char *bm, int size) { memset(bm, 0, size); }
 
     // pos位 置1
-    static void set(char *bm, int pos) { bm[get_bucket(pos)] = get_bit(pos); }
+    static void set(char *bm, int pos) { bm[get_bucket(pos)] |= get_bit(pos); }
 
     // pos位 置0
     static void reset(char *bm, int pos) { bm[get_bucket(pos)] &= static_cast<char>(~get_bit(pos)); }

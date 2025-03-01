@@ -82,7 +82,7 @@ class DiskManager {
 
     /**
      * @description: 获得文件目前已分配的页面个数，即如果文件要分配一个新页面，需要从fd2pagenp_[fd]开始分配
-     * @return {page_id_t} 已分配的页面个数 
+     * @return {page_id_t} 已分配的页面个数
      * @param {int} fd 文件对应的句柄
      */
     page_id_t get_fd2pageno(int fd) { return fd2pageno_[fd]; }

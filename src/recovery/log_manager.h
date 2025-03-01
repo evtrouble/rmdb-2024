@@ -83,6 +83,7 @@ public:
     BeginLogRecord(txn_id_t txn_id) : BeginLogRecord() {
         log_tid_ = txn_id;
     }
+
     // 序列化Begin日志记录到dest中
     void serialize(char* dest) const override {
         LogRecord::serialize(dest);
@@ -121,7 +122,7 @@ public:
         prev_lsn_ = INVALID_LSN;
         table_name_ = nullptr;
     }
-    InsertLogRecord(txn_id_t txn_id, RmRecord& insert_value, Rid& rid, std::string table_name) 
+    InsertLogRecord(txn_id_t txn_id, RmRecord& insert_value, Rid& rid, std::string& table_name) 
         : InsertLogRecord() {
         log_tid_ = txn_id;
         insert_value_ = insert_value;

@@ -68,10 +68,20 @@ class Page {
     static constexpr size_t OFFSET_LSN = 0;
     static constexpr size_t OFFSET_PAGE_HDR = 4;
 
-    inline lsn_t get_page_lsn() { return *reinterpret_cast<lsn_t *>(get_data() + OFFSET_LSN) ; }
+    inline lsn_t get_page_lsn() { return *reinterpret_cast<lsn_t *>(get_data() + OFFSET_LSN); }
 
     inline void set_page_lsn(lsn_t page_lsn) { memcpy(get_data() + OFFSET_LSN, &page_lsn, sizeof(lsn_t)); }
+    /*
 
+                +-------------------+
+            | LSN (4 bytes)    | <- OFFSET_PAGE_START (0)
+            |                  | <- OFFSET_LSN (0)
+            +-------------------+
+            | Actual Page Data | <- OFFSET_PAGE_HDR (4)
+            |                  |
+            |                  |
+            +-------------------+
+    */
 private:
     void reset_memory() { memset(data_, OFFSET_PAGE_START, PAGE_SIZE); } // 将data_的PAGE_SIZE个字节填充为0
 

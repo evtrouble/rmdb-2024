@@ -39,7 +39,7 @@ auto lock_manager = std::make_unique<LockManager>();
 auto txn_manager = std::make_unique<TransactionManager>(lock_manager.get(), sm_manager.get());
 auto planner = std::make_unique<Planner>(sm_manager.get());
 auto optimizer = std::make_unique<Optimizer>(sm_manager.get(), planner.get());
-auto ql_manager = std::make_unique<QlManager>(sm_manager.get(), txn_manager.get(), nullptr);//TODO
+auto ql_manager = std::make_unique<QlManager>(sm_manager.get(), txn_manager.get(), planner.get());
 auto log_manager = std::make_unique<LogManager>(disk_manager.get());
 auto recovery = std::make_unique<RecoveryManager>(disk_manager.get(), buffer_pool_manager.get(), sm_manager.get());
 auto portal = std::make_unique<Portal>(sm_manager.get());
@@ -170,7 +170,7 @@ void *client_handler(void *sock_fd) {
 
                     // 将报错信息写入output.txt
                     std::fstream outfile;
-                    outfile.open("output.txt",std::ios::out | std::ios::app);
+                    outfile.open("output.txt", std::ios::out | std::ios::app);
                     outfile << "failure\n";
                     outfile.close();
                 }
@@ -212,10 +212,10 @@ void start_server() {
 
     int sockfd_server;
     int fd_temp;
-    struct sockaddr_in s_addr_in {};
+    struct sockaddr_in s_addr_in{};
 
     // 初始化连接
-    sockfd_server = socket(AF_INET, SOCK_STREAM, 0);  // ipv4,TCP
+    sockfd_server = socket(AF_INET, SOCK_STREAM, 0); // ipv4,TCP
     assert(sockfd_server != -1);
     int val = 1;
     setsockopt(sockfd_server, SOL_SOCKET, SO_REUSEADDR, &val, sizeof(val));

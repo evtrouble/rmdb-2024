@@ -33,19 +33,23 @@ bool SmManager::is_dir(const std::string& db_name) {
  * @description: 创建数据库，所有的数据库相关文件都放在数据库同名文件夹下
  * @param {string&} db_name 数据库名称
  */
-void SmManager::create_db(const std::string& db_name) {
-    if (is_dir(db_name)) {
+void SmManager::create_db(const std::string &db_name)
+{
+    if (is_dir(db_name))
+    {
         throw DatabaseExistsError(db_name);
     }
-    //为数据库创建一个子目录
+    // 为数据库创建一个子目录
     std::string cmd = "mkdir " + db_name;
-    if (system(cmd.c_str()) < 0) {  // 创建一个名为db_name的目录
+    if (system(cmd.c_str()) < 0)
+    { // 创建一个名为db_name的目录
         throw UnixError();
     }
-    if (chdir(db_name.c_str()) < 0) {  // 进入名为db_name的目录
+    if (chdir(db_name.c_str()) < 0)
+    { // 进入名为db_name的目录
         throw UnixError();
     }
-    //创建系统目录
+    // 创建系统目录
     DbMeta *new_db = new DbMeta();
     new_db->name_ = db_name;
 
@@ -53,7 +57,7 @@ void SmManager::create_db(const std::string& db_name) {
     std::ofstream ofs(DB_META_NAME);
 
     // 将new_db中的信息，按照定义好的operator<<操作符，写入到ofs打开的DB_META_NAME文件中
-    ofs << *new_db;  // 注意：此处重载了操作符<<
+    ofs << *new_db; // 注意：此处重载了操作符<<
 
     delete new_db;
 
@@ -220,8 +224,8 @@ void SmManager::create_table(const std::string& tab_name, const std::vector<ColD
         tab.cols.emplace_back(col);
     }
     // Create & open record file
-    int record_size = curr_offset;  // record_size就是col meta所占的大小（表的元数据也是以记录的形式进行存储的）
-    rm_manager_->create_file(tab_name, record_size);
+    // record_size就是col meta所占的大小（表的元数据也是以记录的形式进行存储的）
+    rm_manager_->create_file(tab_name, curr_offset);
     db_.tabs_[tab_name] = tab;
     // fhs_[tab_name] = rm_manager_->open_file(tab_name);
     fhs_.emplace(tab_name, rm_manager_->open_file(tab_name));

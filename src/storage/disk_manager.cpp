@@ -203,7 +203,6 @@ int DiskManager::get_file_fd(const std::string &file_name) {
     return path2fd_[file_name];
 }
 
-
 /**
  * @description:  读取日志文件内容
  * @return {int} 返回读取的数据量，若为-1说明读取数据的起始位置超过了文件大小
@@ -228,7 +227,6 @@ int DiskManager::read_log(char *log_data, int size, int offset) {
     assert(bytes_read == size);
     return bytes_read;
 }
-
 
 /**
  * @description: 写日志内容

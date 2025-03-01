@@ -295,7 +295,6 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query)
     return table_join_executors;
 }
 
-
 std::shared_ptr<Plan> Planner::generate_sort_plan(std::shared_ptr<Query> query, std::shared_ptr<Plan> plan)
 {
     auto x = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
@@ -344,16 +343,16 @@ std::shared_ptr<Plan> Planner::do_planner(std::shared_ptr<Query> query, Context 
     std::shared_ptr<Plan> plannerRoot;
     if (auto x = std::dynamic_pointer_cast<ast::CreateTable>(query->parse)) {
         // create table;
-        std::vector<ColDef> col_defs(x->fields.size());
-        for (size_t id = 0; id < x->fields.size(); id++)
+        std::vector<ColDef> col_defs;
+        col_defs.reserve(x->fields.size());
+        for (auto &field : x->fields)
         {
-            if (auto sv_col_def = std::dynamic_pointer_cast<ast::ColDef>(x->fields[id])) {
-                col_defs[id].name = std::move(sv_col_def->col_name);
-                col_defs[id].type = interp_sv_type(sv_col_def->type_len->type);
-                col_defs[id].len = sv_col_def->type_len->len;
-            }
-            else
-            {
+            if (auto sv_col_def = std::dynamic_pointer_cast<ast::ColDef>(field)) {
+                ColDef col_def = {.name = sv_col_def->col_name,
+                                  .type = interp_sv_type(sv_col_def->type_len->type),
+                                  .len = sv_col_def->type_len->len};
+                col_defs.emplace_back(std::move(col_def));
+            } else {
                 throw InternalError("Unexpected field type");
             }
         }
