@@ -1,3 +1,0 @@
-/home/nero/db2024/rmdb/rmdb_client/build/CMakeFiles/rmdb_client.dir
-/home/nero/db2024/rmdb/rmdb_client/build/CMakeFiles/edit_cache.dir
-/home/nero/db2024/rmdb/rmdb_client/build/CMakeFiles/rebuild_cache.dir
