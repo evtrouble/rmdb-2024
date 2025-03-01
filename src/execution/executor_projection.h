@@ -34,7 +34,7 @@ class ProjectionExecutor : public AbstractExecutor {
         {
             auto pos = get_col(prev_cols, sel_col);
             sel_idxs_.emplace_back(pos - prev_cols.begin());
-            cols_.emplace_back(std::move(*pos));
+            cols_.emplace_back(*pos);
             cols_.back().offset = curr_offset;
             curr_offset += cols_.back().len;
         }
