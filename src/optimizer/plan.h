@@ -57,8 +57,8 @@ public:
 class ScanPlan : public Plan
 {
     public:
-        ScanPlan(PlanTag tag, SmManager *sm_manager, const std::string &tab_name, const std::vector<Condition> &conds, const std::vector<std::string> &index_col_names)
-            : Plan(tag), tab_name_(std::move(tab_name)), conds_(std::move(conds)), index_col_names_(std::move(index_col_names))
+        ScanPlan(PlanTag tag, SmManager *sm_manager, const std::string &tab_name, const std::vector<Condition> &conds, const IndexMeta &index_meta)
+            : Plan(tag), tab_name_(std::move(tab_name)), conds_(std::move(conds)), index_meta_(index_meta)
         {
             TabMeta &tab = sm_manager->db_.get_table(tab_name_);
             cols_ = tab.cols;
@@ -72,7 +72,7 @@ class ScanPlan : public Plan
         std::vector<Condition> conds_;             
         size_t len_;                               
         std::vector<Condition> fed_conds_;
-        std::vector<std::string> index_col_names_;
+        IndexMeta index_meta_;
 };
 
 class JoinPlan : public Plan

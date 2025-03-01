@@ -26,7 +26,6 @@ class IndexScanExecutor : public AbstractExecutor {
     size_t len_;                                // 选取出来的一条记录的长度
     std::vector<Condition> fed_conds_;          // 扫描条件，和conds_字段相同
 
-    std::vector<std::string> index_col_names_;  // index scan涉及到的索引包含的字段
     IndexMeta index_meta_;                      // index scan涉及到的索引元数据
     bool range_scan_;
     char *lower_key_;
@@ -42,14 +41,13 @@ class IndexScanExecutor : public AbstractExecutor {
 
    public:
     IndexScanExecutor(SmManager *sm_manager, const std::string &tab_name, 
-        const std::vector<Condition> &conds, const std::vector<std::string> &index_col_names,
+        const std::vector<Condition> &conds, const IndexMeta &index_meta,
         Context *context) 
         : AbstractExecutor(context), tab_name_(std::move(tab_name)), 
-        index_col_names_(std::move(index_col_names)), sm_manager_(sm_manager)
+        index_meta_(std::move(index_meta)), sm_manager_(sm_manager)
     {
         tab_ = sm_manager_->db_.get_table(tab_name_);
         // index_no_ = index_no;
-        index_meta_ = *(tab_.get_index_meta(index_col_names_));
         fh_ = sm_manager_->fhs_.at(tab_name_).get();
         cols_ = tab_.cols;
         len_ = cols_.back().offset + cols_.back().len;
