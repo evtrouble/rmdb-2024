@@ -61,9 +61,6 @@ void SmManager::create_db(const std::string &db_name)
 
     delete new_db;
 
-    // 创建日志文件
-    disk_manager_->create_file(LOG_FILE_NAME);
-
     // 回到根目录
     if (chdir("..") < 0) {
         throw UnixError();

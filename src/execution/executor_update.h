@@ -15,8 +15,9 @@ See the Mulan PSL v2 for more details. */
 #include "index/ix.h"
 #include "system/sm.h"
 
-class UpdateExecutor : public AbstractExecutor {
-   private:
+class UpdateExecutor : public AbstractExecutor
+{
+private:
     TabMeta tab_;
     std::vector<Condition> conds_;
     RmFileHandle *fh_;
@@ -35,8 +36,62 @@ class UpdateExecutor : public AbstractExecutor {
         tab_ = sm_manager_->db_.get_table(tab_name_);
         fh_ = sm_manager_->fhs_.at(tab_name_).get();
     }
-    std::unique_ptr<RmRecord> Next() override {
-        
+    std::unique_ptr<RmRecord> Next() override
+    {
+        // 遍历所有需要更新的记录
+        for (auto &rid : rids_)
+        {
+            // 获取原记录
+            RmRecord rec = *fh_->get_record(rid, context_);
+
+            // 根据set_clauses_更新记录值
+            for (auto &set_clause : set_clauses_)
+            {
+                // 找到要更新的列的元数据
+                auto col = tab_.get_col(set_clause.lhs.col_name);
+                // 检查类型是否匹配
+                if (col->type != set_clause.rhs.type)
+                {
+                    throw IncompatibleTypeError(coltype2str(col->type), coltype2str(set_clause.rhs.type));
+                }
+                // 更新值
+                set_clause.rhs.raw = nullptr;
+                set_clause.rhs.init_raw(col->len);
+                memcpy(rec.data + col->offset, set_clause.rhs.raw->data, col->len);
+            }
+
+            // 更新索引
+            for (auto &index : tab_.indexes)
+            {
+                auto ih = sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get();
+
+                // 删除旧索引
+                char *old_key = new char[index.col_tot_len];
+                int offset = 0;
+                for (int i = 0; i < index.col_num; ++i)
+                {
+                    memcpy(old_key + offset, rec.data + index.cols[i].offset, index.cols[i].len);
+                    offset += index.cols[i].len;
+                }
+                ih->delete_entry(old_key, rid, context_->txn_);
+                delete[] old_key;
+
+                // 插入新索引
+                char *new_key = new char[index.col_tot_len];
+                offset = 0;
+                for (int i = 0; i < index.col_num; ++i)
+                {
+                    memcpy(new_key + offset, rec.data + index.cols[i].offset, index.cols[i].len);
+                    offset += index.cols[i].len;
+                }
+                ih->insert_entry(new_key, rid, context_->txn_);
+                delete[] new_key;
+            }
+
+            // 更新记录
+            fh_->update_record(rid, rec.data, context_);
+        }
+
         return nullptr;
     }
 

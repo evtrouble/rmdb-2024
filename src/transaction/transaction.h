@@ -19,14 +19,15 @@ See the Mulan PSL v2 for more details. */
 
 #include "txn_defs.h"
 
-class Transaction {
-   public:
+class Transaction
+{
+public:
     explicit Transaction(txn_id_t txn_id, IsolationLevel isolation_level = IsolationLevel::SERIALIZABLE)
         : state_(TransactionState::DEFAULT), isolation_level_(isolation_level), txn_id_(txn_id) {
         write_set_ = std::make_shared<std::deque<WriteRecord>>();
         lock_set_ = std::make_shared<std::unordered_set<LockDataId>>();
         index_latch_page_set_ = std::make_shared<std::deque<Page *>>();
-        index_deleted_page_set_ = std::make_shared<std::deque<Page*>>();
+        index_deleted_page_set_ = std::make_shared<std::deque<Page *>>();
         prev_lsn_ = INVALID_LSN;
         thread_id_ = std::this_thread::get_id();
     }
@@ -62,14 +63,14 @@ class Transaction {
 
     inline std::shared_ptr<std::unordered_set<LockDataId>> get_lock_set() { return lock_set_; }
 
-   private:
-    bool txn_mode_;                   // 用于标识当前事务为显式事务还是单条SQL语句的隐式事务
-    TransactionState state_;          // 事务状态
-    IsolationLevel isolation_level_;  // 事务的隔离级别，默认隔离级别为可串行化
-    std::thread::id thread_id_;       // 当前事务对应的线程id
-    lsn_t prev_lsn_;                  // 当前事务执行的最后一条操作对应的lsn，用于系统故障恢复
-    txn_id_t txn_id_;                 // 事务的ID，唯一标识符
-    timestamp_t start_ts_;            // 事务的开始时间戳
+private:
+    bool txn_mode_;                  // 用于标识当前事务为显式事务还是单条SQL语句的隐式事务
+    TransactionState state_;         // 事务状态
+    IsolationLevel isolation_level_; // 事务的隔离级别，默认隔离级别为可串行化
+    std::thread::id thread_id_;      // 当前事务对应的线程id
+    lsn_t prev_lsn_;                 // 当前事务执行的最后一条操作对应的lsn，用于系统故障恢复
+    txn_id_t txn_id_;                // 事务的ID，唯一标识符
+    timestamp_t start_ts_;           //                               事务的开始时间戳
 
     std::shared_ptr<std::deque<WriteRecord>> write_set_;  // 事务包含的所有写操作
     std::shared_ptr<std::unordered_set<LockDataId>> lock_set_;  // 事务申请的所有锁

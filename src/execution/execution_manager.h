@@ -25,18 +25,22 @@ See the Mulan PSL v2 for more details. */
 #include "executor_abstract.h"
 #include "transaction/transaction_manager.h"
 #include "optimizer/planner.h"
+#include "parser/parser.h"
+
+#define MAX_BUFFER_SIZE 8192 // 添加缓冲区大小定义
 
 class Planner;
 
-class QlManager {
-   private:
+class QlManager
+{
+private:
     SmManager *sm_manager_;
     TransactionManager *txn_mgr_;
     Planner *planner_;
 
-   public:
-    QlManager(SmManager *sm_manager, TransactionManager *txn_mgr, Planner *planner) 
-        : sm_manager_(sm_manager),  txn_mgr_(txn_mgr), planner_(planner) {}
+public:
+    QlManager(SmManager *sm_manager, TransactionManager *txn_mgr, Planner *planner)
+        : sm_manager_(sm_manager), txn_mgr_(txn_mgr), planner_(planner) {}
 
     void run_mutli_query(std::shared_ptr<Plan> plan, Context *context);
     void run_cmd_utility(std::shared_ptr<Plan> plan, txn_id_t *txn_id, Context *context);
