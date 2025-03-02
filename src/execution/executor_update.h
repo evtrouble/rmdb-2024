@@ -25,8 +25,9 @@ private:
     std::string tab_name_;
     std::vector<SetClause> set_clauses_;
     SmManager *sm_manager_;
+    std::unordered_set<int> changes;
 
-   public:
+public:
     UpdateExecutor(SmManager *sm_manager, const std::string &tab_name, const std::vector<SetClause> &set_clauses,
         const std::vector<Condition> &conds, const std::vector<Rid> &rids, Context *context) 
         : AbstractExecutor(context), conds_(std::move(conds)), 
@@ -35,28 +36,35 @@ private:
     {
         tab_ = sm_manager_->db_.get_table(tab_name_);
         fh_ = sm_manager_->fhs_.at(tab_name_).get();
+        for (auto &set_clause : set_clauses_)
+        {
+            // 找到要更新的列的元数据
+            auto col = tab_.get_col(set_clause.lhs.col_name);
+            // 检查类型是否匹配
+            if (col->type != set_clause.rhs.type)
+            {
+                throw IncompatibleTypeError(coltype2str(col->type), coltype2str(set_clause.rhs.type));
+            }
+            changes.insert(col->offset);
+            // 更新值
+            set_clause.rhs.raw = nullptr;
+            set_clause.rhs.init_raw(col->len);
+        }
     }
+
     std::unique_ptr<RmRecord> Next() override
     {
         // 遍历所有需要更新的记录
         for (auto &rid : rids_)
         {
             // 获取原记录
-            RmRecord rec = *fh_->get_record(rid, context_);
-
+            RmRecord rec = *fh_->get_record(rid);
+            RmRecord old_rec = rec;
             // 根据set_clauses_更新记录值
             for (auto &set_clause : set_clauses_)
             {
                 // 找到要更新的列的元数据
                 auto col = tab_.get_col(set_clause.lhs.col_name);
-                // 检查类型是否匹配
-                if (col->type != set_clause.rhs.type)
-                {
-                    throw IncompatibleTypeError(coltype2str(col->type), coltype2str(set_clause.rhs.type));
-                }
-                // 更新值
-                set_clause.rhs.raw = nullptr;
-                set_clause.rhs.init_raw(col->len);
                 memcpy(rec.data + col->offset, set_clause.rhs.raw->data, col->len);
             }
 
@@ -66,30 +74,35 @@ private:
                 auto ih = sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get();
 
                 // 删除旧索引
-                char *old_key = new char[index.col_tot_len];
+                char *key = new char[index.col_tot_len];
                 int offset = 0;
+                bool exist = false;
                 for (int i = 0; i < index.col_num; ++i)
                 {
-                    memcpy(old_key + offset, rec.data + index.cols[i].offset, index.cols[i].len);
+                    if(changes.count(index.cols[i].offset)) 
+                        exist = true;
+                    memcpy(key + offset, rec.data + index.cols[i].offset, index.cols[i].len);
                     offset += index.cols[i].len;
                 }
-                ih->delete_entry(old_key, rid, context_->txn_);
-                delete[] old_key;
-
-                // 插入新索引
-                char *new_key = new char[index.col_tot_len];
-                offset = 0;
-                for (int i = 0; i < index.col_num; ++i)
-                {
-                    memcpy(new_key + offset, rec.data + index.cols[i].offset, index.cols[i].len);
-                    offset += index.cols[i].len;
+                if(exist) {
+                    ih->delete_entry(key, rid, context_->txn_);
+                    // 插入新索引
+                    offset = 0;
+                    for (int i = 0; i < index.col_num; ++i)
+                    {
+                        if(changes.count(index.cols[i].offset)) 
+                            memcpy(key + offset, rec.data + index.cols[i].offset, index.cols[i].len);
+                        offset += index.cols[i].len;
+                    }
+                    ih->insert_entry(key, rid, context_->txn_);
                 }
-                ih->insert_entry(new_key, rid, context_->txn_);
-                delete[] new_key;
+                delete[] key;
             }
 
             // 更新记录
-            fh_->update_record(rid, rec.data, context_);
+            fh_->update_record(rid, rec.data);
+            context_->txn_->append_write_record(WriteRecord(WType::UPDATE_TUPLE, 
+                tab_name_, rid, old_rec));
         }
 
         return nullptr;

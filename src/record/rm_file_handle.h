@@ -71,15 +71,15 @@ class RmFileHandle {
         return Bitmap::is_set(page_handle.bitmap, rid.slot_no);  // page的slot_no位置上是否有record
     }
 
-    std::unique_ptr<RmRecord> get_record(const Rid &rid, Context *context) const;
+    std::unique_ptr<RmRecord> get_record(const Rid &rid) const;
 
-    Rid insert_record(char *buf, Context *context);
+    Rid insert_record(char *buf);
 
     void insert_record(const Rid &rid, char *buf);
 
-    void delete_record(const Rid &rid, Context *context);
+    void delete_record(const Rid &rid);
 
-    void update_record(const Rid &rid, char *buf, Context *context);
+    void update_record(const Rid &rid, char *buf);
 
     RmPageHandle create_new_page_handle();
 

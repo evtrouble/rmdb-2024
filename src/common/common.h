@@ -83,8 +83,9 @@ struct Value
             {
                 throw StringOverflowError();
             }
-            memset(raw->data, 0, len);
             memcpy(raw->data, str_val.c_str(), str_val.size());
+            if(len > (int)str_val.size())
+                raw->data[str_val.size()] = '\0';
         }
     }
 };

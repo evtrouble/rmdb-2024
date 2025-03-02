@@ -50,11 +50,12 @@ private:
                 throw IncompatibleTypeError(coltype2str(col.type), coltype2str(val.type));
             }
             val.init_raw(col.len);
-            std::memset(rec.data + col.offset, 0, col.len);
             memcpy(rec.data + col.offset, val.raw->data, col.len);
         }
         // Insert into record file
-        rid_ = fh_->insert_record(rec.data, context_);
+        rid_ = fh_->insert_record(rec.data);
+        context_->txn_->append_write_record(WriteRecord(WType::INSERT_TUPLE, 
+            tab_name_, rid_, rec));
 
         // Insert into index
         for (size_t i = 0; i < tab_.indexes.size(); ++i)

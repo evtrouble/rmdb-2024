@@ -93,13 +93,13 @@ public:
             {
                 // 使用扫描器获取记录
                 Rid rid = scan_->rid();
-                record = fh_->get_record(rid, context_);
+                record = fh_->get_record(rid);
             }
             else
             {
                 // 使用指定的RID获取记录
                 Rid &rid = rids_[rid_idx_];
-                record = fh_->get_record(rid, context_);
+                record = fh_->get_record(rid);
             }
 
             // 检查该记录是否满足所有条件

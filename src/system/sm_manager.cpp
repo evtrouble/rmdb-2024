@@ -291,7 +291,7 @@ void SmManager::create_index(const std::string& tab_name, const std::vector<std:
     // 向索引中插入表中已有数据
     for (RmScan rmScan(fh_); !rmScan.is_end(); rmScan.next())
     {
-        auto rec = fh_->get_record(rmScan.rid(), context);
+        auto rec = fh_->get_record(rmScan.rid());
         auto insert_data = std::make_unique<char[]>(tot_col_len + sizeof(idx)).get();
         std::memcpy(insert_data + tot_col_len, &idx, sizeof(idx));
         int offset = 0;

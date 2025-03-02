@@ -128,7 +128,7 @@ void check_equal(const RmFileHandle *file_handle,
         Rid rid = entry.first;
         auto mock_buf = (char *)entry.second.c_str();
         std::cout << "检查记录 " << rid << " ";
-        auto rec = file_handle->get_record(rid, nullptr);
+        auto rec = file_handle->get_record(rid);
         if (memcmp(mock_buf, rec->data, file_handle->file_hdr_.record_size) == 0)
         {
             std::cout << "✓" << std::endl;
@@ -172,7 +172,7 @@ void check_equal(const RmFileHandle *file_handle,
         std::cout << "扫描到记录 " << cur_rid << " ";
         if (mock.count(cur_rid) > 0)
         {
-            auto rec = file_handle->get_record(cur_rid, nullptr);
+            auto rec = file_handle->get_record(cur_rid);
             if (memcmp(rec->data, mock.at(cur_rid).c_str(), file_handle->file_hdr_.record_size) == 0)
             {
                 std::cout << "✓" << std::endl;
@@ -813,7 +813,7 @@ TEST(RecordManagerTest, SimpleTest)
         if (mock.empty() || dice < insert_prob)
         {
             rand_buf(file_handle->file_hdr_.record_size, write_buf);
-            Rid rid = file_handle->insert_record(write_buf, nullptr);
+            Rid rid = file_handle->insert_record(write_buf);
             mock[rid] = std::string((char *)write_buf, file_handle->file_hdr_.record_size);
             add_cnt++;
             if (round % 100 == 0)
@@ -833,7 +833,7 @@ TEST(RecordManagerTest, SimpleTest)
             if (rand() % 2 == 0)
             {
                 rand_buf(file_handle->file_hdr_.record_size, write_buf);
-                file_handle->update_record(rid, write_buf, nullptr);
+                file_handle->update_record(rid, write_buf);
                 mock[rid] = std::string((char *)write_buf, file_handle->file_hdr_.record_size);
                 upd_cnt++;
                 if (round % 100 == 0)
@@ -843,7 +843,7 @@ TEST(RecordManagerTest, SimpleTest)
             }
             else
             {
-                file_handle->delete_record(rid, nullptr);
+                file_handle->delete_record(rid);
                 mock.erase(rid);
                 del_cnt++;
                 if (round % 100 == 0)

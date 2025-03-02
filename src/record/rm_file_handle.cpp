@@ -16,7 +16,7 @@ See the Mulan PSL v2 for more details. */
  * @param {Context*} context
  * @return {unique_ptr<RmRecord>} rid对应的记录对象指针
  */
-std::unique_ptr<RmRecord> RmFileHandle::get_record(const Rid &rid, Context *context) const
+std::unique_ptr<RmRecord> RmFileHandle::get_record(const Rid &rid) const
 {
     // 1. 获取指定记录所在的page handle
     RmPageHandle page_handle = fetch_page_handle(rid.page_no);
@@ -36,10 +36,9 @@ std::unique_ptr<RmRecord> RmFileHandle::get_record(const Rid &rid, Context *cont
 /**
  * @description: 在当前表中插入一条记录，不指定插入位置
  * @param {char*} buf 要插入的记录的数据
- * @param {Context*} context
  * @return {Rid} 插入的记录的记录号（位置）
  */
-Rid RmFileHandle::insert_record(char *buf, Context *context)
+Rid RmFileHandle::insert_record(char *buf)
 {
     // 1. 获取当前未满的page handle
     RmPageHandle page_handle = create_page_handle();
@@ -95,7 +94,7 @@ void RmFileHandle::insert_record(const Rid &rid, char *buf)
  * @param {Rid&} rid 要删除的记录的记录号（位置）
  * @param {Context*} context
  */
-void RmFileHandle::delete_record(const Rid &rid, Context *context)
+void RmFileHandle::delete_record(const Rid &rid)
 {
     // 1. 获取指定记录所在的page handle
     RmPageHandle page_handle = fetch_page_handle(rid.page_no);
@@ -118,9 +117,8 @@ void RmFileHandle::delete_record(const Rid &rid, Context *context)
  * @description: 更新记录文件中记录号为rid的记录
  * @param {Rid&} rid 要更新的记录的记录号（位置）
  * @param {char*} buf 新记录的数据
- * @param {Context*} context
  */
-void RmFileHandle::update_record(const Rid &rid, char *buf, Context *context)
+void RmFileHandle::update_record(const Rid &rid, char *buf)
 {
     // 1. 获取指定记录所在的page handle
     RmPageHandle page_handle = fetch_page_handle(rid.page_no);

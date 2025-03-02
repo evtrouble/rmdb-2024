@@ -58,12 +58,8 @@ Transaction *TransactionManager::begin(Transaction *txn, LogManager *log_manager
 void TransactionManager::commit(Transaction *txn, LogManager *log_manager)
 {
     // 1. 提交所有未提交的写操作
-    auto write_set = txn->get_write_set();
-    // for (auto &write_record : *write_set)
-    // {
-    //     // 写操作已经在执行时完成，这里不需要额外操作
-    // }
-    write_set->clear();
+    // 写操作已经在执行时完成，这里不需要额外操作
+    txn->get_write_set()->clear();
 
     // 2. 释放所有锁
     auto lock_set = txn->get_lock_set();
@@ -92,10 +88,51 @@ void TransactionManager::commit(Transaction *txn, LogManager *log_manager)
  */
 void TransactionManager::abort(Transaction *txn, LogManager *log_manager)
 {
-    // Todo:
     // 1. 回滚所有写操作
+    auto write_set = txn->get_write_set();
+    while (!write_set->empty())
+    {
+        auto write_record = std::move(write_set->back()); // 获取最后一个写记录
+        write_set->pop_back();                 // 移除最后一个写记录
+        //auto &indexes = sm_manager_->db_.get_table(NameManager::get_name(write_record.fd_))->indexes;
+        // 根据写操作类型进行回滚
+        switch (write_record.GetWriteType())
+        {
+            case WType::INSERT_TUPLE:
+                sm_manager_->fhs_.at(write_record.GetTableName())
+                    ->delete_record(write_record.GetRid());
+                break;
+            case WType::DELETE_TUPLE:
+                sm_manager_->fhs_.at(write_record.GetTableName())
+                    ->insert_record(write_record.GetRid(), write_record.GetRecord().data);
+                break;
+            case WType::UPDATE_TUPLE:
+                sm_manager_->fhs_.at(write_record.GetTableName())
+                    ->update_record(write_record.GetRid(), write_record.GetRecord().data);
+                break;
+            case WType::IX_INSERT_TUPLE:
+                sm_manager_->ihs_.at(write_record.GetTableName())            
+                    ->delete_entry(write_record.GetRecord().data, write_record.GetRid(), txn);
+                break;
+            case WType::IX_DELETE_TUPLE:
+                sm_manager_->ihs_.at(write_record.GetTableName())            
+                    ->insert_entry(write_record.GetRecord().data, write_record.GetRid(), txn);
+                break;
+        }
+    }
     // 2. 释放所有锁
+    auto lock_set = txn->get_lock_set();
+    for (auto &lock_data_id : *lock_set)
+    {
+        lock_manager_->unlock(txn, lock_data_id);
+    }
     // 3. 清空事务相关资源，eg.锁集
+    lock_set->clear();
     // 4. 把事务日志刷入磁盘中
+    if (log_manager != nullptr)
+    {
+        log_manager->flush_log_to_disk();
+    }
     // 5. 更新事务状态
+    txn->set_state(TransactionState::ABORTED);
 }

@@ -41,7 +41,7 @@ private:
         for (auto &rid : rids_)
         {
             // 获取要删除的记录
-            RmRecord rec = *fh_->get_record(rid, context_);
+            RmRecord rec = *fh_->get_record(rid);
 
             // 删除相关的索引
             for (auto &index : tab_.indexes)
@@ -63,7 +63,9 @@ private:
             }
 
             // 删除记录
-            fh_->delete_record(rid, context_);
+            fh_->delete_record(rid);
+            context_->txn_->append_write_record(WriteRecord(WType::DELETE_TUPLE, 
+                tab_name_, rid, rec));
         }
         return nullptr;
     }

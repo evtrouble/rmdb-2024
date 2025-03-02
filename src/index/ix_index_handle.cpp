@@ -434,8 +434,7 @@ bool IxIndexHandle::delete_entry(const char *key, const Rid &value, Transaction 
 
     bool exist = ((index != leaf_node.page_hdr->num_key) && 
         !ix_compare(key, leaf_node.get_key(index), file_hdr_->col_types_, file_hdr_->col_lens_));
-    transaction->append_write_record(WriteRecord(WType::IX_DELETE_TUPLE, 
-        disk_manager_->get_file_name(fd_), value, RmRecord(key, file_hdr_->col_tot_len_)));
+    
     if (exist)
     {
         // 2. 在该叶子结点中删除键值对
@@ -444,6 +443,8 @@ bool IxIndexHandle::delete_entry(const char *key, const Rid &value, Transaction 
         if(coalesce_or_redistribute(leaf_node, transaction))
             transaction->append_index_deleted_page(leaf_node.page);
         // 4. 如果需要并发，并且需要删除叶子结点，则需要在事务的delete_page_set中添加删除结点的对应页面；记得处理并发的上锁
+        transaction->append_write_record(WriteRecord(WType::IX_DELETE_TUPLE, 
+            disk_manager_->get_file_name(fd_), value, RmRecord(key, file_hdr_->col_tot_len_)));
     }
 
     release_all_xlock(transaction->get_index_latch_page_set(), true);

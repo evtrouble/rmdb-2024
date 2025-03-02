@@ -137,7 +137,7 @@ public:
     {
         if (!is_end())
         {
-            std::unique_ptr<RmRecord> rid_record = fh_->get_record(rid_, context_);
+            std::unique_ptr<RmRecord> rid_record = fh_->get_record(rid_);
             std::unique_ptr<RmRecord> ret = std::make_unique<RmRecord>(rid_record->size, rid_record->data);
             sm_manager_->get_bpm()->unpin_page({fh_->GetFd(), rid_.page_no}, false);
             return ret;
@@ -155,7 +155,7 @@ private:
         while (!scan_->is_end())
         {
             rid_ = scan_->rid();
-            std::unique_ptr<RmRecord> rid_record = fh_->get_record(rid_, context_);
+            std::unique_ptr<RmRecord> rid_record = fh_->get_record(rid_);
             if (satisfy_conditions(rid_record.get()))
             {
                 sm_manager_->get_bpm()->unpin_page({fh_->GetFd(), rid_.page_no}, false);
