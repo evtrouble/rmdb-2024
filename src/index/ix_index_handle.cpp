@@ -216,7 +216,7 @@ IxIndexHandle::IxIndexHandle(DiskManager *disk_manager, BufferPoolManager *buffe
     file_hdr_ = new IxFileHdr();
     file_hdr_->deserialize(buf);
 
-    delete buf;
+    delete[] buf;
 
     // disk_manager管理的fd对应的文件中，设置从file_hdr_->num_pages开始分配page_no
     int now_page_no = disk_manager_->get_fd2pageno(fd);

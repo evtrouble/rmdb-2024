@@ -92,7 +92,7 @@ public:
             if (rids_.empty())
             {
                 // 使用扫描器获取记录
-                Rid rid = scan_->rid();
+                auto rid = scan_->rid();
                 record = fh_->get_record(rid);
             }
             else

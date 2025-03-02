@@ -88,6 +88,34 @@ struct Value
                 raw->data[str_val.size()] = '\0';
         }
     }
+
+    bool operator<(const Value& other) const {
+        assert(type == other.type);
+        switch (type)
+        {
+            case TYPE_INT:
+                return int_val < other.int_val;
+            case TYPE_FLOAT:
+                return float_val < other.float_val;
+            case TYPE_STRING:
+            return str_val < other.str_val;
+        }
+        return false;
+    }
+
+    bool operator==(const Value& other) const {
+        assert(type == other.type);
+        switch (type)
+        {
+            case TYPE_INT:
+                return int_val == other.int_val;
+            case TYPE_FLOAT:
+                return float_val == other.float_val;
+            case TYPE_STRING:
+            return str_val == other.str_val;
+        }
+        return false;
+    }
 };
 
 enum CompOp

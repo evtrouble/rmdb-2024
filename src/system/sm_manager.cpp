@@ -219,13 +219,14 @@ void SmManager::create_table(const std::string& tab_name, const std::vector<ColD
                        .index = false};
         curr_offset += col_def.len;
         tab.cols.emplace_back(std::move(col));
+        tab.cols_map.emplace(tab.cols.back().name, tab.cols.size() - 1);
     }
     // Create & open record file
     // record_size就是col meta所占的大小（表的元数据也是以记录的形式进行存储的）
     rm_manager_->create_file(tab_name, curr_offset);
-    db_.tabs_.emplace(tab_name, tab);
-    // fhs_[tab_name] = rm_manager_->open_file(tab_name);
     auto rmFileHandle = rm_manager_->open_file(tab_name);
+    tab.fd = rmFileHandle->GetFd();
+    db_.tabs_.emplace(tab_name, std::move(tab));
     fhs_.emplace(std::move(tab_name), std::move(rmFileHandle));
 
     flush_meta();

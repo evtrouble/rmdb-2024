@@ -22,12 +22,10 @@ std::unordered_map<txn_id_t, Transaction *> TransactionManager::txn_map = {};
  */
 Transaction *TransactionManager::begin(Transaction *txn, LogManager *log_manager)
 {
-    // Todo:
     // 1. 判断传入事务参数是否为空指针
     // 2. 如果为空指针，创建新事务
     // 3. 把开始事务加入到全局事务表中
     // 4. 返回当前事务指针
-
     if (txn == nullptr)
     {
         // 生成新的事务ID
@@ -44,7 +42,7 @@ Transaction *TransactionManager::begin(Transaction *txn, LogManager *log_manager
     // 将事务加入全局事务表
     {
         std::unique_lock<std::mutex> lock(latch_);
-        txn_map[txn->get_transaction_id()] = txn;
+        txn_map.emplace(txn->get_transaction_id(), txn);
     }
 
     return txn;

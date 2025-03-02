@@ -40,18 +40,14 @@ struct RmRecord {
     bool allocated_ = false;    // 是否已经为数据分配空间
 
     RmRecord() = default;
-    RmRecord(const char *data, int size) : size(size)
+    RmRecord(const char *data, int size) : data(new char[size]), size(size), allocated_(true)
     {
-        this->data = new char[size];
         memcpy(this->data, data, size);
-        allocated_ = true;
     }
 
-    RmRecord(const RmRecord& other) {
-        size = other.size;
+    RmRecord(const RmRecord& other) : size(other.size), allocated_(true) {
         data = new char[size];
         memcpy(data, other.data, size);
-        allocated_ = true;
     };
 
     RmRecord &operator=(const RmRecord& other) {
@@ -62,17 +58,10 @@ struct RmRecord {
         return *this;
     };
 
-    RmRecord(int size_) {
-        size = size_;
-        data = new char[size_];
-        allocated_ = true;
-    }
+    RmRecord(int size_) : data(new char[size_]), size(size_), allocated_(true) {}
 
-    RmRecord(int size_, char* data_) {
-        size = size_;
-        data = new char[size_];
+    RmRecord(int size_, char* data_) : data(new char[size_]), size(size_), allocated_(true) {
         memcpy(data, data_, size_);
-        allocated_ = true;
     }
 
     void SetData(char* data_) {

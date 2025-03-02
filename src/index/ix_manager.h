@@ -98,7 +98,6 @@ class IxManager {
         delete fhdr;
 
         char page_buf[PAGE_SIZE];  // 在内存中初始化page_buf中的内容，然后将其写入磁盘
-        memset(page_buf, 0, PAGE_SIZE);
         // 注意leaf header页号为1，也标记为叶子结点，其后一个叶子指向root node
         // Create leaf list header page and write to file
         {

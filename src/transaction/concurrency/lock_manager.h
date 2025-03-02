@@ -12,34 +12,116 @@ See the Mulan PSL v2 for more details. */
 
 #include <mutex>
 #include <condition_variable>
+#include <set>
 #include "transaction/transaction.h"
+#include "common/common.h"
+#include "system/sm_meta.h"
 
-static const std::string GroupLockModeStr[10] = {"NON_LOCK", "IS", "IX", "S", "X", "SIX"};
+class GapLock
+{
+    struct Interval {
+    public:
+        Value upper_;
+        Value lower_;
+        bool upper_is_closed_;
+        bool lower_is_closed_;
+        bool init = false;
+
+        bool overlap(const Interval &other) {
+            // 计算最大下界和最小上界
+            Value max_lower = std::max(lower_, other.lower_);
+            Value min_upper = std::min(lower_, other.upper_);
+        
+            // 情况1：区间无交集
+            if (min_upper < max_lower) return false;
+        
+            // 情况2：区间存在明确交集（非端点）
+            if (max_lower < min_upper) return true;
+        
+            // 情况3：端点重合，检查闭合性
+            return is_point_in_interval(max_lower) && other.is_point_in_interval(max_lower);
+        }
+        private:
+        bool is_point_in_interval(const Value& x) const {
+            // x 超出区间范围
+            if (x < lower_ || upper_ < x) return false;
+            // x 在区间内部
+            if (lower_ < x && x < upper_) return true;
+            // 检查端点闭合性
+            if (x == lower_) return lower_is_closed_;
+            if (x == upper_) return upper_is_closed_;
+            return false;
+        }
+    };
+    public:
+        std::vector<Interval> intervals;
+        bool check = true;
+
+        bool compatible(const GapLock &other) {
+            assert(intervals.size() == other.intervals.size());
+            for (size_t id = 0; id < intervals.size(); id++) {
+                if(!intervals.at(id).init || !other.intervals.at(id).init)
+                    continue;
+                if(!intervals.at(id).overlap(other.intervals.at(id)))
+                    return true;
+            }
+            return false;
+        }
+
+        GapLock(const std::vector<Condition> &conds, const std::vector<ColMeta> &cols)
+            : intervals(cols.size())
+        { 
+            // for(auto &cond : conds) {
+            //     cols.
+            // }
+        }
+};
 
 class LockManager {
-    /* 加锁类型，包括共享锁、排他锁、意向共享锁、意向排他锁、SIX（意向排他锁+共享锁） */
-    enum class LockMode { SHARED, EXLUCSIVE, INTENTION_SHARED, INTENTION_EXCLUSIVE, S_IX };
-
-    /* 用于标识加锁队列中排他性最强的锁类型，例如加锁队列中有SHARED和EXLUSIVE两个加锁操作，则该队列的锁模式为X */
-    enum class GroupLockMode { NON_LOCK, IS, IX, S, X, SIX};
-
     /* 事务的加锁申请 */
-    class LockRequest {
+    class LockRequest
+    {
     public:
-        LockRequest(txn_id_t txn_id, LockMode lock_mode)
-            : txn_id_(txn_id), lock_mode_(lock_mode), granted_(false) {}
+        bool shared_lock_on_table = false;
+        bool exclusive_lock_on_table = false;
+        std::vector<GapLock> shared_gaps;
+        std::vector<GapLock> exclusive_gaps;
 
-        txn_id_t txn_id_;   // 申请加锁的事务ID
-        LockMode lock_mode_;    // 事务申请加锁的类型
-        bool granted_;          // 该事务是否已经被赋予锁
+        bool shared_gap_compatible(const GapLock &other) {
+            if(exclusive_lock_on_table)
+                return false;
+            return std::all_of(shared_gaps.begin(), shared_gaps.end(), [&](GapLock &gaplock)
+                               { return gaplock.compatible(other); });
+        }
+        bool exclusive_gap_compatible(const GapLock &other) {
+            if(exclusive_lock_on_table || shared_lock_on_table)
+                return false;
+            return std::all_of(shared_gaps.begin(), shared_gaps.end(), [&](GapLock &gaplock)
+                               { return gaplock.compatible(other); }) &&
+                   std::all_of(exclusive_gaps.begin(), exclusive_gaps.end(),
+                               [&](GapLock &gaplock)
+                               { return gaplock.compatible(other); });
+        }
+        bool shared_table_compatible() {
+            if(exclusive_lock_on_table || exclusive_gaps.size())
+                return false;
+            return true;
+        }
+        bool exclusive_table_compatible() {
+            if(exclusive_lock_on_table || shared_lock_on_table)
+                return false;
+            if(shared_gaps.size() || exclusive_gaps.size())
+                return false;
+            return true;
+        }
     };
 
     /* 数据项上的加锁队列 */
     class LockRequestQueue {
     public:
-        std::list<LockRequest> request_queue_;  // 加锁队列
+        std::unordered_map<Transaction*, LockRequest> request_queue_;
         std::condition_variable cv_;            // 条件变量，用于唤醒正在等待加锁的申请，在no-wait策略下无需使用
-        GroupLockMode group_lock_mode_ = GroupLockMode::NON_LOCK;   // 加锁队列的锁模式
+        std::mutex latch_;
     };
 
 public:
@@ -47,21 +129,16 @@ public:
 
     ~LockManager() {}
 
-    bool lock_shared_on_record(Transaction* txn, const Rid& rid, int tab_fd);
+    void lock_shared_on_gap(Transaction* txn, int tab_fd, const GapLock &gaplock);
 
-    bool lock_exclusive_on_record(Transaction* txn, const Rid& rid, int tab_fd);
+    void lock_exclusive_on_gap(Transaction* txn, int tab_fd, const GapLock &gaplock);
 
-    bool lock_shared_on_table(Transaction* txn, int tab_fd);
+    void lock_shared_on_table(Transaction* txn, int tab_fd);
 
-    bool lock_exclusive_on_table(Transaction* txn, int tab_fd);
+    void lock_exclusive_on_table(Transaction* txn, int tab_fd);
 
-    bool lock_IS_on_table(Transaction* txn, int tab_fd);
-
-    bool lock_IX_on_table(Transaction* txn, int tab_fd);
-
-    bool unlock(Transaction* txn, LockDataId lock_data_id);
+    void unlock(Transaction* txn, int tab_fd);
 
 private:
-    std::mutex latch_;      // 用于锁表的并发
-    std::unordered_map<LockDataId, LockRequestQueue> lock_table_;   // 全局锁表
+    LockRequestQueue lock_table_[MAX_TABLE_NUMBER];   // 全局锁表
 };

@@ -77,19 +77,17 @@ struct TabMeta {
     std::string name;                   // 表名称
     std::vector<ColMeta> cols;          // 表包含的字段
     std::vector<IndexMeta> indexes;     // 表上建立的索引
+    int fd;
+    std::unordered_map<std::string, size_t> cols_map;
 
     TabMeta(){}
 
-    TabMeta(const TabMeta &other) : name(other.name) {
-        cols.reserve(other.cols.size());
-        for (auto &col : other.cols)
-            cols.emplace_back(col);
-    }
+    TabMeta(const TabMeta &other) : name(other.name), cols(other.cols), fd(other.fd),
+        cols_map(other.cols_map) {}
 
     /* 判断当前表中是否存在名为col_name的字段 */
     bool is_col(const std::string &col_name) const {
-        auto pos = std::find_if(cols.begin(), cols.end(), [&](const ColMeta &col) { return col.name == col_name; });
-        return pos != cols.end();
+        return cols_map.count(col_name);
     }
 
     /* 判断当前表上是否建有指定索引，索引包含的字段为col_names */
