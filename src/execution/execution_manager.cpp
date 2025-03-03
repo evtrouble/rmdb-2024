@@ -174,17 +174,22 @@ void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, 
     rec_printer.print_separator(context);
     rec_printer.print_record(captions, context);
     rec_printer.print_separator(context);
-    // print header into file
-    std::fstream outfile;
-    outfile.open("output.txt", std::ios::out | std::ios::app);
-    outfile << "|";
-    for(size_t i = 0; i < captions.size(); ++i) {
-        outfile << " " << captions[i] << " |";
-    }
-    outfile << "\n";
 
+    int fd = open("output.txt", O_WRONLY | O_CREAT | O_APPEND, 0644);
+    if (fd == -1) return;
+    
+    // 64KB缓冲区
+    std::string buffer;
+    buffer.reserve(8096);
+    
+    buffer.append("|");
+    for(size_t i = 0; i < captions.size(); ++i) {
+        buffer.append(" ").append(captions[i]).append(" |");
+    }
+    buffer.append("\n");
     // Print records
     size_t num_rec = 0;
+    [[maybe_unused]] ssize_t discard;
 
     // 执行query_plan
     for (executorTreeRoot->beginTuple(); !executorTreeRoot->is_end(); executorTreeRoot->nextTuple())
@@ -206,21 +211,30 @@ void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, 
             else if (col.type == TYPE_STRING)
             {
                 col_str = std::string((char *)rec_buf, col.len);
-                col_str.resize(col_str.length());
+                //col_str.resize(col_str.length());
             }
             columns.emplace_back(std::move(col_str));
         }
         // print record into buffer
         rec_printer.print_record(columns, context);
         // print record into file
-        outfile << "|";
+        buffer.append("|");
         for(size_t i = 0; i < columns.size(); ++i) {
-            outfile << " " << columns[i] << " |";
+            buffer.append(" ").append(columns[i]).append(" |");
         }
-        outfile << "\n";
+        buffer.append("\n");
         num_rec++;
+        // 缓冲区满时写入
+        if (buffer.size() >= 8096) {
+            discard = write(fd, buffer.data(), buffer.size());
+            buffer.clear();
+        }
     }
-    outfile.close();
+    // 写入剩余数据
+    if (!buffer.empty()) {
+        discard = write(fd, buffer.data(), buffer.size());
+    }
+    close(fd);
     // Print footer into buffer
     rec_printer.print_separator(context);
     // Print record count into buffer

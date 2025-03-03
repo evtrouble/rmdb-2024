@@ -116,6 +116,30 @@ struct Value
         }
         return false;
     }
+    void set_max(ColType type, int len) {
+        this->type = type;
+        switch (type)
+        {
+            case TYPE_INT:
+                int_val = std::numeric_limits<int>::max();
+            case TYPE_FLOAT:
+                float_val = std::numeric_limits<float>::max();
+            case TYPE_STRING:
+                str_val.append(len, 255);
+        }
+    }
+    void set_min(ColType type, int len) {
+        this->type = type;
+        switch (type)
+        {
+            case TYPE_INT:
+                int_val = std::numeric_limits<int>::min();
+            case TYPE_FLOAT:
+                float_val = std::numeric_limits<float>::min();
+            case TYPE_STRING:
+                str_val.append(len, 0);
+        }
+    }
 };
 
 enum CompOp

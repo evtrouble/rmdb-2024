@@ -141,11 +141,20 @@ void SmManager::close_db() {
     // 刷新元数据到磁盘
     flush_meta();
     // 清空数据库元数据
-    db_.name_.clear();
-    db_.tabs_.clear();
+    for (auto &file_handle : fhs_)
+    {
+        rm_manager_->close_file(file_handle.second.get());
+    }
     fhs_.clear();
+    for (auto &index_handle : ihs_)
+    {
+        ix_manager_->close_index(index_handle.second.get());
+    }
     ihs_.clear();
 
+    db_.name_.clear();
+    db_.tabs_.clear();
+    
     // 回到上一级目录
     if (chdir("..") < 0) {
         throw UnixError();

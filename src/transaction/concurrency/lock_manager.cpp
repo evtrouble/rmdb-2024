@@ -32,7 +32,9 @@ void LockManager::lock_shared_on_gap(Transaction* txn, int tab_fd, const GapLock
         }
         return true;
     });
-    auto iter = lock_queue.request_queue_.try_emplace(txn, LockRequest()).first;
+    auto [iter, success] = lock_queue.request_queue_.try_emplace(txn, LockRequest());
+    if(success)
+        txn->append_lock_set(tab_fd);
     iter->second.shared_gaps.emplace_back(std::move(gaplock));
 }
 
@@ -58,7 +60,9 @@ void LockManager::lock_exclusive_on_gap(Transaction* txn, int tab_fd, const GapL
         }
         return true;
     });
-    auto iter = lock_queue.request_queue_.try_emplace(txn, LockRequest()).first;
+    auto [iter, success] = lock_queue.request_queue_.try_emplace(txn, LockRequest());
+    if(success)
+        txn->append_lock_set(tab_fd);
     iter->second.exclusive_gaps.emplace_back(std::move(gaplock));
 }
 
@@ -95,8 +99,10 @@ void LockManager::lock_shared_on_table(Transaction* txn, int tab_fd)
         }
         return true;
     });
-    auto iter = lock_queue.request_queue_.try_emplace(txn, LockRequest()).first;
-    iter->second.shared_lock_on_table = true;
+    auto [iter, success] = lock_queue.request_queue_.try_emplace(txn, LockRequest());
+    if(success)
+        txn->append_lock_set(tab_fd);
+    iter->second.mode = LockMode::SHARED;
 }
 
 void LockManager::lock_exclusive_on_table(Transaction* txn, int tab_fd)
@@ -122,6 +128,8 @@ void LockManager::lock_exclusive_on_table(Transaction* txn, int tab_fd)
         }
         return true;
     });
-    auto iter = lock_queue.request_queue_.try_emplace(txn, LockRequest()).first;
-    iter->second.exclusive_lock_on_table = true;
+    auto [iter, success] = lock_queue.request_queue_.try_emplace(txn, LockRequest());
+    if(success)
+        txn->append_lock_set(tab_fd);
+    iter->second.mode = LockMode::EXLUCSIVE;
 }

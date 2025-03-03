@@ -25,6 +25,7 @@ private:
     RmFileHandle *fh_;                 // 表的数据文件句柄
     size_t len_;                       // scan后生成的每条记录的长度
     TabMeta tab_;                      // 表的元数据
+    std::vector<Condition> gap_conds_; // 用于加间隙锁的条件
 
     Rid rid_;
     std::unique_ptr<RmScan> scan_; // table_iterator
@@ -95,12 +96,26 @@ public:
         fh_ = fh_iter->second.get();
         len_ = tab.cols.back().offset + tab.cols.back().len;
         tab_ = tab;
+        for(auto &cond : conds_){
+            if(cond.op != CompOp::OP_NE && cond.is_rhs_val){
+                gap_conds_.emplace_back(cond);
+            }
+        }
     }
 
     void beginTuple() override
     {
         // 初始化扫描表
-        //GapLock gaplock();
+        // if(gap_conds_.empty())
+        //     context_->lock_mgr_->lock_shared_on_table(context_->txn_, tab_.fd);
+        // else {
+        //     GapLock gaplock;
+        //     if(!gaplock.init(gap_conds_, tab_)) {
+        //         rid_.page_no = RM_NO_PAGE; // 设置 rid_ 以指示结束
+        //         return;
+        //     }
+        //     context_->lock_mgr_->lock_shared_on_gap(context_->txn_, tab_.fd, gaplock);                
+        // }
         scan_ = std::make_unique<RmScan>(fh_);
         find_next_valid_tuple();
     }

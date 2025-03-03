@@ -176,6 +176,18 @@ void *client_handler(void *sock_fd) {
                     outfile.close();
                 }
             }
+        } else {
+            std::string ParseError = "parse error";
+            std::memcpy(data_send, ParseError.c_str(), ParseError.length());
+            data_send[ParseError.length()] = '\n';
+            data_send[ParseError.length() + 1] = '\0';
+            offset = ParseError.length() + 1;
+
+            // 将报错信息写入output.txt
+            std::fstream outfile;
+            outfile.open("output.txt", std::ios::out | std::ios::app);
+            outfile << "failure\n";
+            outfile.close();
         }
         if(!finish_analyze) {
             yy_delete_buffer(buf);
@@ -264,7 +276,6 @@ void start_server() {
             std::cout << "Create thread fail!" << std::endl;
             break;  // break while loop
         }
-
     }
 
     // Clear

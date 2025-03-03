@@ -12,7 +12,6 @@ See the Mulan PSL v2 for more details. */
 
 #include <mutex>
 #include <condition_variable>
-#include <set>
 #include "transaction/transaction.h"
 #include "common/common.h"
 #include "system/sm_meta.h"
@@ -41,6 +40,29 @@ class GapLock
             // 情况3：端点重合，检查闭合性
             return is_point_in_interval(max_lower) && other.is_point_in_interval(max_lower);
         }
+        // 计算两个区间的交集
+        bool intersect(const Interval& other) {
+            // 计算交集下界及闭合性
+            if (other.lower_ < lower_) {
+            } else if (lower_ < other.lower_) {
+                lower_is_closed_ = other.lower_is_closed_;
+            } else {
+                lower_is_closed_ = lower_is_closed_ && other.lower_is_closed_;
+            }
+            lower_ = std::max(lower_, other.lower_);
+
+            // 计算交集上界及闭合性
+            if (upper_ < other.upper_) {
+            } else if (other.upper_ < upper_) {
+                upper_is_closed_ = other.upper_is_closed_;
+            } else {
+                upper_is_closed_ = upper_is_closed_ && other.upper_is_closed_;
+            }
+            upper_ = std::min(upper_, other.upper_);
+            // 验证交集有效性
+            return is_valid_interval();
+        }
+
         private:
         bool is_point_in_interval(const Value& x) const {
             // x 超出区间范围
@@ -52,6 +74,12 @@ class GapLock
             if (x == upper_) return upper_is_closed_;
             return false;
         }
+        // 判断区间是否有效（下界 <= 上界）
+        inline bool is_valid_interval() {
+            return (lower_ < upper_) ||
+                (lower_ == upper_ && lower_is_closed_ && upper_is_closed_);
+        }
+
     };
     public:
         std::vector<Interval> intervals;
@@ -60,7 +88,7 @@ class GapLock
         bool compatible(const GapLock &other) {
             assert(intervals.size() == other.intervals.size());
             for (size_t id = 0; id < intervals.size(); id++) {
-                if(!intervals.at(id).init || !other.intervals.at(id).init)
+                if(!(intervals.at(id).init && other.intervals.at(id).init))
                     continue;
                 if(!intervals.at(id).overlap(other.intervals.at(id)))
                     return true;
@@ -68,33 +96,76 @@ class GapLock
             return false;
         }
 
-        GapLock(const std::vector<Condition> &conds, const std::vector<ColMeta> &cols)
-            : intervals(cols.size())
-        { 
-            // for(auto &cond : conds) {
-            //     cols.
-            // }
+        bool init(const std::vector<Condition> &conds, const TabMeta &tab)
+        {
+            intervals.resize(tab.cols.size());
+            for (auto &cond : conds)
+            {
+                size_t id = tab.cols_map.at(cond.lhs_col.col_name);
+                Interval interval;
+                auto &pos = intervals.at(id);
+                auto &col = tab.cols.at(id);
+                switch (cond.op)
+                {
+                    case CompOp::OP_EQ:
+                        interval.lower_ = interval.upper_ = cond.rhs_val;
+                        interval.init = interval.lower_is_closed_ = interval.upper_is_closed_ = true;
+                        break;
+                    case CompOp::OP_GE:
+                        interval.lower_ = cond.rhs_val;
+                        interval.upper_.set_max(col.type, col.len);
+                        interval.init = interval.lower_is_closed_ = interval.upper_is_closed_ = true;
+                        break;
+                    case CompOp::OP_GT:
+                        interval.lower_ = cond.rhs_val;
+                        interval.upper_.set_max(col.type, col.len);
+                        interval.init = interval.upper_is_closed_ = true;
+                        interval.lower_is_closed_ = false;
+                        break;
+                    case CompOp::OP_LE:
+                        interval.upper_ = cond.rhs_val;
+                        interval.lower_.set_min(col.type, col.len);
+                        interval.init = interval.lower_is_closed_ = interval.upper_is_closed_ = true;
+                        break;
+                    case CompOp::OP_LT:
+                        interval.upper_ = cond.rhs_val;
+                        interval.lower_.set_min(col.type, col.len);
+                        interval.init = interval.lower_is_closed_ = true;
+                        interval.upper_is_closed_ = false;
+                        break;
+                    default:
+                        break;
+                    }
+                if(!pos.init) 
+                    pos = std::move(interval);
+                else if(!pos.intersect(interval)){
+                    return false;
+                }
+            }
+            return true;
         }
 };
 
 class LockManager {
+    /* 已加锁类型，包括无锁，共享锁、排他锁 */
+    enum class LockMode { NONE, SHARED, EXLUCSIVE};
     /* 事务的加锁申请 */
     class LockRequest
     {
     public:
-        bool shared_lock_on_table = false;
-        bool exclusive_lock_on_table = false;
+        
+        LockMode mode = LockMode::NONE;
         std::vector<GapLock> shared_gaps;
         std::vector<GapLock> exclusive_gaps;
 
         bool shared_gap_compatible(const GapLock &other) {
-            if(exclusive_lock_on_table)
+            if(mode == LockMode::EXLUCSIVE)
                 return false;
             return std::all_of(shared_gaps.begin(), shared_gaps.end(), [&](GapLock &gaplock)
                                { return gaplock.compatible(other); });
         }
         bool exclusive_gap_compatible(const GapLock &other) {
-            if(exclusive_lock_on_table || shared_lock_on_table)
+            if(mode != LockMode::NONE)
                 return false;
             return std::all_of(shared_gaps.begin(), shared_gaps.end(), [&](GapLock &gaplock)
                                { return gaplock.compatible(other); }) &&
@@ -103,12 +174,12 @@ class LockManager {
                                { return gaplock.compatible(other); });
         }
         bool shared_table_compatible() {
-            if(exclusive_lock_on_table || exclusive_gaps.size())
+            if(mode == LockMode::EXLUCSIVE || exclusive_gaps.size())
                 return false;
             return true;
         }
         bool exclusive_table_compatible() {
-            if(exclusive_lock_on_table || shared_lock_on_table)
+            if(mode != LockMode::NONE)
                 return false;
             if(shared_gaps.size() || exclusive_gaps.size())
                 return false;

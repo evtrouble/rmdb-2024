@@ -62,6 +62,7 @@ public:
     inline void append_index_latch_page_set(Page* page) { index_latch_page_set_->emplace_back(page); }
 
     inline std::shared_ptr<std::unordered_set<int>> get_lock_set() { return lock_set_; }
+    inline void append_lock_set(int fd) { lock_set_->emplace(fd); }
 
 private:
     bool txn_mode_;                  // 用于标识当前事务为显式事务还是单条SQL语句的隐式事务
