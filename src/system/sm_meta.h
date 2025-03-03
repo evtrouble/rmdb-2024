@@ -45,11 +45,16 @@ struct IndexMeta {
     int col_tot_len;                // 索引字段长度总和
     int col_num;                    // 索引字段数量
     std::vector<ColMeta> cols;      // 索引包含的字段
+    std::shared_ptr<char *> max_val;
+    std::shared_ptr<char *> min_val;
 
     IndexMeta() = default;
     IndexMeta(const std::string &tab_name, int col_tot_len, int col_num, const std::vector<ColMeta>& cols)
         : tab_name(std::move(tab_name)), col_tot_len(col_tot_len), col_num(col_num),
-        cols(std::move(cols)) {}
+        cols(std::move(cols)) {
+        init();
+    }
+
     friend std::ostream &operator<<(std::ostream &os, const IndexMeta &index)
     {
         os << index.tab_name << " " << index.col_tot_len << " " << index.col_num;
@@ -68,7 +73,34 @@ struct IndexMeta {
             is >> col;
             index.cols.emplace_back(std::move(col));
         }
+        index.init();
         return is;
+    }
+
+    private:
+    void init(){
+        max_val = std::make_shared<char *>(new char[col_tot_len]);
+        min_val = std::make_shared<char *>(new char[col_tot_len]);
+        int offset = 0;
+        for (auto &col : cols)
+        {
+            switch (col.type)
+            {
+                case ColType::TYPE_INT:
+                    *reinterpret_cast<int*>(max_val.get() + offset) = std::numeric_limits<int>::max();
+                    *reinterpret_cast<int*>(min_val.get() + offset) = std::numeric_limits<int>::min();  
+                    break;  
+                case ColType::TYPE_FLOAT:
+                    *reinterpret_cast<float*>(max_val.get() + offset) = std::numeric_limits<float>::max();
+                    *reinterpret_cast<float*>(min_val.get() + offset) = std::numeric_limits<float>::min();  
+                    break;
+                case ColType::TYPE_STRING:
+                    std::memset(max_val.get() + offset, 0xff, col.len);
+                    std::memset(min_val.get() + offset, 0, col.len);
+                    break;    
+            }
+            offset += col.len;
+        }
     }
 };
 

@@ -89,6 +89,30 @@ struct Value
         }
     }
 
+    void export_val(char *dest, int len)
+    {
+        if (type == TYPE_INT)
+        {
+            assert(len == sizeof(int));
+            *(int *)(dest) = int_val;
+        }
+        else if (type == TYPE_FLOAT)
+        {
+            assert(len == sizeof(float));
+            *(float *)(dest) = float_val;
+        }
+        else if (type == TYPE_STRING)
+        {
+            if (len < (int)str_val.size())
+            {
+                throw StringOverflowError();
+            }
+            memcpy(dest, str_val.c_str(), str_val.size());
+            if(len > (int)str_val.size())
+                dest[str_val.size()] = '\0';
+        }
+    }
+
     bool operator<(const Value& other) const {
         assert(type == other.type);
         switch (type)

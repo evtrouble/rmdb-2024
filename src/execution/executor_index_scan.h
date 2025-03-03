@@ -22,14 +22,10 @@ class IndexScanExecutor : public AbstractExecutor {
     TabMeta tab_;                               // 表的元数据
     std::vector<Condition> conds_;              // 扫描条件
     RmFileHandle *fh_;                          // 表的数据文件句柄
-    std::vector<ColMeta> cols_;                 // 需要读取的字段
     size_t len_;                                // 选取出来的一条记录的长度
-    std::vector<Condition> fed_conds_;          // 扫描条件，和conds_字段相同
 
     IndexMeta index_meta_;                      // index scan涉及到的索引元数据
-    bool range_scan_;
-    char *lower_key_;
-    char *upper_key_;
+    IxIndexHandle *index_handle_;
 
     Iid lower_position_{}; // 用于存储索引扫描的起始位置
     Iid upper_position_{}; // 用于存储索引扫描的结束位置
@@ -38,71 +34,189 @@ class IndexScanExecutor : public AbstractExecutor {
     std::unique_ptr<RecScan> scan_;
 
     SmManager *sm_manager_;
+    bool effective = true;
+
+    // 获取指定列的值
+    inline char *get_col_value(const RmRecord *rec, const ColMeta &col)
+    {
+        return rec->data + col.offset;
+    }
+
+    // 查找列的元数据
+    ColMeta &get_col_meta(const std::string &col_name)
+    {
+        auto iter = tab_.cols_map.find(col_name);
+        if(iter != tab_.cols_map.end())
+            return tab_.cols.at(iter->second);
+        throw ColumnNotFoundError(col_name);
+    }
+
+    // 检查记录是否满足所有条件
+    bool satisfy_conditions(const RmRecord *rec)
+    {
+        for (const auto &cond : conds_)
+        {
+            ColMeta &left_col = get_col_meta(cond.lhs_col.col_name);
+            char *lhs_value = get_col_value(rec, left_col);
+            char *rhs_value;
+            ColType rhs_type;
+
+            if (cond.is_rhs_val)
+            {
+                // 如果右侧是值
+                rhs_value = const_cast<char *>(cond.rhs_val.raw->data);
+                rhs_type = cond.rhs_val.type;
+            }
+            else
+            {
+                // 如果右侧是列
+                ColMeta &right_col = get_col_meta(cond.rhs_col.col_name);
+                rhs_value = get_col_value(rec, right_col);
+                rhs_type = right_col.type;
+            }
+
+            if (!check_condition(lhs_value, left_col.type, rhs_value, rhs_type, cond.op))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
 
    public:
     IndexScanExecutor(SmManager *sm_manager, const std::string &tab_name, 
         const std::vector<Condition> &conds, const IndexMeta &index_meta,
         Context *context) 
-        : AbstractExecutor(context), tab_name_(std::move(tab_name)), 
+        : AbstractExecutor(context), tab_name_(std::move(tab_name)), conds_(std::move(conds)),
         index_meta_(std::move(index_meta)), sm_manager_(sm_manager)
     {
         tab_ = sm_manager_->db_.get_table(tab_name_);
         // index_no_ = index_no;
         fh_ = sm_manager_->fhs_.at(tab_name_).get();
-        cols_ = tab_.cols;
-        len_ = cols_.back().offset + cols_.back().len;
-        std::map<CompOp, CompOp> swap_op = {
-            {OP_EQ, OP_EQ}, {OP_NE, OP_NE}, {OP_LT, OP_GT}, {OP_GT, OP_LT}, {OP_LE, OP_GE}, {OP_GE, OP_LE},
-        };
-
+        len_ = tab_.cols.back().offset + tab_.cols.back().len;
         
-        // std::unordered_map<std::string, std::vector<size_t>> conds_map;
-        // for (size_t id = 0; id < conds.size(); id++) {
-        //     auto iter = conds_map.try_emplace(
-        //         std::move(conds.at(id).lhs_col.col_name), std::vector<size_t>()).first;
-        //     iter->second.emplace_back(id);
-        // }
+        std::vector<Condition> gap_conds_; // 用于加间隙锁的条件
+        for(auto &cond : conds_){
+            if(cond.op != CompOp::OP_NE && cond.is_rhs_val){
+                gap_conds_.emplace_back(cond);
+            }
+        }
 
-        // size_t col_id;
-        // for (col_id = 0; col_id < index_col_names_.size(); col_id++)
-        // {
-        //     auto iter = conds_map.find(index_col_names_[col_id]);
-        //     if (iter == conds_map.end())
-        //         break;
-        //     for(auto id : iter->second) {
+        index_handle_ = sm_manager_->ihs_.at(
+            sm_manager_->get_ix_manager()->get_index_name(tab_name_, index_meta_.cols)).get();
+        
+        if(gap_conds_.empty()) {
+            context_->lock_mgr_->lock_shared_on_table(context_->txn_, fh_->GetFd());
+            lower_position_ = index_handle_->leaf_begin();
+            upper_position_ = index_handle_->leaf_end();  
+        } else {
+            GapLock gaplock;
+            if((effective = gaplock.init(gap_conds_, tab_))) {
+                set_index_scan(gaplock);
+                context_->lock_mgr_->lock_shared_on_gap(context_->txn_, fh_->GetFd(), gaplock);
+            }
+        }
+    }
 
-        //     }
-        // }
-        // for (auto &cond : conds_)
-        //     for (auto &cond : conds_)
-        //     {
-        //         if (cond.lhs_col.tab_name != tab_name_)
-        //         {
-        //             // lhs is on other table, now rhs must be on this table
-        //             assert(!cond.is_rhs_val && cond.rhs_col.tab_name == tab_name_);
-        //             // swap lhs and rhs
-        //             std::swap(cond.lhs_col, cond.rhs_col);
-        //             cond.op = swap_op.at(cond.op);
-        //         }
-        //     }
-        fed_conds_ = conds_;
+    ~IndexScanExecutor() {
+        if(effective) {
+            index_handle_->unlock_shared(lower_position_.page_no);
+            index_handle_->unlock_shared(upper_position_.page_no);
+        }
     }
 
     void beginTuple() override {
-        
+        if(!effective) {
+            rid_.page_no = RM_NO_PAGE; // 设置 rid_ 以指示结束
+            return;
+        }
+        scan_ = std::make_unique<IxScan>(index_handle_, lower_position_, upper_position_, sm_manager_->get_bpm());
+        find_next_valid_tuple();
     }
 
-    void nextTuple() override {
-        
+    void nextTuple() override
+    {
+        scan_->next();
+        find_next_valid_tuple();
     }
+
+    bool is_end() const override { return rid_.page_no == RM_NO_PAGE; }
 
     std::unique_ptr<RmRecord> Next() override {
+        if (!is_end())
+        {
+            std::unique_ptr<RmRecord> rid_record = fh_->get_record(rid_);
+            std::unique_ptr<RmRecord> ret = std::make_unique<RmRecord>(rid_record->size, rid_record->data);
+            sm_manager_->get_bpm()->unpin_page({fh_->GetFd(), rid_.page_no}, false);
+            return ret;
+        }
         return nullptr;
     }
 
     Rid &rid() override { return rid_; }
 
     const std::vector<ColMeta> &cols() const override {
-        return cols_;
+        return tab_.cols;
     };
+
+    private:
+    void find_next_valid_tuple()
+    {
+        while (!scan_->is_end())
+        {
+            rid_ = scan_->rid();
+            std::unique_ptr<RmRecord> rid_record = fh_->get_record(rid_);
+            if (satisfy_conditions(rid_record.get()))
+            {
+                sm_manager_->get_bpm()->unpin_page({fh_->GetFd(), rid_.page_no}, false);
+                return;
+            }
+            sm_manager_->get_bpm()->unpin_page({fh_->GetFd(), rid_.page_no}, false);
+            scan_->next();
+        }
+        rid_.page_no = RM_NO_PAGE; // 设置 rid_ 以指示结束
+    }
+
+    void set_index_scan(GapLock &gaplock) {
+        char low_key[index_meta_.col_tot_len];
+        char up_key[index_meta_.col_tot_len];    
+        std::memcpy(low_key, index_meta_.min_val.get(), index_meta_.col_tot_len);
+        std::memcpy(up_key, index_meta_.max_val.get(), index_meta_.col_tot_len);
+        std::unordered_set<std::string> erase_cond;
+        int offset = 0;
+        for (auto &col : index_meta_.cols)
+        {
+            auto &interval = gaplock.intervals.at(tab_.cols_map.at(col.name));
+            auto &lower = interval.lower_;
+            auto &upper = interval.upper_;
+            lower.export_val(low_key + offset, col.len);
+            upper.export_val(up_key + offset, col.len);
+            erase_cond.emplace(col.name);
+            if (interval.lower_ < interval.upper_)
+            {
+                set_position(low_key, interval.lower_is_closed_, up_key, interval.upper_is_closed_);
+                break;
+            }
+        }
+        auto it = conds_.begin();
+        while (it != conds_.end()) {
+            if(it->is_rhs_val && it->op != CompOp::OP_NE && erase_cond.count(it->lhs_col.col_name))
+                it = conds_.erase(it);
+            else 
+                it++;
+        }
+    }
+
+    void set_position(char *lower, bool is_lower_closed, char *upper, bool is_upper_closed)
+    {
+        if(is_lower_closed) 
+            lower_position_ = index_handle_->lower_bound(lower);
+        else
+            lower_position_ = index_handle_->upper_bound(lower);
+        
+        if(is_upper_closed)
+            upper_position_ = index_handle_->upper_bound(upper);
+        else
+            upper_position_ = index_handle_->lower_bound(upper);
+    }
 };

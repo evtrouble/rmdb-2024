@@ -45,9 +45,6 @@ public:
                 throw IncompatibleTypeError(coltype2str(col->type), coltype2str(set_clause.rhs.type));
             }
             changes.insert(col->offset);
-            // 更新值
-            set_clause.rhs.raw = nullptr;
-            set_clause.rhs.init_raw(col->len);
         }
     }
 
@@ -64,7 +61,7 @@ public:
             {
                 // 找到要更新的列的元数据
                 auto col = tab_.get_col(set_clause.lhs.col_name);
-                memcpy(rec.data + col->offset, set_clause.rhs.raw->data, col->len);
+                set_clause.rhs.export_val(rec.data + col->offset, col->len);
             }
 
             // 更新索引

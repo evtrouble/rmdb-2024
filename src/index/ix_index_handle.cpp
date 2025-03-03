@@ -787,3 +787,10 @@ void IxIndexHandle::release_all_xlock(std::shared_ptr<std::deque<Page*>> page_se
         buffer_pool_manager_->unpin_page(node->get_page_id(), dirty);
     }
 }
+
+void IxIndexHandle::unlock_shared(int page_no)
+{
+    auto node = fetch_node(page_no);
+    node.page->latch_.unlock_shared();
+    buffer_pool_manager_->unpin_page(node.get_page_id(), false);
+}

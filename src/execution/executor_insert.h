@@ -53,8 +53,7 @@ private:
             {
                 throw IncompatibleTypeError(coltype2str(col.type), coltype2str(val.type));
             }
-            val.init_raw(col.len);
-            memcpy(rec.data + col.offset, val.raw->data, col.len);
+            val.export_val(rec.data + col.offset, col.len);
         }
 
         // Insert into index

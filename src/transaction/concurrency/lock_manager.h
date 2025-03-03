@@ -83,7 +83,6 @@ class GapLock
     };
     public:
         std::vector<Interval> intervals;
-        bool check = true;
 
         bool compatible(const GapLock &other) {
             assert(intervals.size() == other.intervals.size());
