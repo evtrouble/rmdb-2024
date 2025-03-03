@@ -144,6 +144,16 @@ class GapLock
             }
             return true;
         }
+
+        bool init(const std::vector<Value> &values)
+        {
+            intervals.reserve(values.size());
+            for(auto& value : values) {
+                intervals.emplace_back(Interval{.upper_ = value, .lower_ = value, 
+                    .upper_is_closed_ = true, .lower_is_closed_ = true, .init = true});
+            }
+            return true;
+        }
 };
 
 class LockManager {

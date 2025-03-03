@@ -106,16 +106,16 @@ public:
     void beginTuple() override
     {
         // 初始化扫描表
-        // if(gap_conds_.empty())
-        //     context_->lock_mgr_->lock_shared_on_table(context_->txn_, tab_.fd);
-        // else {
-        //     GapLock gaplock;
-        //     if(!gaplock.init(gap_conds_, tab_)) {
-        //         rid_.page_no = RM_NO_PAGE; // 设置 rid_ 以指示结束
-        //         return;
-        //     }
-        //     context_->lock_mgr_->lock_shared_on_gap(context_->txn_, tab_.fd, gaplock);                
-        // }
+        if(gap_conds_.empty())
+            context_->lock_mgr_->lock_shared_on_table(context_->txn_, fh_->GetFd());
+        else {
+            GapLock gaplock;
+            if(!gaplock.init(gap_conds_, tab_)) {
+                rid_.page_no = RM_NO_PAGE; // 设置 rid_ 以指示结束
+                return;
+            }
+            context_->lock_mgr_->lock_shared_on_gap(context_->txn_, fh_->GetFd(), gaplock);                
+        }
         scan_ = std::make_unique<RmScan>(fh_);
         find_next_valid_tuple();
     }

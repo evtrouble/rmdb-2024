@@ -19,7 +19,6 @@ class UpdateExecutor : public AbstractExecutor
 {
 private:
     TabMeta tab_;
-    std::vector<Condition> conds_;
     RmFileHandle *fh_;
     std::vector<Rid> rids_;
     std::string tab_name_;
@@ -29,10 +28,10 @@ private:
 
 public:
     UpdateExecutor(SmManager *sm_manager, const std::string &tab_name, const std::vector<SetClause> &set_clauses,
-        const std::vector<Condition> &conds, const std::vector<Rid> &rids, Context *context) 
-        : AbstractExecutor(context), conds_(std::move(conds)), 
-        rids_(std::move(rids)), tab_name_(std::move(tab_name)),
-        set_clauses_(std::move(set_clauses)),  sm_manager_(sm_manager)
+        const std::vector<Rid> &rids, Context *context) 
+        : AbstractExecutor(context), rids_(std::move(rids)), 
+        tab_name_(std::move(tab_name)), set_clauses_(std::move(set_clauses)),
+        sm_manager_(sm_manager)
     {
         tab_ = sm_manager_->db_.get_table(tab_name_);
         fh_ = sm_manager_->fhs_.at(tab_name_).get();

@@ -233,11 +233,10 @@ void SmManager::create_table(const std::string& tab_name, const std::vector<ColD
     // Create & open record file
     // record_size就是col meta所占的大小（表的元数据也是以记录的形式进行存储的）
     rm_manager_->create_file(tab_name, curr_offset);
-    auto rmFileHandle = rm_manager_->open_file(tab_name);
-    tab.fd = rmFileHandle->GetFd();
-    db_.tabs_.emplace(tab_name, std::move(tab));
-    fhs_.emplace(std::move(tab_name), std::move(rmFileHandle));
-
+    
+    fhs_.emplace(tab_name, rm_manager_->open_file(tab_name));
+    db_.tabs_.emplace(std::move(tab_name), std::move(tab));
+    
     flush_meta();
 }
 

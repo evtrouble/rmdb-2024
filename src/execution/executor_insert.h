@@ -39,6 +39,10 @@ private:
 
     std::unique_ptr<RmRecord> Next() override
     {
+        GapLock gaplock;
+        gaplock.init(values_);
+        context_->lock_mgr_->lock_exclusive_on_gap(context_->txn_, fh_->GetFd(), gaplock);
+
         // Make record buffer
         RmRecord rec(fh_->get_file_hdr().record_size);
         for (size_t i = 0; i < values_.size(); i++)
