@@ -180,7 +180,7 @@ void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, 
     rec_printer.print_record(captions, context);
     rec_printer.print_separator(context);
 
-    int fd = open("output.txt", O_WRONLY | O_CREAT | O_APPEND, 0644);
+    int fd = ::open("output.txt", O_WRONLY | O_CREAT | O_APPEND, 0644);
     if (fd == -1) return;
     
     // 64KB缓冲区
@@ -215,8 +215,9 @@ void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, 
             }
             else if (col.type == TYPE_STRING)
             {
-                col_str = std::string((char *)rec_buf, col.len);
-                //col_str.resize(col_str.length());
+                col_str.reserve(col.len);
+                for (int i = 0; i < col.len && rec_buf[i] != '\0';i++)
+                    col_str.append(1, rec_buf[i]);
             }
             columns.emplace_back(std::move(col_str));
         }

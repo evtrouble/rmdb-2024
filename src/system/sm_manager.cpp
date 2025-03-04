@@ -297,19 +297,19 @@ void SmManager::create_index(const std::string& tab_name, const std::vector<std:
     auto fh_ = fhs_.at(tab_name).get();
 
     // 向索引中插入表中已有数据
-    auto insert_data = std::make_unique<char[]>(tot_col_len).get();
+    auto insert_data = std::make_unique<char[]>(tot_col_len);
     for (RmScan rmScan(fh_); !rmScan.is_end(); rmScan.next())
     {
         auto rec = fh_->get_record(rmScan.rid());
         int offset = 0;
         for (auto &col : cols)
         {
-            std::memcpy(insert_data + offset, rec->data + col.offset, col.len);
+            std::memcpy(insert_data.get() + offset, rec->data + col.offset, col.len);
             offset += col.len;
         }
         try
         {
-            ih->insert_entry(insert_data, rmScan.rid(), context->txn_);
+            ih->insert_entry(insert_data.get(), rmScan.rid(), context->txn_);
         }
         catch (IndexEntryAlreadyExistError &) {}
     }

@@ -43,7 +43,7 @@ public:
 
     void update_tot_len() {
         tot_len_ = 0;
-        tot_len_ += sizeof(page_id_t) * 4 + sizeof(int) * 6;
+        tot_len_ += sizeof(page_id_t) + sizeof(int) * 5;
         tot_len_ += sizeof(ColType) * col_num_ + sizeof(int) * col_num_;
     }
 

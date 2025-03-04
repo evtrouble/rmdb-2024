@@ -72,7 +72,6 @@ private:
                 offset += index.cols[i].len;
             }
             ih->insert_entry(key, rid_, context_->txn_);
-            std::cout << std::string(key, offset) << std::endl;
             delete[] key;
         }
 

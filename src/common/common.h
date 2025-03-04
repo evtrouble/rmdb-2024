@@ -84,8 +84,7 @@ struct Value
                 throw StringOverflowError();
             }
             memcpy(raw->data, str_val.c_str(), str_val.size());
-            if(len > (int)str_val.size())
-                raw->data[str_val.size()] = '\0';
+            memset(raw->data + str_val.size(), 0, len - str_val.size());
         }
     }
 
@@ -108,8 +107,7 @@ struct Value
                 throw StringOverflowError();
             }
             memcpy(dest, str_val.c_str(), str_val.size());
-            if(len > (int)str_val.size())
-                dest[str_val.size()] = '\0';
+            memset(raw->data + str_val.size(), 0, len - str_val.size());
         }
     }
 

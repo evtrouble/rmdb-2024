@@ -105,7 +105,6 @@ void IxNodeHandle::insert_pairs(int pos, const char *key, const Rid *rid, int n)
     if (pos < 0 || pos > page_hdr->num_key)
         return;
 
-    std::cout << "AAA"<<pos << "\n";
     // 2. 通过key获取n个连续键值对的key值，并把n个key值插入到pos位置
     int num = page_hdr->num_key - pos;
 
