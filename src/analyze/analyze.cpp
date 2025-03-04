@@ -46,7 +46,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
             query->cols.reserve(all_cols.size());
             for (auto &col : all_cols)
             {
-                query->cols.emplace_back(TabCol(col.tab_name,  col.name));
+                query->cols.emplace_back(TabCol(col.tab_name, col.name));
             }
         }
         else
@@ -122,11 +122,43 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
     else if (auto x = std::dynamic_pointer_cast<ast::InsertStmt>(parse))
     {
         query->tables = {x->tab_name};
-        // 处理insert 的values值
-        query->values.reserve(x->vals.size());
-        for (auto &sv_val : x->vals)
+
+        if (!sm_manager_->db_.is_table(x->tab_name))
         {
-            query->values.emplace_back(convert_sv_value(sv_val));
+            throw TableNotFoundError(x->tab_name);
+        }
+
+        // 获取表的元数据
+        TabMeta &tab = sm_manager_->db_.get_table(x->tab_name);
+
+        // 检查插入的值的数量是否与表的列数匹配
+        if (x->vals.size() != tab.cols.size())
+        {
+            throw InvalidValueCountError();
+        }
+
+        // 处理insert的values值，并进行类型转换
+        query->values.reserve(x->vals.size());
+        for (size_t i = 0; i < x->vals.size(); i++)
+        {
+            // 获取当前列的类型信息
+            auto &col = tab.cols[i];
+            ColType target_type = col.type;
+
+            // 转换值并进行类型检查
+            Value val = convert_sv_value(x->vals[i]);
+
+            // 如果类型不匹配，尝试进行类型转换
+            if (val.type != target_type)
+            {
+                val = convert_value_type(val, target_type);
+            }
+
+            // 初始化原始数据
+            val.raw = nullptr;
+            val.init_raw(col.len);
+
+            query->values.emplace_back(std::move(val));
         }
     }
     else
