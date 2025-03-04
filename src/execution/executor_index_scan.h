@@ -116,6 +116,11 @@ class IndexScanExecutor : public AbstractExecutor {
                 context_->lock_mgr_->lock_shared_on_gap(context_->txn_, fh_->GetFd(), gaplock);
             }
         }
+
+#ifdef DEBUG
+        std::cout << lower_position_.page_no << ' ' << lower_position_.slot_no << "\n"
+                  << upper_position_.page_no << ' ' << upper_position_.slot_no << "\n";
+#endif
     }
 
     ~IndexScanExecutor() {
@@ -184,6 +189,7 @@ class IndexScanExecutor : public AbstractExecutor {
         std::memcpy(up_key, index_meta_.max_val.get(), index_meta_.col_tot_len);
         std::unordered_set<std::string> erase_cond;
         int offset = 0;
+        bool init = false;
         for (auto &col : index_meta_.cols)
         {
             auto &interval = gaplock.intervals.at(tab_.cols_map.at(col.name));
@@ -194,10 +200,13 @@ class IndexScanExecutor : public AbstractExecutor {
             erase_cond.emplace(col.name);
             if (interval.lower_ < interval.upper_)
             {
+                init = true;
                 set_position(low_key, interval.lower_is_closed_, up_key, interval.upper_is_closed_);
                 break;
             }
         }
+        if(!init)
+            set_position(low_key, true, up_key, true);
         auto it = conds_.begin();
         while (it != conds_.end()) {
             if(it->is_rhs_val && it->op != CompOp::OP_NE && erase_cond.count(it->lhs_col.col_name))

@@ -80,7 +80,6 @@ public:
         offset += sizeof(page_id_t);
         col_num_ = *reinterpret_cast<const int*>(src + offset);
         offset += sizeof(int);
-        std::cout << col_num_ << "\n";
         col_types_.reserve(col_num_);
         for (int i = 0; i < col_num_; ++i)
         {

@@ -111,11 +111,6 @@ struct TabMeta {
     std::vector<IndexMeta> indexes;     // 表上建立的索引
     std::unordered_map<std::string, size_t> cols_map;
 
-    TabMeta(){}
-
-    TabMeta(const TabMeta &other) : name(other.name), cols(other.cols), 
-        cols_map(other.cols_map) {}
-
     /* 判断当前表中是否存在名为col_name的字段 */
     bool is_col(const std::string &col_name) const {
         return cols_map.count(col_name);
@@ -171,11 +166,11 @@ struct TabMeta {
 
     /* 根据字段名称获取字段元数据 */
     std::vector<ColMeta>::iterator get_col(const std::string &col_name) {
-        auto pos = std::find_if(cols.begin(), cols.end(), [&](const ColMeta &col) { return col.name == col_name; });
-        if (pos == cols.end()) {
+        auto iter = cols_map.find(col_name);
+        if (iter == cols_map.end()) {
             throw ColumnNotFoundError(col_name);
         }
-        return pos;
+        return cols.begin() + iter->second;
     }
 
     friend std::ostream &operator<<(std::ostream &os, const TabMeta &tab) {
@@ -199,6 +194,7 @@ struct TabMeta {
             ColMeta col;
             is >> col;
             tab.cols.emplace_back(std::move(col));
+            tab.cols_map.emplace(tab.cols.back().name, tab.cols.size() - 1);
         }
         is >> n;
         tab.indexes.reserve(n);
@@ -256,7 +252,7 @@ class DbMeta {
         for (size_t i = 0; i < n; i++) {
             TabMeta tab;
             is >> tab;
-            db_meta.tabs_.emplace(tab.name, tab);
+            db_meta.tabs_.emplace(tab.name, std::move(tab));
         }
         return is;
     }

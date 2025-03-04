@@ -56,6 +56,11 @@ private:
             val.export_val(rec.data + col.offset, col.len);
         }
 
+        // Insert into record file
+        rid_ = fh_->insert_record(rec.data);
+        context_->txn_->append_write_record(WriteRecord(WType::INSERT_TUPLE, 
+            tab_name_, rid_, rec));
+
         // Insert into index
         for (auto &index : tab_.indexes)
         {
@@ -67,13 +72,9 @@ private:
                 offset += index.cols[i].len;
             }
             ih->insert_entry(key, rid_, context_->txn_);
+            std::cout << std::string(key, offset) << std::endl;
             delete[] key;
         }
-
-        // Insert into record file
-        rid_ = fh_->insert_record(rec.data);
-        context_->txn_->append_write_record(WriteRecord(WType::INSERT_TUPLE, 
-            tab_name_, rid_, rec));
 
         return nullptr;
     }

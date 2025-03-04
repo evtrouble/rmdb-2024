@@ -114,8 +114,8 @@ void SmManager::open_db(const std::string& db_name) {
         fhs_.emplace(tab_name, rm_manager_->open_file(tab_name));
         for (auto &index : tab_meta.indexes)
         {
-            ihs_.emplace(ix_manager_->get_index_name(tab_name, index.cols), 
-                ix_manager_->open_index(tab_name, index.cols));
+            ihs_.emplace(ix_manager_->get_index_name(tab_name, index.cols),
+                         ix_manager_->open_index(tab_name, index.cols));
         }
     }
 }
@@ -295,14 +295,12 @@ void SmManager::create_index(const std::string& tab_name, const std::vector<std:
     auto ih = ix_manager_->open_index(tab_name, cols);
 
     auto fh_ = fhs_.at(tab_name).get();
-    int idx = -1;
 
     // 向索引中插入表中已有数据
+    auto insert_data = std::make_unique<char[]>(tot_col_len).get();
     for (RmScan rmScan(fh_); !rmScan.is_end(); rmScan.next())
     {
         auto rec = fh_->get_record(rmScan.rid());
-        auto insert_data = std::make_unique<char[]>(tot_col_len + sizeof(idx)).get();
-        std::memcpy(insert_data + tot_col_len, &idx, sizeof(idx));
         int offset = 0;
         for (auto &col : cols)
         {

@@ -19,14 +19,13 @@ See the Mulan PSL v2 for more details. */
  * @note 返回key index（同时也是rid index），作为slot no
  */
 int IxNodeHandle::lower_bound(const char *target) const {
-    // Todo:
     // 查找当前节点中第一个大于等于target的key，并返回key的位置给上层
     // 提示: 可以采用多种查找方式，如顺序遍历、二分查找等；使用ix_compare()函数进行比较
     int left = 0, right = page_hdr->num_key;
     while (left < right)
     {
         int mid = (right + left) >> 1;
-        if (ix_compare(target, get_key(mid), file_hdr->col_types_, file_hdr->col_lens_) >= 0)
+        if (ix_compare(get_key(mid), target, file_hdr->col_types_, file_hdr->col_lens_) >= 0)
             right = mid;
         else
             left = mid + 1;
@@ -47,7 +46,7 @@ int IxNodeHandle::upper_bound(const char *target) const {
     while (left < right)
     {
         int mid = (right + left) >> 1;
-        if (ix_compare(target, get_key(mid), file_hdr->col_types_, file_hdr->col_lens_) > 0)
+        if (ix_compare(get_key(mid), target, file_hdr->col_types_, file_hdr->col_lens_) > 0)
             right = mid;
         else
             left = mid + 1;
@@ -84,7 +83,7 @@ page_id_t IxNodeHandle::internal_lookup(const char *key) {
     // 1. 查找当前非叶子节点中目标key所在孩子节点（子树）的位置
     // 2. 获取该孩子节点（子树）所在页面的编号
     // 3. 返回页面编号
-    return get_rid(upper_bound(key) - 1)->page_no;
+    return value_at(upper_bound(key) - 1);
 }
 
 /**
@@ -106,6 +105,7 @@ void IxNodeHandle::insert_pairs(int pos, const char *key, const Rid *rid, int n)
     if (pos < 0 || pos > page_hdr->num_key)
         return;
 
+    std::cout << "AAA"<<pos << "\n";
     // 2. 通过key获取n个连续键值对的key值，并把n个key值插入到pos位置
     int num = page_hdr->num_key - pos;
 
@@ -613,6 +613,7 @@ bool IxIndexHandle::coalesce(IxNodeHandle &neighbor_node, IxNodeHandle &node, Ix
 Rid IxIndexHandle::get_rid(const Iid &iid) const {
     IxNodeHandle node = fetch_node(iid.page_no);
     if (iid.slot_no >= node.get_size()) {
+        buffer_pool_manager_->unpin_page(node.get_page_id(), false);  // unpin it!
         throw IndexEntryNotFoundError();
     }
     buffer_pool_manager_->unpin_page(node.get_page_id(), false);  // unpin it!

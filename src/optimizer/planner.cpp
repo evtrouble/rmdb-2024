@@ -56,9 +56,12 @@ IndexMeta* Planner::get_index_cols(const std::string &tab_name, const std::vecto
         {
             // 如果当前索引列在条件列集合中
             auto iter = conds_cols_.find(col.name);
-            if (iter == conds_cols_.end() || iter->second)
+            if (iter == conds_cols_.end())
                 break;
-            match_col_num++;        
+            else if(iter->second) {
+                match_col_num++;
+                break;
+            }
         }
         // 如果匹配列数大于最大匹配列数
         if (match_col_num > max_match_col_count)
