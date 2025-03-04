@@ -240,7 +240,7 @@ void DiskManager::write_log(char *log_data, int size) {
 
     // write from the file_end
     lseek(log_fd_, 0, SEEK_END);
-    ssize_t bytes_write = write(log_fd_, log_data, size);
+    ssize_t bytes_write = ::write(log_fd_, log_data, size);
     if (bytes_write != size) {
         throw UnixError();
     }

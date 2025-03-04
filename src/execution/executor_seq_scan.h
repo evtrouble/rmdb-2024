@@ -92,10 +92,9 @@ public:
             throw std::runtime_error("File handle for table " + tab_name_ + " not found");
         }
 
-        TabMeta &tab = sm_manager_->db_.get_table(tab_name_);
+        tab_ = sm_manager_->db_.get_table(tab_name_);
         fh_ = fh_iter->second.get();
-        len_ = tab.cols.back().offset + tab.cols.back().len;
-        tab_ = tab;
+        len_ = tab_.cols.back().offset + tab_.cols.back().len;
 
         std::vector<Condition> gap_conds_; // 用于加间隙锁的条件
         for(auto &cond : conds_){

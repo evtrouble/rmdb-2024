@@ -72,6 +72,11 @@ void QlManager::run_mutli_query(std::shared_ptr<Plan> plan, Context *context)
             sm_manager_->drop_index(x->tab_name_, x->tab_col_names_, context);
             break;
         }
+        case T_ShowIndex:
+        {
+            sm_manager_->show_index(x->tab_name_, context);
+            break;
+        }
         default:
             throw InternalError("Unexpected field type");
             break;
@@ -88,7 +93,7 @@ void QlManager::run_cmd_utility(std::shared_ptr<Plan> plan, txn_id_t *txn_id, Co
         {
         case T_Help:
         {
-            int help_len = sizeof(help_info) - 1;
+            int help_len = strlen(help_info);
             if (help_len + 1 > MAX_BUFFER_SIZE - *(context->offset_))
             { // 检查缓冲区大小
                 throw InternalError("Buffer overflow when sending help info");
@@ -226,13 +231,13 @@ void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, 
         num_rec++;
         // 缓冲区满时写入
         if (buffer.size() >= 8096) {
-            discard = write(fd, buffer.data(), buffer.size());
+            discard = ::write(fd, buffer.data(), buffer.size());
             buffer.clear();
         }
     }
     // 写入剩余数据
     if (!buffer.empty()) {
-        discard = write(fd, buffer.data(), buffer.size());
+        discard = ::write(fd, buffer.data(), buffer.size());
     }
     close(fd);
     // Print footer into buffer

@@ -369,3 +369,47 @@ void SmManager::drop_index(const std::string& tab_name, const std::vector<ColMet
 
     flush_meta();
 }
+
+/**
+ * @description: 显示表的所有索引
+ * @param {string&} tab_name 表名称
+ * @param {Context*} context
+ * @return {*}
+ */
+void SmManager::show_index(const std::string &tab_name, Context *context)
+{
+    TabMeta &tab = db_.get_table(tab_name);
+    int fd = open("output.txt", O_WRONLY | O_CREAT | O_APPEND, 0644);
+    if (fd == -1) return;
+    
+    // 64KB缓冲区
+    std::string buffer;
+    buffer.reserve(8096);
+    [[maybe_unused]] ssize_t discard;
+
+    RecordPrinter printer(1);
+    printer.print_separator(context);
+    printer.print_record({"index"}, context);
+    printer.print_separator(context);
+    for (auto &index : tab.indexes) {
+        buffer.append("| ").append(tab_name).append(" | unique | (")
+            .append(index.cols[0].name);
+        for (size_t i = 1; i < index.cols.size(); ++i)
+        {
+            buffer.append(",").append(index.cols[i].name);
+        }
+        buffer.append(") |\n");
+        // 缓冲区满时写入
+        if (buffer.size() >= 8096) {
+            discard = ::write(fd, buffer.data(), buffer.size());
+            buffer.clear();
+        }
+        printer.print_record({ix_manager_->get_index_name(tab_name, index.cols)}, context);
+    }
+    printer.print_separator(context);
+    // 写入剩余数据
+    if (!buffer.empty()) {
+        discard = ::write(fd, buffer.data(), buffer.size());
+    }
+    ::close(fd);
+}

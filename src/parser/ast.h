@@ -73,7 +73,7 @@ struct ColDef : public Field {
     std::string col_name;
     std::shared_ptr<TypeLen> type_len;
 
-    ColDef(std::string col_name_, std::shared_ptr<TypeLen> type_len_) :
+    ColDef(const std::string &col_name_, std::shared_ptr<TypeLen> type_len_) :
             col_name(std::move(col_name_)), type_len(std::move(type_len_)) {}
 };
 
@@ -81,27 +81,27 @@ struct CreateTable : public TreeNode {
     std::string tab_name;
     std::vector<std::shared_ptr<Field>> fields;
 
-    CreateTable(std::string tab_name_, std::vector<std::shared_ptr<Field>> fields_) :
+    CreateTable(const std::string &tab_name_, const std::vector<std::shared_ptr<Field>> &fields_) :
             tab_name(std::move(tab_name_)), fields(std::move(fields_)) {}
 };
 
 struct DropTable : public TreeNode {
     std::string tab_name;
 
-    DropTable(std::string tab_name_) : tab_name(std::move(tab_name_)) {}
+    DropTable(const std::string &tab_name_) : tab_name(std::move(tab_name_)) {}
 };
 
 struct DescTable : public TreeNode {
     std::string tab_name;
 
-    DescTable(std::string tab_name_) : tab_name(std::move(tab_name_)) {}
+    DescTable(const std::string &tab_name_) : tab_name(std::move(tab_name_)) {}
 };
 
 struct CreateIndex : public TreeNode {
     std::string tab_name;
     std::vector<std::string> col_names;
 
-    CreateIndex(std::string tab_name_, std::vector<std::string> col_names_) :
+    CreateIndex(const std::string &tab_name_, const std::vector<std::string> &col_names_) :
             tab_name(std::move(tab_name_)), col_names(std::move(col_names_)) {}
 };
 
@@ -109,8 +109,14 @@ struct DropIndex : public TreeNode {
     std::string tab_name;
     std::vector<std::string> col_names;
 
-    DropIndex(std::string tab_name_, std::vector<std::string> col_names_) :
+    DropIndex(const std::string &tab_name_, const std::vector<std::string> &col_names_) :
             tab_name(std::move(tab_name_)), col_names(std::move(col_names_)) {}
+};
+
+struct ShowIndex : public TreeNode{
+    std::string tab_name;
+
+    ShowIndex(const std::string &tab_name_): tab_name(std::move(tab_name_)){};
 };
 
 struct Expr : public TreeNode {
@@ -134,7 +140,7 @@ struct FloatLit : public Value {
 struct StringLit : public Value {
     std::string val;
 
-    StringLit(std::string val_) : val(std::move(val_)) {}
+    StringLit(const std::string &val_) : val(std::move(val_)) {}
 };
 
 struct BoolLit : public Value {
@@ -147,7 +153,7 @@ struct Col : public Expr {
     std::string tab_name;
     std::string col_name;
 
-    Col(std::string tab_name_, std::string col_name_) :
+    Col(const std::string &tab_name_, const std::string &col_name_) :
             tab_name(std::move(tab_name_)), col_name(std::move(col_name_)) {}
 };
 
@@ -155,7 +161,7 @@ struct SetClause : public TreeNode {
     std::string col_name;
     std::shared_ptr<Value> val;
 
-    SetClause(std::string col_name_, std::shared_ptr<Value> val_) :
+    SetClause(const std::string &col_name_, std::shared_ptr<Value> val_) :
             col_name(std::move(col_name_)), val(std::move(val_)) {}
 };
 
@@ -172,7 +178,7 @@ struct OrderBy : public TreeNode
 {
     std::shared_ptr<Col> cols;
     OrderByDir orderby_dir;
-    OrderBy( std::shared_ptr<Col> cols_, OrderByDir orderby_dir_) :
+    OrderBy(std::shared_ptr<Col> cols_, OrderByDir orderby_dir_) :
        cols(std::move(cols_)), orderby_dir(std::move(orderby_dir_)) {}
 };
 
@@ -180,7 +186,7 @@ struct InsertStmt : public TreeNode {
     std::string tab_name;
     std::vector<std::shared_ptr<Value>> vals;
 
-    InsertStmt(std::string tab_name_, std::vector<std::shared_ptr<Value>> vals_) :
+    InsertStmt(const std::string &tab_name_, const std::vector<std::shared_ptr<Value>> &vals_) :
             tab_name(std::move(tab_name_)), vals(std::move(vals_)) {}
 };
 
@@ -188,7 +194,7 @@ struct DeleteStmt : public TreeNode {
     std::string tab_name;
     std::vector<std::shared_ptr<BinaryExpr>> conds;
 
-    DeleteStmt(std::string tab_name_, std::vector<std::shared_ptr<BinaryExpr>> conds_) :
+    DeleteStmt(const std::string &tab_name_, const std::vector<std::shared_ptr<BinaryExpr>> &conds_) :
             tab_name(std::move(tab_name_)), conds(std::move(conds_)) {}
 };
 
@@ -197,9 +203,9 @@ struct UpdateStmt : public TreeNode {
     std::vector<std::shared_ptr<SetClause>> set_clauses;
     std::vector<std::shared_ptr<BinaryExpr>> conds;
 
-    UpdateStmt(std::string tab_name_,
-               std::vector<std::shared_ptr<SetClause>> set_clauses_,
-               std::vector<std::shared_ptr<BinaryExpr>> conds_) :
+    UpdateStmt(const std::string &tab_name_,
+               const std::vector<std::shared_ptr<SetClause>> &set_clauses_,
+               const std::vector<std::shared_ptr<BinaryExpr>> &conds_) :
             tab_name(std::move(tab_name_)), set_clauses(std::move(set_clauses_)), conds(std::move(conds_)) {}
 };
 
@@ -209,8 +215,8 @@ struct JoinExpr : public TreeNode {
     std::vector<std::shared_ptr<BinaryExpr>> conds;
     JoinType type;
 
-    JoinExpr(std::string left_, std::string right_,
-               std::vector<std::shared_ptr<BinaryExpr>> conds_, JoinType type_) :
+    JoinExpr(const std::string &left_, const std::string &right_,
+               const std::vector<std::shared_ptr<BinaryExpr>> &conds_, JoinType type_) :
             left(std::move(left_)), right(std::move(right_)), conds(std::move(conds_)), type(type_) {}
 };
 
@@ -225,9 +231,9 @@ struct SelectStmt : public TreeNode {
     std::shared_ptr<OrderBy> order;
 
 
-    SelectStmt(std::vector<std::shared_ptr<Col>> cols_,
-               std::vector<std::string> tabs_,
-               std::vector<std::shared_ptr<BinaryExpr>> conds_,
+    SelectStmt(const std::vector<std::shared_ptr<Col>> &cols_,
+               const std::vector<std::string> &tabs_,
+               const std::vector<std::shared_ptr<BinaryExpr>> &conds_,
                std::shared_ptr<OrderBy> order_) :
             cols(std::move(cols_)), tabs(std::move(tabs_)), conds(std::move(conds_)), 
             order(std::move(order_)) {
