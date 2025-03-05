@@ -17,14 +17,20 @@ See the Mulan PSL v2 for more details. */
 #include <vector>
 #include "defs.h"
 #include "record/rm_defs.h"
+#include "../parser/ast.h"
 
 struct TabCol
 {
     std::string tab_name;
     std::string col_name;
+    ast::AggFuncType aggFuncType;
+    std::string alias;
+
+
     TabCol() = default;
-    TabCol(const std::string &tab_name, const std::string &col_name)
-        : tab_name(std::move(tab_name)), col_name(std::move(col_name)){}
+    TabCol(const std::string &tab_name, const std::string &col_name,
+     ast::AggFuncType agg_type = ast::AggFuncType::NO_TYPE, const std::string &alias = "")
+        : tab_name(std::move(tab_name)), col_name(std::move(col_name)), aggFuncType(agg_type), alias(std::move(alias)){}
 
     friend bool operator<(const TabCol &x, const TabCol &y)
     {

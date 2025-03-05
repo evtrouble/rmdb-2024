@@ -9,6 +9,7 @@ MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 See the Mulan PSL v2 for more details. */
 
 #include "analyze.h"
+#include "../parser/ast.h"
 
 /**
  * @description: 分析器，进行语义分析和查询重写，需要检查不符合语义规定的部分
@@ -35,7 +36,11 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
         query->cols.reserve(x->cols.size());
         for (auto &sv_sel_col : x->cols)
         {
-            query->cols.emplace_back(TabCol(sv_sel_col->tab_name, sv_sel_col->col_name));
+            query->cols.emplace_back(TabCol(sv_sel_col->tab_name, sv_sel_col->col_name, sv_sel_col->agg_type, sv_sel_col->alias));
+            if(ast::AggFuncType::NO_TYPE !=sv_sel_col->agg_type)
+            {
+                x->has_agg = true;
+            }
         }
 
         std::vector<ColMeta> all_cols;
@@ -54,7 +59,8 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
             // infer table name from column name
             for (auto &sel_col : query->cols)
             {
-                sel_col = check_column(all_cols, sel_col); // 列元数据校验
+                if (sel_col.col_name != "*")// 避免count(*)检查
+                    sel_col = check_column(all_cols, sel_col); // 列元数据校验
             }
         }
         // 处理where条件
@@ -163,20 +169,28 @@ TabCol Analyze::check_column(const std::vector<ColMeta> &all_cols, TabCol target
     else
     {
         /** TODO: Make sure target column exists */
-        bool found = false;
-        for (auto &col : all_cols)
+        auto it = std::find_if(all_cols.begin(), all_cols.end(), [&](const ColMeta &col) {
+            return col.tab_name == target.tab_name && col.name == target.col_name;
+        });
+
+        if (it == all_cols.end())
         {
-            if (col.tab_name == target.tab_name && col.name == target.col_name)
-            {
-                found = true;
-                break;
-            }
-        }
-        if (!found)
-        {
+            // 列元数据未找到，抛出列未找到错误
             throw ColumnNotFoundError(target.col_name);
         }
+
+        // 校验聚合列类型
+        if (target.aggFuncType != ast::AggFuncType::NO_TYPE && target.aggFuncType != ast::AggFuncType::COUNT)
+        {
+            if (it->type != ColType::TYPE_INT && it->type != ColType::TYPE_FLOAT)
+            {
+                throw InternalError("Unexpected sv value type");
+            }
+        }
+
     }
+
+
     return target;
 }
 

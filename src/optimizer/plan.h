@@ -42,6 +42,7 @@ typedef enum PlanTag{
     T_NestLoop,
     T_SortMerge,    // sort merge join
     T_Sort,
+    T_Agg,
     T_Projection
 } PlanTag;
 
@@ -165,6 +166,18 @@ class SetKnobPlan : public Plan
             : Plan(T_SetKnob), set_knob_type_(knob_type), bool_value_(bool_value){}
     ast::SetKnobType set_knob_type_;
     bool bool_value_;
+};
+
+class AggPlan : public Plan
+{
+public:
+    std::shared_ptr<Plan> subplan_;
+    std::vector<TabCol> sel_cols_;
+
+    AggPlan(PlanTag tag, std::shared_ptr<Plan> subplan,  std::vector<TabCol> sel_cols_) : 
+    Plan(tag),  subplan_(std::move(subplan)), sel_cols_(std::move(sel_cols_)) {}
+
+    ~AggPlan() override = default;
 };
 
 class plannerInfo{

@@ -166,7 +166,13 @@ void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, 
     std::vector<std::string> captions;
     captions.reserve(sel_cols.size());
     for (auto &sel_col : sel_cols) {
-        captions.emplace_back(std::move(sel_col.col_name));
+        if (sel_col.alias.empty()){
+            captions.emplace_back(std::move(sel_col.col_name));
+        }
+        else{
+            captions.emplace_back(sel_col.alias);
+        }
+
     }
 
     // Print header into buffer

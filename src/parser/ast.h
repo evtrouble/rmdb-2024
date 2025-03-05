@@ -36,6 +36,14 @@ enum SetKnobType {
     EnableNestLoop, EnableSortMerge
 };
 
+enum AggFuncType {
+    NO_TYPE,
+    SUM,
+    COUNT,
+    MAX,
+    MIN
+};
+
 // Base class for tree nodes
 struct TreeNode {
     virtual ~TreeNode() = default;  // enable polymorphism
@@ -146,10 +154,16 @@ struct BoolLit : public Value {
 struct Col : public Expr {
     std::string tab_name;
     std::string col_name;
+    AggFuncType agg_type = NO_TYPE;
+    std::string alias = "";
 
     Col(std::string tab_name_, std::string col_name_) :
             tab_name(std::move(tab_name_)), col_name(std::move(col_name_)) {}
+
+    Col(std::string tab_name_, std::string col_name_, AggFuncType agg_type, std::string alias_ = "") :
+        tab_name(std::move(tab_name_)), col_name(std::move(col_name_)), agg_type(agg_type), alias(std::move(alias_)) {}
 };
+
 
 struct SetClause : public TreeNode {
     std::string col_name;
@@ -220,7 +234,7 @@ struct SelectStmt : public TreeNode {
     std::vector<std::shared_ptr<BinaryExpr>> conds;
     std::vector<std::shared_ptr<JoinExpr>> jointree;
 
-    
+    bool has_agg = false;
     bool has_sort;
     std::shared_ptr<OrderBy> order;
 
