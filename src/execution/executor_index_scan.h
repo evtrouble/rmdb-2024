@@ -123,13 +123,6 @@ class IndexScanExecutor : public AbstractExecutor {
 #endif
     }
 
-    ~IndexScanExecutor() {
-        if(effective) {
-            index_handle_->unlock_shared(lower_position_.page_no);
-            index_handle_->unlock_shared(upper_position_.page_no);
-        }
-    }
-
     void beginTuple() override {
         if(!effective) {
             rid_.page_no = RM_NO_PAGE; // 设置 rid_ 以指示结束

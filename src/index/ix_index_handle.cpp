@@ -292,8 +292,7 @@ bool IxIndexHandle::get_value(const char *key, std::vector<Rid> *result, Transac
     // 2. 在叶子节点中查找目标key值的位置，并读取key对应的rid
     Rid *rid = nullptr;
     bool exist = leaf.leaf_lookup(key, &rid);
-    leaf.page->latch_.unlock_shared();
-    buffer_pool_manager_->unpin_page(leaf.get_page_id(), false);
+    unlock_shared(leaf);
 
     // 3. 把rid存入result参数中
     // 提示：使用完buffer_pool提供的page之后，记得unpin page；记得处理并发的上锁
@@ -630,11 +629,15 @@ Rid IxIndexHandle::get_rid(const Iid &iid) const {
 Iid IxIndexHandle::lower_bound(const char *key) {
     root_lacth_.lock_shared();
     auto node = find_leaf_page(key, Operation::FIND, nullptr);
+    Iid ret;
 
     int key_idx = node.lower_bound(key);
-    if (key_idx == node.page_hdr->num_key && node.get_next_leaf() != IX_LEAF_HEADER_PAGE)
-        return Iid{.page_no = node.get_next_leaf(), .slot_no = 0};
-    return Iid{.page_no = node.get_page_no(), .slot_no = key_idx};
+    if (key_idx >= node.page_hdr->num_key && node.get_next_leaf() != IX_LEAF_HEADER_PAGE) {
+        ret = Iid{.page_no = node.get_next_leaf(), .slot_no = 0};
+    } else 
+        ret = Iid{.page_no = node.get_page_no(), .slot_no = key_idx};
+    unlock_shared(node);
+    return ret;
 }
 
 /**
@@ -647,11 +650,15 @@ Iid IxIndexHandle::lower_bound(const char *key) {
 Iid IxIndexHandle::upper_bound(const char *key) {
     root_lacth_.lock_shared();
     auto node = find_leaf_page(key, Operation::FIND, nullptr);
+    Iid ret;
 
     int key_idx = node.upper_bound(key);
-    if (key_idx >= node.page_hdr->num_key && node.get_next_leaf() != IX_LEAF_HEADER_PAGE)
-        return Iid{.page_no = node.get_next_leaf(), .slot_no = 0};
-    return Iid{.page_no = node.get_page_no(), .slot_no = key_idx};
+    if (key_idx >= node.page_hdr->num_key && node.get_next_leaf() != IX_LEAF_HEADER_PAGE) {
+        ret = Iid{.page_no = node.get_next_leaf(), .slot_no = 0};
+    } else 
+        ret = Iid{.page_no = node.get_page_no(), .slot_no = key_idx};
+    unlock_shared(node);
+    return ret;
 }
 
 /**
@@ -682,7 +689,9 @@ Iid IxIndexHandle::leaf_end() {
         next_page_id = node.get_rid(node.get_size() - 1)->page_no;
         prev_page = node.page;
     }
-    return Iid{.page_no = node.get_page_no(), .slot_no = node.get_size()};
+    Iid ret{.page_no = node.get_page_no(), .slot_no = node.get_size()};
+    unlock_shared(node);
+    return ret;
 }
 
 /**
@@ -713,7 +722,9 @@ Iid IxIndexHandle::leaf_begin() {
         next_page_id = node.get_rid(0)->page_no;
         prev_page = node.page;
     }
-    return Iid{.page_no = node.get_page_no(), .slot_no = 0};
+    Iid ret{.page_no = node.get_page_no(), .slot_no = 0};
+    unlock_shared(node);
+    return ret;
 }
 
 /**
@@ -788,9 +799,12 @@ void IxIndexHandle::release_all_xlock(std::shared_ptr<std::deque<Page*>> page_se
     }
 }
 
-void IxIndexHandle::unlock_shared(int page_no)
+void IxIndexHandle::lock_shared(IxNodeHandle &node) {
+    node.page->latch_.lock_shared();
+}
+
+void IxIndexHandle::unlock_shared(IxNodeHandle &node)
 {
-    auto node = fetch_node(page_no);
     node.page->latch_.unlock_shared();
     buffer_pool_manager_->unpin_page(node.get_page_id(), false);
 }

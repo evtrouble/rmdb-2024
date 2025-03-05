@@ -120,7 +120,7 @@ struct Value
             case TYPE_FLOAT:
                 return float_val < other.float_val;
             case TYPE_STRING:
-            return str_val < other.str_val;
+                return str_val < other.str_val;
         }
         return false;
     }
@@ -134,7 +134,7 @@ struct Value
             case TYPE_FLOAT:
                 return float_val == other.float_val;
             case TYPE_STRING:
-            return str_val == other.str_val;
+                return str_val == other.str_val;
         }
         return false;
     }
@@ -144,10 +144,13 @@ struct Value
         {
             case TYPE_INT:
                 int_val = std::numeric_limits<int>::max();
+                break;
             case TYPE_FLOAT:
                 float_val = std::numeric_limits<float>::max();
+                break;
             case TYPE_STRING:
                 str_val.append(len, 255);
+                break;
         }
     }
     void set_min(ColType type, int len) {
@@ -156,10 +159,13 @@ struct Value
         {
             case TYPE_INT:
                 int_val = std::numeric_limits<int>::min();
+                break;
             case TYPE_FLOAT:
                 float_val = std::numeric_limits<float>::min();
+                break;
             case TYPE_STRING:
                 str_val.append(len, 0);
+                break;
         }
     }
 };

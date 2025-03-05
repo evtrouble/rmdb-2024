@@ -203,7 +203,8 @@ public:
 
     Iid leaf_begin();
 
-    void unlock_shared(int page_no);
+    void lock_shared(IxNodeHandle &page_no);
+    void unlock_shared(IxNodeHandle &page_no);
 
 private:
     // 辅助函数

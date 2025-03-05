@@ -50,7 +50,6 @@ class GapLock
                 lower_is_closed_ = lower_is_closed_ && other.lower_is_closed_;
             }
             lower_ = std::max(lower_, other.lower_);
-
             // 计算交集上界及闭合性
             if (upper_ < other.upper_) {
             } else if (other.upper_ < upper_) {
@@ -108,35 +107,37 @@ class GapLock
                 {
                     case CompOp::OP_EQ:
                         interval.lower_ = interval.upper_ = cond.rhs_val;
-                        interval.init = interval.lower_is_closed_ = interval.upper_is_closed_ = true;
+                        interval.lower_is_closed_ = interval.upper_is_closed_ = true;
                         break;
                     case CompOp::OP_GE:
                         interval.lower_ = cond.rhs_val;
                         interval.upper_.set_max(col.type, col.len);
-                        interval.init = interval.lower_is_closed_ = interval.upper_is_closed_ = true;
+                        interval.lower_is_closed_ = interval.upper_is_closed_ = true;
                         break;
                     case CompOp::OP_GT:
                         interval.lower_ = cond.rhs_val;
                         interval.upper_.set_max(col.type, col.len);
-                        interval.init = interval.upper_is_closed_ = true;
+                        interval.upper_is_closed_ = true;
                         interval.lower_is_closed_ = false;
                         break;
                     case CompOp::OP_LE:
                         interval.upper_ = cond.rhs_val;
                         interval.lower_.set_min(col.type, col.len);
-                        interval.init = interval.lower_is_closed_ = interval.upper_is_closed_ = true;
+                        interval.lower_is_closed_ = interval.upper_is_closed_ = true;
                         break;
                     case CompOp::OP_LT:
                         interval.upper_ = cond.rhs_val;
                         interval.lower_.set_min(col.type, col.len);
-                        interval.init = interval.lower_is_closed_ = true;
+                        interval.lower_is_closed_ = true;
                         interval.upper_is_closed_ = false;
                         break;
                     default:
                         break;
                     }
-                if(!pos.init) 
+                if(!pos.init) {
                     pos = std::move(interval);
+                    pos.init = true;
+                }
                 else if(!pos.intersect(interval)){
                     return false;
                 }
