@@ -48,13 +48,9 @@ struct RmRecord
         memcpy(this->data, data, size);
     }
 
-<<<<<<< HEAD
-    RmRecord(const RmRecord& other) : size(other.size), allocated_(true) {
-=======
     RmRecord(const RmRecord &other)
     {
         size = other.size;
->>>>>>> lzr
         data = new char[size];
         memcpy(data, other.data, size);
     };
@@ -68,11 +64,6 @@ struct RmRecord
         return *this;
     };
 
-<<<<<<< HEAD
-    RmRecord(int size_) : data(new char[size_]), size(size_), allocated_(true) {}
-
-    RmRecord(int size_, char* data_) : data(new char[size_]), size(size_), allocated_(true) {
-=======
     RmRecord(int size_)
     {
         size = size_;
@@ -84,7 +75,6 @@ struct RmRecord
     {
         size = size_;
         data = new char[size_];
->>>>>>> lzr
         memcpy(data, data_, size_);
     }
 
