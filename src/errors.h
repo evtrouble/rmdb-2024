@@ -164,3 +164,9 @@ class PageNotExistError : public RMDBError {
     PageNotExistError(const std::string &table_name, int page_no)
         : RMDBError("Page " + std::to_string(page_no) + " in table " + table_name + "not exits") {}
 };
+
+class InvalidAggTypeError : public RMDBError
+{
+public:
+    InvalidAggTypeError(const std::string &col, const std::string &agg_type) : RMDBError(col + "Cannot use this type of aggregation function" + agg_type) {}
+};

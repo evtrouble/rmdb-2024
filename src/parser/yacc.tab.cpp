@@ -67,7 +67,7 @@
 
 
 /* First part of user prologue.  */
-#line 1 "/home/gyl/cpp/rmdb/src/parser/yacc.y"
+#line 1 "/home/xu/rmdb/rmdb-2024/src/parser/yacc.y"
 
 #include "ast.h"
 #include "yacc.tab.h"
@@ -155,55 +155,62 @@ enum yysymbol_kind_t
   YYSYMBOL_ORDER_BY = 33,                  /* ORDER_BY  */
   YYSYMBOL_ENABLE_NESTLOOP = 34,           /* ENABLE_NESTLOOP  */
   YYSYMBOL_ENABLE_SORTMERGE = 35,          /* ENABLE_SORTMERGE  */
-  YYSYMBOL_LEQ = 36,                       /* LEQ  */
-  YYSYMBOL_NEQ = 37,                       /* NEQ  */
-  YYSYMBOL_GEQ = 38,                       /* GEQ  */
-  YYSYMBOL_T_EOF = 39,                     /* T_EOF  */
-  YYSYMBOL_IDENTIFIER = 40,                /* IDENTIFIER  */
-  YYSYMBOL_VALUE_STRING = 41,              /* VALUE_STRING  */
-  YYSYMBOL_VALUE_INT = 42,                 /* VALUE_INT  */
-  YYSYMBOL_VALUE_FLOAT = 43,               /* VALUE_FLOAT  */
-  YYSYMBOL_VALUE_BOOL = 44,                /* VALUE_BOOL  */
-  YYSYMBOL_45_ = 45,                       /* ';'  */
-  YYSYMBOL_46_ = 46,                       /* '='  */
-  YYSYMBOL_47_ = 47,                       /* '('  */
-  YYSYMBOL_48_ = 48,                       /* ')'  */
-  YYSYMBOL_49_ = 49,                       /* ','  */
-  YYSYMBOL_50_ = 50,                       /* '.'  */
-  YYSYMBOL_51_ = 51,                       /* '<'  */
-  YYSYMBOL_52_ = 52,                       /* '>'  */
-  YYSYMBOL_53_ = 53,                       /* '*'  */
-  YYSYMBOL_YYACCEPT = 54,                  /* $accept  */
-  YYSYMBOL_start = 55,                     /* start  */
-  YYSYMBOL_stmt = 56,                      /* stmt  */
-  YYSYMBOL_txnStmt = 57,                   /* txnStmt  */
-  YYSYMBOL_dbStmt = 58,                    /* dbStmt  */
-  YYSYMBOL_setStmt = 59,                   /* setStmt  */
-  YYSYMBOL_ddl = 60,                       /* ddl  */
-  YYSYMBOL_dml = 61,                       /* dml  */
-  YYSYMBOL_fieldList = 62,                 /* fieldList  */
-  YYSYMBOL_colNameList = 63,               /* colNameList  */
-  YYSYMBOL_field = 64,                     /* field  */
-  YYSYMBOL_type = 65,                      /* type  */
-  YYSYMBOL_valueList = 66,                 /* valueList  */
-  YYSYMBOL_value = 67,                     /* value  */
-  YYSYMBOL_condition = 68,                 /* condition  */
-  YYSYMBOL_optWhereClause = 69,            /* optWhereClause  */
-  YYSYMBOL_whereClause = 70,               /* whereClause  */
-  YYSYMBOL_col = 71,                       /* col  */
-  YYSYMBOL_colList = 72,                   /* colList  */
-  YYSYMBOL_op = 73,                        /* op  */
-  YYSYMBOL_expr = 74,                      /* expr  */
-  YYSYMBOL_setClauses = 75,                /* setClauses  */
-  YYSYMBOL_setClause = 76,                 /* setClause  */
-  YYSYMBOL_selector = 77,                  /* selector  */
-  YYSYMBOL_tableList = 78,                 /* tableList  */
-  YYSYMBOL_opt_order_clause = 79,          /* opt_order_clause  */
-  YYSYMBOL_order_clause = 80,              /* order_clause  */
-  YYSYMBOL_opt_asc_desc = 81,              /* opt_asc_desc  */
-  YYSYMBOL_set_knob_type = 82,             /* set_knob_type  */
-  YYSYMBOL_tbName = 83,                    /* tbName  */
-  YYSYMBOL_colName = 84                    /* colName  */
+  YYSYMBOL_SUM = 36,                       /* SUM  */
+  YYSYMBOL_COUNT = 37,                     /* COUNT  */
+  YYSYMBOL_MAX = 38,                       /* MAX  */
+  YYSYMBOL_MIN = 39,                       /* MIN  */
+  YYSYMBOL_AS = 40,                        /* AS  */
+  YYSYMBOL_LEQ = 41,                       /* LEQ  */
+  YYSYMBOL_NEQ = 42,                       /* NEQ  */
+  YYSYMBOL_GEQ = 43,                       /* GEQ  */
+  YYSYMBOL_T_EOF = 44,                     /* T_EOF  */
+  YYSYMBOL_IDENTIFIER = 45,                /* IDENTIFIER  */
+  YYSYMBOL_VALUE_STRING = 46,              /* VALUE_STRING  */
+  YYSYMBOL_VALUE_INT = 47,                 /* VALUE_INT  */
+  YYSYMBOL_VALUE_FLOAT = 48,               /* VALUE_FLOAT  */
+  YYSYMBOL_VALUE_BOOL = 49,                /* VALUE_BOOL  */
+  YYSYMBOL_50_ = 50,                       /* ';'  */
+  YYSYMBOL_51_ = 51,                       /* '='  */
+  YYSYMBOL_52_ = 52,                       /* '('  */
+  YYSYMBOL_53_ = 53,                       /* ')'  */
+  YYSYMBOL_54_ = 54,                       /* ','  */
+  YYSYMBOL_55_ = 55,                       /* '.'  */
+  YYSYMBOL_56_ = 56,                       /* '*'  */
+  YYSYMBOL_57_ = 57,                       /* '<'  */
+  YYSYMBOL_58_ = 58,                       /* '>'  */
+  YYSYMBOL_YYACCEPT = 59,                  /* $accept  */
+  YYSYMBOL_start = 60,                     /* start  */
+  YYSYMBOL_stmt = 61,                      /* stmt  */
+  YYSYMBOL_txnStmt = 62,                   /* txnStmt  */
+  YYSYMBOL_dbStmt = 63,                    /* dbStmt  */
+  YYSYMBOL_setStmt = 64,                   /* setStmt  */
+  YYSYMBOL_ddl = 65,                       /* ddl  */
+  YYSYMBOL_dml = 66,                       /* dml  */
+  YYSYMBOL_fieldList = 67,                 /* fieldList  */
+  YYSYMBOL_colNameList = 68,               /* colNameList  */
+  YYSYMBOL_field = 69,                     /* field  */
+  YYSYMBOL_type = 70,                      /* type  */
+  YYSYMBOL_valueList = 71,                 /* valueList  */
+  YYSYMBOL_value = 72,                     /* value  */
+  YYSYMBOL_condition = 73,                 /* condition  */
+  YYSYMBOL_optWhereClause = 74,            /* optWhereClause  */
+  YYSYMBOL_whereClause = 75,               /* whereClause  */
+  YYSYMBOL_col = 76,                       /* col  */
+  YYSYMBOL_aggCol = 77,                    /* aggCol  */
+  YYSYMBOL_colList = 78,                   /* colList  */
+  YYSYMBOL_op = 79,                        /* op  */
+  YYSYMBOL_expr = 80,                      /* expr  */
+  YYSYMBOL_setClauses = 81,                /* setClauses  */
+  YYSYMBOL_setClause = 82,                 /* setClause  */
+  YYSYMBOL_selector = 83,                  /* selector  */
+  YYSYMBOL_tableList = 84,                 /* tableList  */
+  YYSYMBOL_opt_order_clause = 85,          /* opt_order_clause  */
+  YYSYMBOL_order_clause = 86,              /* order_clause  */
+  YYSYMBOL_opt_asc_desc = 87,              /* opt_asc_desc  */
+  YYSYMBOL_set_knob_type = 88,             /* set_knob_type  */
+  YYSYMBOL_tbName = 89,                    /* tbName  */
+  YYSYMBOL_colName = 90,                   /* colName  */
+  YYSYMBOL_ALIAS = 91                      /* ALIAS  */
 };
 typedef enum yysymbol_kind_t yysymbol_kind_t;
 
@@ -537,16 +544,16 @@ union yyalloc
 #define YYLAST   120
 
 /* YYNTOKENS -- Number of terminals.  */
-#define YYNTOKENS  54
+#define YYNTOKENS  59
 /* YYNNTS -- Number of nonterminals.  */
-#define YYNNTS  31
+#define YYNNTS  33
 /* YYNRULES -- Number of rules.  */
 #define YYNRULES  75
 /* YYNSTATES -- Number of states.  */
 #define YYNSTATES  138
 
 /* YYMAXUTOK -- Last valid token kind.  */
-#define YYMAXUTOK   299
+#define YYMAXUTOK   304
 
 
 /* YYTRANSLATE(TOKEN-NUM) -- Symbol number corresponding to TOKEN-NUM
@@ -564,9 +571,9 @@ static const yytype_int8 yytranslate[] =
        2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
        2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
        2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
-      47,    48,    53,     2,    49,     2,    50,     2,     2,     2,
-       2,     2,     2,     2,     2,     2,     2,     2,     2,    45,
-      51,    46,    52,     2,     2,     2,     2,     2,     2,     2,
+      52,    53,    56,     2,    54,     2,    55,     2,     2,     2,
+       2,     2,     2,     2,     2,     2,     2,     2,     2,    50,
+      57,    51,    58,     2,     2,     2,     2,     2,     2,     2,
        2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
        2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
        2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
@@ -589,7 +596,8 @@ static const yytype_int8 yytranslate[] =
        5,     6,     7,     8,     9,    10,    11,    12,    13,    14,
       15,    16,    17,    18,    19,    20,    21,    22,    23,    24,
       25,    26,    27,    28,    29,    30,    31,    32,    33,    34,
-      35,    36,    37,    38,    39,    40,    41,    42,    43,    44
+      35,    36,    37,    38,    39,    40,    41,    42,    43,    44,
+      45,    46,    47,    48,    49
 };
 
 #if YYDEBUG
@@ -624,14 +632,15 @@ static const char *const yytname[] =
   "FROM", "ASC", "ORDER", "BY", "WHERE", "UPDATE", "SET", "SELECT", "INT",
   "CHAR", "FLOAT", "INDEX", "AND", "JOIN", "EXIT", "HELP", "TXN_BEGIN",
   "TXN_COMMIT", "TXN_ABORT", "TXN_ROLLBACK", "ORDER_BY", "ENABLE_NESTLOOP",
-  "ENABLE_SORTMERGE", "LEQ", "NEQ", "GEQ", "T_EOF", "IDENTIFIER",
-  "VALUE_STRING", "VALUE_INT", "VALUE_FLOAT", "VALUE_BOOL", "';'", "'='",
-  "'('", "')'", "','", "'.'", "'<'", "'>'", "'*'", "$accept", "start",
-  "stmt", "txnStmt", "dbStmt", "setStmt", "ddl", "dml", "fieldList",
-  "colNameList", "field", "type", "valueList", "value", "condition",
-  "optWhereClause", "whereClause", "col", "colList", "op", "expr",
-  "setClauses", "setClause", "selector", "tableList", "opt_order_clause",
-  "order_clause", "opt_asc_desc", "set_knob_type", "tbName", "colName", YY_NULLPTR
+  "ENABLE_SORTMERGE", "SUM", "COUNT", "MAX", "MIN", "AS", "LEQ", "NEQ",
+  "GEQ", "T_EOF", "IDENTIFIER", "VALUE_STRING", "VALUE_INT", "VALUE_FLOAT",
+  "VALUE_BOOL", "';'", "'='", "'('", "')'", "','", "'.'", "'*'", "'<'",
+  "'>'", "$accept", "start", "stmt", "txnStmt", "dbStmt", "setStmt", "ddl",
+  "dml", "fieldList", "colNameList", "field", "type", "valueList", "value",
+  "condition", "optWhereClause", "whereClause", "col", "aggCol", "colList",
+  "op", "expr", "setClauses", "setClause", "selector", "tableList",
+  "opt_order_clause", "order_clause", "opt_asc_desc", "set_knob_type",
+  "tbName", "colName", "ALIAS", YY_NULLPTR
 };
 
 static const char *

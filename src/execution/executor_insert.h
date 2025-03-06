@@ -25,13 +25,14 @@ private:
     Rid rid_;                   // 插入的位置，由于系统默认插入时不指定位置，因此当前rid_在插入后才赋值
     SmManager *sm_manager_;
 
-   public:
-    InsertExecutor(SmManager *sm_manager, const std::string &tab_name, const std::vector<Value> &values, Context *context) 
+public:
+    InsertExecutor(SmManager *sm_manager, const std::string &tab_name, const std::vector<Value> &values, Context *context)
         : AbstractExecutor(context), values_(std::move(values)),
-        tab_name_(std::move(tab_name)), sm_manager_(sm_manager)
+          tab_name_(std::move(tab_name)), sm_manager_(sm_manager)
     {
         tab_ = sm_manager_->db_.get_table(tab_name_);
-        if (values.size() != tab_.cols.size()) {
+        if (values.size() != tab_.cols.size())
+        {
             throw InvalidValueCountError();
         }
         fh_ = sm_manager_->fhs_.at(tab_name_).get();
@@ -67,7 +68,8 @@ private:
             auto ih = sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get();
             char *key = new char[index.col_tot_len];
             int offset = 0;
-            for(int i = 0; i < index.col_num; ++i) {
+            for (int i = 0; i < index.col_num; ++i)
+            {
                 memcpy(key + offset, rec.data + index.cols[i].offset, index.cols[i].len);
                 offset += index.cols[i].len;
             }

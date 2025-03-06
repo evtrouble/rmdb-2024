@@ -32,6 +32,7 @@ using namespace ast;
 // keywords
 %token SHOW TABLES CREATE TABLE DROP DESC INSERT INTO VALUES DELETE FROM ASC ORDER BY
 WHERE UPDATE SET SELECT INT CHAR FLOAT INDEX AND JOIN EXIT HELP TXN_BEGIN TXN_COMMIT TXN_ABORT TXN_ROLLBACK ORDER_BY ENABLE_NESTLOOP ENABLE_SORTMERGE
+SUM COUNT MAX MIN AS 
 // non-keywords
 %token LEQ NEQ GEQ T_EOF
 
@@ -50,9 +51,9 @@ WHERE UPDATE SET SELECT INT CHAR FLOAT INDEX AND JOIN EXIT HELP TXN_BEGIN TXN_CO
 %type <sv_expr> expr
 %type <sv_val> value
 %type <sv_vals> valueList
-%type <sv_str> tbName colName
+%type <sv_str> tbName colName ALIAS
 %type <sv_strs> tableList colNameList
-%type <sv_col> col
+%type <sv_col> col aggCol
 %type <sv_cols> colList selector
 %type <sv_set_clause> setClause
 %type <sv_set_clauses> setClauses
@@ -283,6 +284,44 @@ col:
         $$ = std::make_shared<Col>("", $1);
     }
     ;
+    |   aggCol
+    {
+        $$ = $1;
+    }
+    |   colName AS ALIAS
+    {
+        $$ = std::make_shared<Col>("", $1);
+        $$->alias = $3;
+    }
+    |   aggCol AS ALIAS
+    {
+        $$ = $1;
+        $$->alias = $3;
+    }
+    ;
+
+aggCol:
+        SUM '(' col ')'
+    {
+        $$ = std::make_shared<Col>($3->tab_name, $3->col_name, AggFuncType::SUM);
+    }
+    |   MIN '(' col ')'
+    {
+        $$ = std::make_shared<Col>($3->tab_name, $3->col_name, AggFuncType::MIN);
+    }
+    |   MAX '(' col ')'
+    {
+        $$ = std::make_shared<Col>($3->tab_name, $3->col_name, AggFuncType::MAX);
+    }
+    |   COUNT '(' col ')'
+    {
+        $$ = std::make_shared<Col>($3->tab_name, $3->col_name, AggFuncType::COUNT);
+    }
+    |   COUNT '(' '*' ')'
+    {
+        $$ = std::make_shared<Col>("", "*", AggFuncType::COUNT);
+    }
+    ;
 
 colList:
         col
@@ -403,4 +442,6 @@ set_knob_type:
 tbName: IDENTIFIER;
 
 colName: IDENTIFIER;
+
+ALIAS: IDENTIFIER;
 %%

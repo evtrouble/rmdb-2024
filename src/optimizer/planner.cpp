@@ -182,7 +182,8 @@ std::shared_ptr<Plan> Planner::physical_optimization(std::shared_ptr<Query> quer
     std::shared_ptr<Plan> plan = make_one_rel(query);
     
     // 其他物理优化
-
+    // 处理聚合函数
+    plan = generate_agg_plan(query, std::move(plan));
     // 处理orderby
     plan = generate_sort_plan(query, std::move(plan)); 
 
@@ -303,6 +304,25 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query)
     }
 
     return table_join_executors;
+}
+
+std::shared_ptr<Plan> Planner::generate_agg_plan(const std::shared_ptr<Query> &query, std::shared_ptr<Plan> plan)
+{
+    auto x = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
+    if (!x->has_agg)
+    {
+        return plan;
+    }
+    // 获取聚合函数
+    std::vector<TabCol> sel_cols;
+    for (const auto &col : query->cols)
+    {
+        sel_cols.emplace_back(TabCol(col.tab_name, col.col_name, col.aggFuncType, col.alias));
+    }
+    auto &agg_sel_cols = sel_cols;
+    // 生成聚合计划
+    plan = std::make_shared<AggPlan>(T_Agg, std::move(plan), agg_sel_cols);
+    return plan;
 }
 
 std::shared_ptr<Plan> Planner::generate_sort_plan(std::shared_ptr<Query> query, std::shared_ptr<Plan> plan)

@@ -9,6 +9,7 @@ MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 See the Mulan PSL v2 for more details. */
 
 #include "analyze.h"
+#include "../parser/ast.h"
 
 /**
  * @description: 分析器，进行语义分析和查询重写，需要检查不符合语义规定的部分
@@ -35,7 +36,11 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
         query->cols.reserve(x->cols.size());
         for (auto &sv_sel_col : x->cols)
         {
-            query->cols.emplace_back(TabCol(sv_sel_col->tab_name, sv_sel_col->col_name));
+            query->cols.emplace_back(TabCol(sv_sel_col->tab_name, sv_sel_col->col_name, sv_sel_col->agg_type, sv_sel_col->alias));
+            if(ast::AggFuncType::NO_TYPE !=sv_sel_col->agg_type)
+            {
+                x->has_agg = true;
+            }
         }
 
         std::vector<ColMeta> all_cols;
@@ -46,7 +51,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
             query->cols.reserve(all_cols.size());
             for (auto &col : all_cols)
             {
-                query->cols.emplace_back(TabCol(col.tab_name,  col.name));
+                query->cols.emplace_back(TabCol(col.tab_name, col.name));
             }
         }
         else
@@ -54,7 +59,8 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
             // infer table name from column name
             for (auto &sel_col : query->cols)
             {
-                sel_col = check_column(all_cols, sel_col); // 列元数据校验
+                if (sel_col.col_name != "*")// 避免count(*)检查
+                    sel_col = check_column(all_cols, sel_col); // 列元数据校验
             }
         }
         // 处理where条件
@@ -122,11 +128,43 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
     else if (auto x = std::dynamic_pointer_cast<ast::InsertStmt>(parse))
     {
         query->tables = {x->tab_name};
-        // 处理insert 的values值
-        query->values.reserve(x->vals.size());
-        for (auto &sv_val : x->vals)
+
+        if (!sm_manager_->db_.is_table(x->tab_name))
         {
-            query->values.emplace_back(convert_sv_value(sv_val));
+            throw TableNotFoundError(x->tab_name);
+        }
+
+        // 获取表的元数据
+        TabMeta &tab = sm_manager_->db_.get_table(x->tab_name);
+
+        // 检查插入的值的数量是否与表的列数匹配
+        if (x->vals.size() != tab.cols.size())
+        {
+            throw InvalidValueCountError();
+        }
+
+        // 处理insert的values值，并进行类型转换
+        query->values.reserve(x->vals.size());
+        for (size_t i = 0; i < x->vals.size(); i++)
+        {
+            // 获取当前列的类型信息
+            auto &col = tab.cols[i];
+            ColType target_type = col.type;
+
+            // 转换值并进行类型检查
+            Value val = convert_sv_value(x->vals[i]);
+
+            // 如果类型不匹配，尝试进行类型转换
+            if (val.type != target_type)
+            {
+                val = convert_value_type(val, target_type);
+            }
+
+            // 初始化原始数据
+            val.raw = nullptr;
+            val.init_raw(col.len);
+
+            query->values.emplace_back(std::move(val));
         }
     }
     else
@@ -163,20 +201,28 @@ TabCol Analyze::check_column(const std::vector<ColMeta> &all_cols, TabCol target
     else
     {
         /** TODO: Make sure target column exists */
-        bool found = false;
-        for (auto &col : all_cols)
+        auto it = std::find_if(all_cols.begin(), all_cols.end(), [&](const ColMeta &col) {
+            return col.tab_name == target.tab_name && col.name == target.col_name;
+        });
+
+        if (it == all_cols.end())
         {
-            if (col.tab_name == target.tab_name && col.name == target.col_name)
-            {
-                found = true;
-                break;
-            }
-        }
-        if (!found)
-        {
+            // 列元数据未找到，抛出列未找到错误
             throw ColumnNotFoundError(target.col_name);
         }
+
+        // 校验聚合列类型
+        if (target.aggFuncType != ast::AggFuncType::NO_TYPE && target.aggFuncType != ast::AggFuncType::COUNT)
+        {
+            if (it->type != ColType::TYPE_INT && it->type != ColType::TYPE_FLOAT)
+            {
+                throw InternalError("Unexpected sv value type");
+            }
+        }
+
     }
+
+
     return target;
 }
 
