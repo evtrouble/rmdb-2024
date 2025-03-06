@@ -51,8 +51,7 @@ private:
     // 检查记录是否满足所有条件
     bool satisfy_conditions(const RmRecord *rec)
     {
-        for (const auto &cond : conds_)
-        {
+        return std::all_of(conds_.begin(), conds_.end(), [&](auto &cond) {
             ColMeta &left_col = get_col_meta(cond.lhs_col.col_name);
             char *lhs_value = get_col_value(rec, left_col);
             char *rhs_value;
@@ -71,13 +70,8 @@ private:
                 rhs_value = get_col_value(rec, right_col);
                 rhs_type = right_col.type;
             }
-
-            if (!check_condition(lhs_value, left_col.type, rhs_value, rhs_type, cond.op))
-            {
-                return false;
-            }
-        }
-        return true;
+            return check_condition(lhs_value, left_col.type, rhs_value, rhs_type, cond.op);
+        });
     }
 
 public:
@@ -110,6 +104,8 @@ public:
             if((effective = gaplock.init(gap_conds_, tab_))) 
                 context_->lock_mgr_->lock_shared_on_gap(context_->txn_, fh_->GetFd(), gaplock);             
         }
+        if(effective)
+            std::sort(conds_.begin(), conds_.end());
     }
 
     void beginTuple() override

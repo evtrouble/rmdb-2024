@@ -187,6 +187,32 @@ struct Condition
     bool is_rhs_val; // true if right-hand side is a value (not a column)
     TabCol rhs_col;  // right-hand side column
     Value rhs_val;   // right-hand side value
+
+    int get_priority(CompOp op) const {
+        switch (op) {
+            case OP_EQ: return 0;
+            case OP_LT: return 1;
+            case OP_GT: return 2;
+            case OP_LE: return 3;
+            case OP_GE: return 4;
+            case OP_NE: return 5;
+            default:    return 6; // 兜底
+        }
+    }
+    bool operator<(const Condition& other) const {
+        // 优先按操作符优先级排序
+        int prio = get_priority(op);
+        int other_prio = get_priority(other.op);
+        if (prio != other_prio) {
+            return prio < other_prio;
+        }
+        
+        // 优先级相同则按 is_rhs_val 排序（值为 true 的排前面）
+        if (is_rhs_val != other.is_rhs_val) {
+            return is_rhs_val > other.is_rhs_val;
+        }
+        return false;
+    }
 };
 
 struct SetClause

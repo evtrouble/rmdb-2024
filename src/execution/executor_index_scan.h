@@ -54,13 +54,12 @@ class IndexScanExecutor : public AbstractExecutor {
     // 检查记录是否满足所有条件
     bool satisfy_conditions(const RmRecord *rec)
     {
-        for (const auto &cond : conds_)
-        {
+        return std::all_of(conds_.begin(), conds_.end(), [&](auto &cond) {
             ColMeta &left_col = get_col_meta(cond.lhs_col.col_name);
             char *lhs_value = get_col_value(rec, left_col);
             char *rhs_value;
             ColType rhs_type;
-
+    
             if (cond.is_rhs_val)
             {
                 // 如果右侧是值
@@ -74,13 +73,8 @@ class IndexScanExecutor : public AbstractExecutor {
                 rhs_value = get_col_value(rec, right_col);
                 rhs_type = right_col.type;
             }
-
-            if (!check_condition(lhs_value, left_col.type, rhs_value, rhs_type, cond.op))
-            {
-                return false;
-            }
-        }
-        return true;
+            return check_condition(lhs_value, left_col.type, rhs_value, rhs_type, cond.op);
+        });
     }
 
    public:
@@ -116,6 +110,9 @@ class IndexScanExecutor : public AbstractExecutor {
                 context_->lock_mgr_->lock_shared_on_gap(context_->txn_, fh_->GetFd(), gaplock);
             }
         }
+
+        if(effective)
+            std::sort(conds_.begin(), conds_.end());
 
 #ifdef DEBUG
         std::cout << lower_position_.page_no << ' ' << lower_position_.slot_no << "\n"
@@ -200,13 +197,24 @@ class IndexScanExecutor : public AbstractExecutor {
         }
         if(!init)
             set_position(low_key, true, up_key, true);
-        auto it = conds_.begin();
-        while (it != conds_.end()) {
-            if(it->is_rhs_val && it->op != CompOp::OP_NE && erase_cond.count(it->lhs_col.col_name))
-                it = conds_.erase(it);
-            else 
-                it++;
+        
+        auto left = conds_.begin();
+        auto right = conds_.end();
+        auto check = [&](const Condition &cond)
+        {
+            return cond.is_rhs_val && cond.op != CompOp::OP_NE &&
+                   erase_cond.count(cond.lhs_col.col_name);
+        };
+        while (left < right) {
+            if (check(*left)) {
+                    // 将右侧非目标元素换到左侧
+                    while (left < --right && check(*right)); 
+                    if (left >= right) break;
+                    *left = std::move(*right);
+            }
+            ++left;
         }
+        conds_.erase(left, conds_.end());
     }
 
     void set_position(char *lower, bool is_lower_closed, char *upper, bool is_upper_closed)

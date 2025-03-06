@@ -48,7 +48,7 @@ struct std::hash<PageId> {
  * @description: Page类声明, Page是RMDB数据块的单位、是负责数据操作Record模块的操作对象，
  * Page对象在磁盘上有文件存储, 若在Buffer中则有帧偏移, 并非特指Buffer或Disk上的数据
  */
-class Page {
+class alignas(64) Page {
     friend class BufferPoolManager;
     friend class IxIndexHandle;
 
@@ -86,7 +86,7 @@ private:
     void reset_memory() { memset(data_, OFFSET_PAGE_START, PAGE_SIZE); } // 将data_的PAGE_SIZE个字节填充为0
 
     /** page的唯一标识符 */
-    PageId id_;
+    PageId id_ = {.fd = -1, .page_no = INVALID_PAGE_ID};
     std::shared_mutex latch_;
 
     /** The actual data that is stored within a page.
@@ -95,8 +95,8 @@ private:
     char data_[PAGE_SIZE] = {};
 
     /** 脏页判断 */
-    bool is_dirty_ = false;
+    std::atomic<bool> is_dirty_{false};
 
     /** The pin count of this page. */
-    int pin_count_ = 0;
+    std::atomic<int> pin_count_{0};
 };
