@@ -59,8 +59,10 @@ Rid RmFileHandle::insert_record(char *buf)
         file_hdr_.first_free_page_no = page_handle.page_hdr->next_free_page_no;
     }
 
+    Rid ret{page_handle.page->get_page_id().page_no, slot_no};
+    buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);
     // 6. 返回新记录的RID
-    return Rid {page_handle.page->get_page_id().page_no, slot_no};
+    return ret;
 }
 
 /**
@@ -87,6 +89,7 @@ void RmFileHandle::insert_record(const Rid &rid, char *buf)
     // 5. 如果这是页面的第一条记录，需要更新空闲页面链表
     if (page_handle.page_hdr->num_records == 1 && file_hdr_.first_free_page_no == rid.page_no)
         file_hdr_.first_free_page_no = page_handle.page_hdr->next_free_page_no;
+    buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);
 }
 
 /**
@@ -110,7 +113,7 @@ void RmFileHandle::delete_record(const Rid &rid)
     // 4. 如果页面从满状态变为未满状态，需要更新空闲页面链表
     if (page_handle.page_hdr->num_records == file_hdr_.num_records_per_page - 1)
         release_page_handle(page_handle);
-
+    buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);
 }
 
 /**
@@ -129,6 +132,7 @@ void RmFileHandle::update_record(const Rid &rid, char *buf)
 
     // 3. 更新记录数据
     memcpy(page_handle.get_slot(rid.slot_no), buf, file_hdr_.record_size);
+    buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);
 }
 
 /**

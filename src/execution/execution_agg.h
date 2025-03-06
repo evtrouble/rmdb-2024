@@ -19,7 +19,6 @@ class AggExecutor : public AbstractExecutor {
 private:
     std::unique_ptr<AbstractExecutor> child_executor_; // 子执行器
     std::vector<TabCol> sel_cols_;                    // 聚合的目标列
-    Context *context_;                                // 执行器上下文
     std::vector<ColMeta> output_cols_;                // 输出列的元数据
     size_t TupleLen;                                  // 输出元组的长度
     std::vector<Value> agg_values_;                   // 聚合值
@@ -31,7 +30,7 @@ private:
 
 public:
     AggExecutor(std::unique_ptr<AbstractExecutor> child_executor, std::vector<TabCol> sel_cols, Context *context)
-        : child_executor_(std::move(child_executor)), sel_cols_(std::move(sel_cols)), context_(context), is_aggregated_(false) {
+        : AbstractExecutor(context), child_executor_(std::move(child_executor)), sel_cols_(std::move(sel_cols)), is_aggregated_(false) {
         // 初始化输出列
         TupleLen = 0;
         int offset = 0;

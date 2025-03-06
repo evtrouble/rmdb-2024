@@ -59,10 +59,6 @@ Page* BufferPoolManager::fetch_page(PageId page_id) {
 
     // 替换页面
     Page& old_page = pages_[frame_id];
-    if (old_page.is_dirty_.load()) {
-        disk_manager_->write_page(old_page.id_.fd, old_page.id_.page_no, old_page.data_, PAGE_SIZE);
-        old_page.is_dirty_ = false;
-    }
 
     // 更新元数据
     auto& old_bucket = get_bucket(old_page.id_);
@@ -88,7 +84,6 @@ bool BufferPoolManager::unpin_page(PageId page_id, bool is_dirty) {
 
     frame_id_t frame_id = it->second;
     Page& page = pages_[frame_id];
-    if (is_dirty) page.is_dirty_.store(true);
 
     int prev = page.pin_count_.fetch_sub(1);
     if (prev == 1) {
@@ -97,7 +92,7 @@ bool BufferPoolManager::unpin_page(PageId page_id, bool is_dirty) {
         page.pin_count_.fetch_add(1);
         return false;
     }
-
+    if (is_dirty) page.is_dirty_.store(true);
     return true;
 }
 
@@ -159,16 +154,16 @@ bool BufferPoolManager::delete_page(PageId page_id) {
     }
 
     bucket.page_table.erase(it);
-    std::lock_guard<std::mutex> list_lock(free_list_mutex_);
-    free_list_.push_back(frame_id);
     return true;
 }
 
 void BufferPoolManager::flush_all_pages(int fd) {
     for (auto& bucket : buckets_) {
         std::unique_lock lock(bucket.latch);
-        for (auto& [pid, frame_id] : bucket.page_table) {
-            if (fd != -1 && pid.fd != fd) continue;
+        for (auto &[pid, frame_id] : bucket.page_table)
+        {
+            if (fd != -1 && pid.fd != fd)
+                continue;
             Page& page = pages_[frame_id];
             if (page.is_dirty_.exchange(false)) {
                 disk_manager_->write_page(pid.fd, pid.page_no, page.data_, PAGE_SIZE);
@@ -191,10 +186,13 @@ void BufferPoolManager::background_flush() {
             }
         }
 
+        if(batch.empty())continue;
+        std::lock_guard<std::mutex> list_lock(free_list_mutex_);
         for (frame_id_t fid : batch) {
             Page& page = pages_[fid];
             if (page.is_dirty_.exchange(false)) {
                 disk_manager_->write_page(page.id_.fd, page.id_.page_no, page.data_, PAGE_SIZE);
+                free_list_.push_back(fid);
             }
         }
     }
