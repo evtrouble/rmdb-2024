@@ -165,6 +165,23 @@ void QlManager::run_cmd_utility(std::shared_ptr<Plan> plan, txn_id_t *txn_id, Co
     }
 }
 
+std::string makeAggFuncCaptions(const TabCol &sel_col)
+{
+    switch (sel_col.aggFuncType)
+    {
+    case ast::AggFuncType::COUNT:
+        return "COUNT(" + sel_col.col_name + ")";
+    case ast::AggFuncType::SUM:
+        return "SUM(" + sel_col.col_name + ")";
+    case ast::AggFuncType::MAX:
+        return "MAX(" + sel_col.col_name + ")";
+    case ast::AggFuncType::MIN:
+        return "MIN(" + sel_col.col_name + ")";
+    default:
+        throw RMDBError();
+    }
+}
+
 // 执行select语句，select语句的输出除了需要返回客户端外，还需要写入output.txt文件中
 void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, const std::vector<TabCol> &sel_cols, 
                             Context *context) {
@@ -172,7 +189,10 @@ void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, 
     captions.reserve(sel_cols.size());
     for (auto &sel_col : sel_cols) {
         if (sel_col.alias.empty()){
-            captions.emplace_back(std::move(sel_col.col_name));
+            if (ast::AggFuncType::NO_TYPE == sel_col.aggFuncType)
+                captions.emplace_back(std::move(sel_col.col_name));
+            else
+                captions.emplace_back(std::move(makeAggFuncCaptions(sel_col)));
         }
         else{
             captions.emplace_back(sel_col.alias);
