@@ -113,7 +113,7 @@ struct Value
                 throw StringOverflowError();
             }
             memcpy(dest, str_val.c_str(), str_val.size());
-            memset(raw->data + str_val.size(), 0, len - str_val.size());
+            memset(dest + str_val.size(), 0, len - str_val.size());
         }
     }
 

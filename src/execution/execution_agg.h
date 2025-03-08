@@ -281,14 +281,12 @@ std::string AggExecutor::get_group_key(const RmRecord &record) {
         switch (col_meta.type) {
             case TYPE_INT:
                 key += std::to_string(*reinterpret_cast<const int*>(record.data + col_meta.offset));
-                std::cout<<key<<std::endl;
                 break;
             case TYPE_FLOAT:
                 key += std::to_string(*reinterpret_cast<const float*>(record.data + col_meta.offset));
                 break;
             case TYPE_STRING:
                 key += std::string(record.data + col_meta.offset, col_meta.len);
-                std::cout<<key<<std::endl;
                 break;
             default:
                 throw InternalError("Unexpected sv value type");
