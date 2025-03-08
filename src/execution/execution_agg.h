@@ -28,6 +28,8 @@ private:
     std::vector<std::vector<ColMeta>::const_iterator> group_by_col_metas_;// GROUP BY 列元数据
     bool is_aggregated_;                              // 是否已完成聚合
     std::unordered_map<std::string, std::vector<Value>>::iterator group_iter_; // 分组迭代器
+    std::vector<std::string> insert_order_; // 记录分组键的插入顺序
+    size_t current_group_index_; // 当前遍历的分组索引
 
     void aggregate(const RmRecord &record);           // 聚合计算
     std::string get_group_key(const RmRecord &record); // 获取分组键
@@ -35,7 +37,7 @@ private:
 
 public:
     AggExecutor(std::unique_ptr<AbstractExecutor> child_executor, std::vector<TabCol> sel_cols, std::vector<TabCol> group_by_cols, Context *context)
-        : child_executor_(std::move(child_executor)), sel_cols_(std::move(sel_cols)), group_by_cols_(std::move(group_by_cols)), context_(context), is_aggregated_(false) {
+        : child_executor_(std::move(child_executor)), sel_cols_(std::move(sel_cols)), group_by_cols_(std::move(group_by_cols)), context_(context), is_aggregated_(false),  current_group_index_(0) {
         // 初始化输出列
         TupleLen = 0;
         int offset = 0;
@@ -114,13 +116,20 @@ public:
         if (!is_aggregated_) {
             nextTuple();
         }
-        if (group_iter_ == agg_groups_.end()) {
+        if (current_group_index_ >= insert_order_.size()) {
             return nullptr;
         }
+
+        // 获取当前分组键
+        const std::string &group_key = insert_order_[current_group_index_];
+        auto &agg_values = agg_groups_[group_key];
+
         RmRecord record(TupleLen);
         int offset = 0;
+
+        // 遍历 sel_cols_，动态写入值
         for (size_t i = 0; i < sel_cols_.size(); ++i) {
-            auto value = group_iter_->second[i];
+            const auto &value = agg_values[i];
             switch (value.type) {
                 case TYPE_INT:
                     *(int*)(record.data + offset) = value.int_val;
@@ -136,6 +145,10 @@ public:
             }
             offset += output_cols_[i].len;
         }
+
+        // 移动到下一个分组
+        ++current_group_index_;
+
         return std::make_unique<RmRecord>(record);
     }
 };
@@ -144,6 +157,7 @@ void AggExecutor::aggregate(const RmRecord &record) {
     std::string group_key = get_group_key(record);
     auto &agg_values = agg_groups_[group_key];
     if (agg_values.empty()) {
+        insert_order_.emplace_back(group_key); // 记录分组键的插入顺序
         agg_values.resize(sel_cols_.size());
         for (size_t i = 0; i < sel_cols_.size(); ++i) {
             auto agg_type = sel_cols_[i].aggFuncType;
@@ -181,11 +195,32 @@ void AggExecutor::aggregate(const RmRecord &record) {
                         break;
                 }
             }
+            // 如果是 GROUP BY 列，初始化其值
+            else if (ast::AggFuncType::NO_TYPE == agg_type) {
+                auto col_meta = *get_col(child_executor_->cols(), sel_cols_[i]);
+                switch (col_meta.type) {
+                    case TYPE_INT:
+                        agg_values[i].set_int(*reinterpret_cast<const int*>(record.data + col_meta.offset));
+                        break;
+                    case TYPE_FLOAT:
+                        agg_values[i].set_float(*reinterpret_cast<const float*>(record.data + col_meta.offset));
+                        break;
+                    case TYPE_STRING:
+                        agg_values[i].set_str(std::string(record.data + col_meta.offset, col_meta.len));
+                        break;
+                    default:
+                        throw InternalError("Unexpected sv value type");
+                }
+            }
         }
     }
 
+    // 更新聚合值
     for (size_t i = 0; i < sel_cols_.size(); ++i) {
         auto agg_type = sel_cols_[i].aggFuncType;
+        if (ast::AggFuncType::NO_TYPE == agg_type) {
+            continue; // GROUP BY 列不需要更新
+        }
         auto col_meta = *sel_col_metas_[i];
         Value value;
         value.type = col_meta.type;
@@ -229,15 +264,17 @@ void AggExecutor::aggregate(const RmRecord &record) {
                     agg_values[i].float_val = value.float_val;
                 }
                 break;
-            case ast::AggFuncType::NO_TYPE:
-                break;
             default:
-                throw InvalidAggTypeError(sel_cols_[i].col_name, std::to_string(agg_type));
+                break;
         }
     }
 }
 
 std::string AggExecutor::get_group_key(const RmRecord &record) {
+    if (group_by_cols_.empty())
+    {
+        return "no_groupby";
+    }
     std::string key;
     for (size_t i = 0; i < group_by_cols_.size(); ++i) {
         auto col_meta = *group_by_col_metas_[i];
