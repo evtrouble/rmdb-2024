@@ -309,19 +309,24 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query)
 std::shared_ptr<Plan> Planner::generate_agg_plan(const std::shared_ptr<Query> &query, std::shared_ptr<Plan> plan)
 {
     auto x = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
-    if (!x->has_agg)
+    if (!x->has_agg && !x->has_groupby)
     {
         return plan;
     }
     // 获取聚合函数
-    std::vector<TabCol> sel_cols;
+    std::vector<TabCol> agg_sel_cols;
     for (const auto &col : query->cols)
     {
-        sel_cols.emplace_back(TabCol(col.tab_name, col.col_name, col.aggFuncType, col.alias));
+        agg_sel_cols.emplace_back(TabCol(col.tab_name, col.col_name, col.aggFuncType, col.alias));
     }
-    auto &agg_sel_cols = sel_cols;
+    // 获取groupby字段
+    std::vector<TabCol> groupby_cols;
+    for (const auto &col : query->groupby)
+    {
+        groupby_cols.emplace_back(TabCol(col.tab_name, col.col_name));
+    }
     // 生成聚合计划
-    plan = std::make_shared<AggPlan>(T_Agg, std::move(plan), agg_sel_cols);
+    plan = std::make_shared<AggPlan>(T_Agg, std::move(plan), agg_sel_cols, groupby_cols);
     return plan;
 }
 

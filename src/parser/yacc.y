@@ -30,7 +30,7 @@ using namespace ast;
 %define parse.error verbose
 
 // keywords
-%token SHOW TABLES CREATE TABLE DROP DESC INSERT INTO VALUES DELETE FROM ASC ORDER BY
+%token SHOW TABLES CREATE TABLE DROP DESC INSERT INTO VALUES DELETE FROM ASC ORDER GROUP BY
 WHERE UPDATE SET SELECT INT CHAR FLOAT INDEX AND JOIN EXIT HELP TXN_BEGIN TXN_COMMIT TXN_ABORT TXN_ROLLBACK ORDER_BY ENABLE_NESTLOOP ENABLE_SORTMERGE
 SUM COUNT MAX MIN AS 
 // non-keywords
@@ -54,7 +54,7 @@ SUM COUNT MAX MIN AS
 %type <sv_str> tbName colName ALIAS
 %type <sv_strs> tableList colNameList
 %type <sv_col> col aggCol
-%type <sv_cols> colList selector
+%type <sv_cols> colList selector opt_groupby_clause
 %type <sv_set_clause> setClause
 %type <sv_set_clauses> setClauses
 %type <sv_cond> condition
@@ -168,9 +168,9 @@ dml:
     {
         $$ = std::make_shared<UpdateStmt>($2, $4, $5);
     }
-    |   SELECT selector FROM tableList optWhereClause opt_order_clause
+    |   SELECT selector FROM tableList optWhereClause opt_groupby_clause opt_order_clause
     {
-        $$ = std::make_shared<SelectStmt>($2, $4, $5, $6);
+        $$ = std::make_shared<SelectStmt>($2, $4, $5, $6, $7);
     }
     ;
 
@@ -417,6 +417,14 @@ opt_order_clause:
     ORDER BY order_clause
     {
         $$ = $3;
+    }
+    |   /* epsilon */ { /* ignore*/ }
+    ;
+
+opt_groupby_clause:
+    GROUP BY colList      
+    { 
+        $$ = $3; 
     }
     |   /* epsilon */ { /* ignore*/ }
     ;

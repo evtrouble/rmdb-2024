@@ -19,19 +19,23 @@ class AggExecutor : public AbstractExecutor {
 private:
     std::unique_ptr<AbstractExecutor> child_executor_; // 子执行器
     std::vector<TabCol> sel_cols_;                    // 聚合的目标列
+    std::vector<TabCol> group_by_cols_;               // GROUP BY 列
     Context *context_;                                // 执行器上下文
     std::vector<ColMeta> output_cols_;                // 输出列的元数据
     size_t TupleLen;                                  // 输出元组的长度
-    std::vector<Value> agg_values_;                   // 聚合值
+    std::unordered_map<std::string, std::vector<Value>> agg_groups_; // 分组聚合值
     std::vector<std::vector<ColMeta>::const_iterator> sel_col_metas_;// 目标列元数据
+    std::vector<std::vector<ColMeta>::const_iterator> group_by_col_metas_;// GROUP BY 列元数据
     bool is_aggregated_;                              // 是否已完成聚合
+    std::unordered_map<std::string, std::vector<Value>>::iterator group_iter_; // 分组迭代器
 
     void aggregate(const RmRecord &record);           // 聚合计算
+    std::string get_group_key(const RmRecord &record); // 获取分组键
     Value get_agg_value(size_t index) const;          // 获取聚合值
 
 public:
-    AggExecutor(std::unique_ptr<AbstractExecutor> child_executor, std::vector<TabCol> sel_cols, Context *context)
-        : child_executor_(std::move(child_executor)), sel_cols_(std::move(sel_cols)), context_(context), is_aggregated_(false) {
+    AggExecutor(std::unique_ptr<AbstractExecutor> child_executor, std::vector<TabCol> sel_cols, std::vector<TabCol> group_by_cols, Context *context)
+        : child_executor_(std::move(child_executor)), sel_cols_(std::move(sel_cols)), group_by_cols_(std::move(group_by_cols)), context_(context), is_aggregated_(false) {
         // 初始化输出列
         TupleLen = 0;
         int offset = 0;
@@ -48,7 +52,7 @@ public:
                     throw InvalidAggTypeError("*", std::to_string(col.aggFuncType));
                 }
                 auto temp = get_col(child_executor_->cols(), col);
-                sel_col_metas_.push_back(temp);
+                sel_col_metas_.emplace_back(temp);
                 col_meta = *temp;
                 col_meta.offset = offset;
                 TupleLen += col_meta.len;
@@ -56,55 +60,15 @@ public:
                 output_cols_.emplace_back(col_meta);
             }
         }
-        // 初始化聚合值
-        agg_values_.resize(sel_cols_.size());
-        for (size_t i = 0; i < sel_cols_.size(); ++i) {
-            auto agg_type = sel_cols_[i].aggFuncType;
-            if (ast::AggFuncType::COUNT == agg_type)
-            {
-                agg_values_[i].set_int(0);
-            }
-            else if (ast::AggFuncType::SUM == agg_type || ast::AggFuncType::MAX == agg_type || ast::AggFuncType::MIN == agg_type)
-            {
-                auto col = get_col(child_executor_->cols(), {sel_cols_[i].tab_name, sel_cols_[i].col_name});
-                switch (col->type)
-                {
-                case TYPE_INT:
-                    if (agg_type == ast::AggFuncType::MIN)
-                        agg_values_[i].set_int(std::numeric_limits<int>::max());
-                    else if (agg_type == ast::AggFuncType::MAX)
-                        agg_values_[i].set_int(std::numeric_limits<int>::min());
-                    else
-                        agg_values_[i].set_int(0);
-                    break;
-                case TYPE_FLOAT:
-                    if (agg_type == ast::AggFuncType::MIN)
-                        agg_values_[i].set_float(std::numeric_limits<float>::max());
-                    else if (agg_type == ast::AggFuncType::MAX)
-                        agg_values_[i].set_float(std::numeric_limits<float>::lowest());
-                    else
-                        agg_values_[i].set_float(0.0f);
-                    break;
-                case TYPE_STRING:
-                    if (agg_type == ast::AggFuncType::MIN)
-                    {
-                        auto str_len = col->len;
-                        std::string max_str(str_len, '~');
-                        agg_values_[i].set_str(max_str);
-                    }
-                    else if (agg_type == ast::AggFuncType::MAX)
-                    {
-                        agg_values_[i].set_str("");
-                    }
-                    else
-                    {
-                        throw RMDBError();
-                    }
-                    break;
-                }
-            }
+        // 初始化 GROUP BY 列元数据
+        for (const auto &col : group_by_cols_) {
+            auto temp = get_col(child_executor_->cols(), col);
+            group_by_col_metas_.emplace_back(temp);
         }
+        // 初始化聚合值
+        agg_groups_.clear();
     }
+
     size_t tupleLen() const {
         return TupleLen;
     }
@@ -116,6 +80,8 @@ public:
     void beginTuple() {
         child_executor_->beginTuple();
         is_aggregated_ = false;
+        agg_groups_.clear();
+        group_iter_ = agg_groups_.begin();
     }
 
     void nextTuple() {
@@ -128,11 +94,16 @@ public:
                 child_executor_->nextTuple();
             }
             is_aggregated_ = true;
+            group_iter_ = agg_groups_.begin();
+        } else {
+            if (group_iter_ != agg_groups_.end()) {
+                ++group_iter_;
+            }
         }
     }
 
     bool is_end() const {
-        return is_aggregated_;
+        return is_aggregated_ && group_iter_ == agg_groups_.end();
     }
 
     Rid &rid() {
@@ -143,10 +114,13 @@ public:
         if (!is_aggregated_) {
             nextTuple();
         }
+        if (group_iter_ == agg_groups_.end()) {
+            return nullptr;
+        }
         RmRecord record(TupleLen);
         int offset = 0;
         for (size_t i = 0; i < sel_cols_.size(); ++i) {
-            auto value = get_agg_value(i);
+            auto value = group_iter_->second[i];
             switch (value.type) {
                 case TYPE_INT:
                     *(int*)(record.data + offset) = value.int_val;
@@ -167,6 +141,49 @@ public:
 };
 
 void AggExecutor::aggregate(const RmRecord &record) {
+    std::string group_key = get_group_key(record);
+    auto &agg_values = agg_groups_[group_key];
+    if (agg_values.empty()) {
+        agg_values.resize(sel_cols_.size());
+        for (size_t i = 0; i < sel_cols_.size(); ++i) {
+            auto agg_type = sel_cols_[i].aggFuncType;
+            if (ast::AggFuncType::COUNT == agg_type) {
+                agg_values[i].set_int(0);
+            } else if (ast::AggFuncType::SUM == agg_type || ast::AggFuncType::MAX == agg_type || ast::AggFuncType::MIN == agg_type) {
+                auto col = get_col(child_executor_->cols(), {sel_cols_[i].tab_name, sel_cols_[i].col_name});
+                switch (col->type) {
+                    case TYPE_INT:
+                        if (ast::AggFuncType::MIN == agg_type)
+                            agg_values[i].set_int(std::numeric_limits<int>::max());
+                        else if (ast::AggFuncType::MAX == agg_type)
+                            agg_values[i].set_int(std::numeric_limits<int>::min());
+                        else
+                            agg_values[i].set_int(0);
+                        break;
+                    case TYPE_FLOAT:
+                        if (ast::AggFuncType::MIN == agg_type)
+                            agg_values[i].set_float(std::numeric_limits<float>::max());
+                        else if (ast::AggFuncType::MAX == agg_type)
+                            agg_values[i].set_float(std::numeric_limits<float>::lowest());
+                        else
+                            agg_values[i].set_float(0.0f);
+                        break;
+                    case TYPE_STRING:
+                        if (ast::AggFuncType::MIN == agg_type) {
+                            auto str_len = col->len;
+                            std::string max_str(str_len, '~');
+                            agg_values[i].set_str(max_str);
+                        } else if (ast::AggFuncType::MAX == agg_type) {
+                            agg_values[i].set_str("");
+                        } else {
+                            throw RMDBError();
+                        }
+                        break;
+                }
+            }
+        }
+    }
+
     for (size_t i = 0; i < sel_cols_.size(); ++i) {
         auto agg_type = sel_cols_[i].aggFuncType;
         auto col_meta = *sel_col_metas_[i];
@@ -189,36 +206,27 @@ void AggExecutor::aggregate(const RmRecord &record) {
 
         switch (agg_type) {
             case ast::AggFuncType::SUM:
-                if (value.type == TYPE_INT)
-                {
-                    agg_values_[i].int_val += value.int_val;
-                }
-                else if (value.type == TYPE_FLOAT)
-                {
-                    agg_values_[i].float_val += value.float_val;
+                if (TYPE_INT == value.type) {
+                    agg_values[i].int_val += value.int_val;
+                } else if (TYPE_FLOAT == value.type) {
+                    agg_values[i].float_val += value.float_val;
                 }
                 break;
             case ast::AggFuncType::COUNT:
-                agg_values_[i].set_int(agg_values_[i].int_val + 1);
+                agg_values[i].set_int(agg_values[i].int_val + 1);
                 break;
             case ast::AggFuncType::MAX:
-                if (value.type == TYPE_INT && agg_values_[i].int_val < value.int_val)
-                {
-                    agg_values_[i].int_val = value.int_val;
-                }
-                else if (value.type == TYPE_FLOAT && agg_values_[i].float_val < value.float_val)
-                {
-                    agg_values_[i].float_val = value.float_val;
+                if (TYPE_INT == value.type && agg_values[i].int_val < value.int_val) {
+                    agg_values[i].int_val = value.int_val;
+                } else if (TYPE_FLOAT == value.type && agg_values[i].float_val < value.float_val) {
+                    agg_values[i].float_val = value.float_val;
                 }
                 break;
             case ast::AggFuncType::MIN:
-                if (value.type == TYPE_INT && agg_values_[i].int_val > value.int_val)
-                {
-                    agg_values_[i].int_val = value.int_val;
-                }
-                else if (value.type == TYPE_FLOAT && agg_values_[i].float_val > value.float_val)
-                {
-                    agg_values_[i].float_val = value.float_val;
+                if (TYPE_INT == value.type && agg_values[i].int_val > value.int_val) {
+                    agg_values[i].int_val = value.int_val;
+                } else if (TYPE_FLOAT == value.type && agg_values[i].float_val > value.float_val) {
+                    agg_values[i].float_val = value.float_val;
                 }
                 break;
             case ast::AggFuncType::NO_TYPE:
@@ -229,6 +237,26 @@ void AggExecutor::aggregate(const RmRecord &record) {
     }
 }
 
-Value AggExecutor::get_agg_value(size_t index) const {
-    return agg_values_[index];
+std::string AggExecutor::get_group_key(const RmRecord &record) {
+    std::string key;
+    for (size_t i = 0; i < group_by_cols_.size(); ++i) {
+        auto col_meta = *group_by_col_metas_[i];
+        switch (col_meta.type) {
+            case TYPE_INT:
+                key += std::to_string(*reinterpret_cast<const int*>(record.data + col_meta.offset));
+                std::cout<<key<<std::endl;
+                break;
+            case TYPE_FLOAT:
+                key += std::to_string(*reinterpret_cast<const float*>(record.data + col_meta.offset));
+                break;
+            case TYPE_STRING:
+                key += std::string(record.data + col_meta.offset, col_meta.len);
+                std::cout<<key<<std::endl;
+                break;
+            default:
+                throw InternalError("Unexpected sv value type");
+        }
+        key += "|"; // 分隔符
+    }
+    return key;
 }

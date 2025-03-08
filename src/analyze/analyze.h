@@ -35,6 +35,8 @@ public:
     std::vector<SetClause> set_clauses;
     // insert 的values值
     std::vector<Value> values;
+    //groupby字段
+    std::vector<TabCol> groupby;
 
     Query() {}
 };

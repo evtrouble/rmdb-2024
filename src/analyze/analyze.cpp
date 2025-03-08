@@ -63,6 +63,73 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
                     sel_col = check_column(all_cols, sel_col); // 列元数据校验
             }
         }
+        // groupby检查
+        // 同时包含聚合函数和非聚合列时，必须有groupby
+        bool has_non_agg_col = false;
+        bool has_agg_col = false;
+        for (const auto &sel_col : query->cols)
+        {
+            if (!has_agg_col || !has_non_agg_col){
+                if (ast::AggFuncType::NO_TYPE != sel_col.aggFuncType)
+                    has_agg_col = true;
+                else
+                    has_non_agg_col = true;
+            }
+            else
+                break;
+        }
+        if (has_non_agg_col && has_agg_col && !x->has_groupby)
+        {
+            throw RMDBError("should have GROUP BY in this query");
+        }
+        // 非聚合列必须出现在groupby中
+        if (has_non_agg_col && x->has_groupby)
+        {
+            for (const auto &sel_col : query->cols)
+            {
+                if (ast::AggFuncType::NO_TYPE == sel_col.aggFuncType)
+                {
+                    bool is_in_groupby = false;
+                    for (const auto &group_col : x->groupby)
+                    {
+                        if (sel_col.col_name == group_col->col_name)
+                        {
+                            is_in_groupby = true;
+                            break;
+                        }
+                    }
+                    if (!is_in_groupby)
+                    {
+                        throw RMDBError("Non-aggregated column '" + sel_col.col_name + "' must appear in GROUP BY clause");
+                    }
+                }
+            }
+            // 检查是否同时出现非聚合列和聚合列(比如：id ,max(id))
+            std::unordered_map<std::string, bool> col_agg_map;
+            for (const auto &sel_col : query->cols)
+            {
+                if (ast::AggFuncType::NO_TYPE != sel_col.aggFuncType)
+                {
+                    col_agg_map[sel_col.col_name] = true;
+                }
+                else
+                {
+                    if (col_agg_map.find(sel_col.col_name) != col_agg_map.end() && col_agg_map[sel_col.col_name])
+                    {
+                        throw RMDBError("Column '" + sel_col.col_name + "' appears both as non-aggregated and aggregated");
+                    }
+                    col_agg_map[sel_col.col_name] = false;
+                }
+            }
+        }
+        if (x->has_groupby) {
+            // 是否在表里
+            for (auto& g : x->groupby) {
+                TabCol group_col = { g->tab_name, g->col_name };
+                group_col = check_column(all_cols, group_col);
+                query->groupby.emplace_back(group_col);
+            }
+        }
         // 处理where条件
         get_clause(x->conds, query->conds);
         check_clause(query->tables, query->conds);
