@@ -144,6 +144,23 @@ struct Value
         }
         return false;
     }
+
+    bool operator!=(const Value& other) const {
+        return !(*this == other);
+    }
+
+    bool operator<=(const Value& other) const {
+        return (*this < other) || (*this == other);
+    }
+
+    bool operator>(const Value& other) const {
+        return !(*this <= other); 
+    }
+
+    bool operator>=(const Value& other) const {
+        return !(*this < other); 
+    }
+
     void set_max(ColType type, int len) {
         this->type = type;
         switch (type)

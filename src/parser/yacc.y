@@ -30,7 +30,7 @@ using namespace ast;
 %define parse.error verbose
 
 // keywords
-%token SHOW TABLES CREATE TABLE DROP DESC INSERT INTO VALUES DELETE FROM ASC ORDER GROUP BY
+%token SHOW TABLES CREATE TABLE DROP DESC INSERT INTO VALUES DELETE FROM ASC ORDER GROUP BY HAVING
 WHERE UPDATE SET SELECT INT CHAR FLOAT INDEX AND JOIN EXIT HELP TXN_BEGIN TXN_COMMIT TXN_ABORT TXN_ROLLBACK ORDER_BY ENABLE_NESTLOOP ENABLE_SORTMERGE
 SUM COUNT MAX MIN AS 
 // non-keywords
@@ -58,7 +58,7 @@ SUM COUNT MAX MIN AS
 %type <sv_set_clause> setClause
 %type <sv_set_clauses> setClauses
 %type <sv_cond> condition
-%type <sv_conds> whereClause optWhereClause
+%type <sv_conds> whereClause optWhereClause opt_having_clause
 %type <sv_orderby>  order_clause opt_order_clause
 %type <sv_orderby_dir> opt_asc_desc
 %type <sv_setKnobType> set_knob_type
@@ -168,9 +168,9 @@ dml:
     {
         $$ = std::make_shared<UpdateStmt>($2, $4, $5);
     }
-    |   SELECT selector FROM tableList optWhereClause opt_groupby_clause opt_order_clause
+    |   SELECT selector FROM tableList optWhereClause opt_groupby_clause opt_having_clause opt_order_clause
     {
-        $$ = std::make_shared<SelectStmt>($2, $4, $5, $6, $7);
+        $$ = std::make_shared<SelectStmt>($2, $4, $5, $6, $7, $8);
     }
     ;
 
@@ -263,6 +263,14 @@ optWhereClause:
     }
     ;
 
+opt_having_clause:
+    /* epsilon */ { /* ignore*/ }
+    |   HAVING whereClause
+    {
+        $$ = $2;
+    }
+    ;
+
 whereClause:
         condition
     {
@@ -273,6 +281,7 @@ whereClause:
         $$.push_back($3);
     }
     ;
+
 
 col:
         tbName '.' colName

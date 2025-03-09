@@ -130,9 +130,45 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
                 query->groupby.emplace_back(group_col);
             }
         }
+
+        // having检查
+        // having必须与groupby一起使用
+        if (x->has_having) {
+            if (!x->has_groupby) {
+                throw RMDBError("HAVING clause must be used with GROUP BY clause");
+            }
+        // having中的列必须出现在groupby或聚合函数中
+            for (const auto& having_cond : x->having_conds) {
+                if (having_cond->lhs->col_name != "*") {
+                    bool is_valid = false;
+                    for (const auto& group_col : query->groupby) {
+                        if (having_cond->lhs->col_name == group_col.col_name) {
+                            is_valid = true;
+                            break;
+                        }
+                    }
+                    if (!is_valid) {
+                        for (const auto& sel_col : query->cols) {
+                            if (having_cond->lhs->col_name == sel_col.col_name &&
+                                ast::AggFuncType::NO_TYPE != sel_col.aggFuncType) {
+                                is_valid = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!is_valid) {
+                        throw RMDBError("Column '" + having_cond->lhs->col_name + "' in HAVING clause must appear in GROUP BY or be used in an aggregate function");
+                    }
+                }
+            }
+
+            // 处理 HAVING 条件
+            get_clause(x->having_conds, query->having_conds);
+            check_clause(query->tables, query->having_conds, true);
+        }
         // 处理where条件
         get_clause(x->conds, query->conds);
-        check_clause(query->tables, query->conds);
+        check_clause(query->tables, query->conds, false);
     }
     else if (auto x = std::dynamic_pointer_cast<ast::UpdateStmt>(parse))
     {
@@ -183,14 +219,14 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
 
         // 处理where条件
         get_clause(x->conds, query->conds);
-        check_clause({x->tab_name}, query->conds);
+        check_clause({x->tab_name}, query->conds, false);
     }
     else if (auto x = std::dynamic_pointer_cast<ast::DeleteStmt>(parse))
     {
         query->tables = {x->tab_name};
         // 处理where条件
         get_clause(x->conds, query->conds);
-        check_clause({x->tab_name}, query->conds);
+        check_clause({x->tab_name}, query->conds, false);
     }
     else if (auto x = std::dynamic_pointer_cast<ast::InsertStmt>(parse))
     {
@@ -283,7 +319,7 @@ TabCol Analyze::check_column(const std::vector<ColMeta> &all_cols, TabCol target
         {
             if (it->type != ColType::TYPE_INT && it->type != ColType::TYPE_FLOAT)
             {
-                throw InternalError("Unexpected sv value type");
+                throw InternalError("Unexpected sv value type 1");
             }
         }
 
@@ -325,24 +361,33 @@ void Analyze::get_clause(const std::vector<std::shared_ptr<ast::BinaryExpr>> &sv
     }
 }
 
-void Analyze::check_clause(const std::vector<std::string> &tab_names, std::vector<Condition> &conds)
+void Analyze::check_clause(const std::vector<std::string> &tab_names, std::vector<Condition> &conds, bool is_having)
 {
-    // auto all_cols = get_all_cols(tab_names);
     std::vector<ColMeta> all_cols;
     get_all_cols(tab_names, all_cols);
-    // Get raw values in where clause
+
     for (auto &cond : conds)
     {
+        // 检查 WHERE 子句中是否包含聚合函数
+        if (!is_having && (cond.lhs_col.aggFuncType != ast::AggFuncType::NO_TYPE || 
+                          (!cond.is_rhs_val && cond.rhs_col.aggFuncType != ast::AggFuncType::NO_TYPE))) {
+            throw RMDBError("Aggregate functions are not allowed in WHERE clause");
+        }
+
         // Infer table name from column name
-        cond.lhs_col = check_column(all_cols, cond.lhs_col);
-        if (!cond.is_rhs_val)
+        if (cond.lhs_col.col_name != "*"){
+            cond.lhs_col = check_column(all_cols, cond.lhs_col);
+        }
+        if (!cond.is_rhs_val && cond.rhs_col.col_name != "*")
         {
             cond.rhs_col = check_column(all_cols, cond.rhs_col);
         }
+
         TabMeta &lhs_tab = sm_manager_->db_.get_table(cond.lhs_col.tab_name);
         auto lhs_col = lhs_tab.get_col(cond.lhs_col.col_name);
         ColType lhs_type = lhs_col->type;
         ColType rhs_type;
+
         if (cond.is_rhs_val)
         {
             rhs_type = cond.rhs_val.type;
@@ -407,7 +452,7 @@ Value Analyze::convert_sv_value(const std::shared_ptr<ast::Value> &sv_val)
     }
     else
     {
-        throw InternalError("Unexpected sv value type");
+        throw InternalError("Unexpected sv value type 2");
     }
     return val;
 }

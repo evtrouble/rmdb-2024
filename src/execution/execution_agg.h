@@ -20,24 +20,34 @@ private:
     std::unique_ptr<AbstractExecutor> child_executor_; // 子执行器
     std::vector<TabCol> sel_cols_;                    // 聚合的目标列
     std::vector<TabCol> group_by_cols_;               // GROUP BY 列
+    std::vector<Condition> having_conds_;              // HAVING 条件
     Context *context_;                                // 执行器上下文
     std::vector<ColMeta> output_cols_;                // 输出列的元数据
     size_t TupleLen;                                  // 输出元组的长度
     std::unordered_map<std::string, std::vector<Value>> agg_groups_; // 分组聚合值
+    std::unordered_map<std::string, std::vector<Value>> having_lhs_agg_groups_;// HAVING 左分组聚合值
+    std::unordered_map<std::string, std::vector<Value>> having_rhs_agg_groups_;// HAVING 右分组聚合值
     std::vector<std::vector<ColMeta>::const_iterator> sel_col_metas_;// 目标列元数据
     std::vector<std::vector<ColMeta>::const_iterator> group_by_col_metas_;// GROUP BY 列元数据
+    std::vector<TabCol>  having_lhs_cols_;                    //  HAVING 左聚合的目标列
+    std::vector<TabCol>  having_rhs_cols_;                    //  HAVING 右聚合的目标列
+    std::vector<std::vector<ColMeta>::const_iterator> having_lhs_col_metas_;// HAVING 左列元数据
+    std::vector<std::vector<ColMeta>::const_iterator> having_rhs_col_metas_;// HAVING 右列元数据 
     bool is_aggregated_;                              // 是否已完成聚合
     std::unordered_map<std::string, std::vector<Value>>::iterator group_iter_; // 分组迭代器
     std::vector<std::string> insert_order_; // 记录分组键的插入顺序
     size_t current_group_index_; // 当前遍历的分组索引
 
-    void aggregate(const RmRecord &record);           // 聚合计算
-    std::string get_group_key(const RmRecord &record); // 获取分组键
-    Value get_agg_value(size_t index) const;          // 获取聚合值
+    void init(std::vector<Value> &agg_values, std::vector<TabCol> sel_cols_, const RmRecord &record);
+    void aggregate_values(std::vector<Value> &agg_values, std::vector<TabCol> sel_cols_, const RmRecord &record);
+    void aggregate(const RmRecord &record);                             // 聚合计算
+    std::string get_group_key(const RmRecord &record);                  // 获取分组键
+    bool check_having_conditions(const std::vector<Value> &having_lhs_agg_values, const std::vector<Value> &having_rhs_agg_values);// 判断having
+    bool compare_values(const Value &lhs_value, const Value &rhs_value, CompOp op);// 比较两个value对象的值是否满足指定的比较操作符
 
 public:
-    AggExecutor(std::unique_ptr<AbstractExecutor> child_executor, std::vector<TabCol> sel_cols, std::vector<TabCol> group_by_cols, Context *context)
-        : child_executor_(std::move(child_executor)), sel_cols_(std::move(sel_cols)), group_by_cols_(std::move(group_by_cols)), context_(context), is_aggregated_(false),  current_group_index_(0) {
+    AggExecutor(std::unique_ptr<AbstractExecutor> child_executor, std::vector<TabCol> sel_cols, std::vector<TabCol> group_by_cols, std::vector<Condition> having_conds, Context *context)
+        : child_executor_(std::move(child_executor)), sel_cols_(std::move(sel_cols)), group_by_cols_(std::move(group_by_cols)),  having_conds_(std::move(having_conds)), context_(context), is_aggregated_(false),  current_group_index_(0) {
         // 初始化输出列
         TupleLen = 0;
         int offset = 0;
@@ -67,8 +77,43 @@ public:
             auto temp = get_col(child_executor_->cols(), col);
             group_by_col_metas_.emplace_back(temp);
         }
+        // 初始化 HAVING 列元数据
+        for (const auto &cond : having_conds_) {
+            std::vector<ColMeta> col_metas;
+            if (ast::AggFuncType::COUNT == cond.lhs_col.aggFuncType) {
+                ColMeta col_meta = {cond.lhs_col.tab_name, cond.lhs_col.col_name, TYPE_INT, sizeof(int), 0, false};
+                having_lhs_cols_.emplace_back(cond.lhs_col);
+                col_metas.emplace_back(col_meta);
+                having_lhs_col_metas_.emplace_back(col_metas.begin());
+            } else {
+                if (cond.lhs_col.col_name == "*") {
+                    throw InvalidAggTypeError("*", std::to_string(cond.lhs_col.aggFuncType));
+                }
+                auto temp = get_col(child_executor_->cols(), cond.lhs_col);
+                having_lhs_cols_.emplace_back(cond.lhs_col);
+                having_lhs_col_metas_.emplace_back(temp);
+            }
+
+            if (!cond.is_rhs_val) {
+                if (ast::AggFuncType::COUNT == cond.rhs_col.aggFuncType) {
+                    ColMeta col_meta = {cond.rhs_col.tab_name, cond.rhs_col.col_name, TYPE_INT, sizeof(int), 0, false};
+                    having_lhs_cols_.emplace_back(cond.rhs_col);
+                    col_metas.emplace_back(col_meta);
+                    having_lhs_col_metas_.emplace_back(col_metas.begin());
+                } else {
+                    if (cond.rhs_col.col_name == "*") {
+                        throw InvalidAggTypeError("*", std::to_string(cond.rhs_col.aggFuncType));
+                    }
+                    auto temp = get_col(child_executor_->cols(), cond.rhs_col);
+                    having_lhs_cols_.emplace_back(cond.rhs_col);
+                    having_lhs_col_metas_.emplace_back(temp);
+                }
+            }
+        }
         // 初始化聚合值
         agg_groups_.clear();
+        having_lhs_agg_groups_.clear();
+        having_rhs_agg_groups_.clear();
     }
 
     size_t tupleLen() const {
@@ -83,6 +128,8 @@ public:
         child_executor_->beginTuple();
         is_aggregated_ = false;
         agg_groups_.clear();
+        having_lhs_agg_groups_.clear();
+        having_rhs_agg_groups_.clear();
         group_iter_ = agg_groups_.begin();
     }
 
@@ -123,6 +170,15 @@ public:
         // 获取当前分组键
         const std::string &group_key = insert_order_[current_group_index_];
         auto &agg_values = agg_groups_[group_key];
+        auto &having_lhs_agg_values = having_lhs_agg_groups_[group_key];
+        auto &having_rhs_agg_values = having_rhs_agg_groups_[group_key];
+
+        // 检查是否满足having条件
+        if (!check_having_conditions(having_lhs_agg_values, having_rhs_agg_values))
+        {
+            ++current_group_index_;
+            return Next(); // 跳过不满足条件的分组
+        }
 
         RmRecord record(TupleLen);
         int offset = 0;
@@ -141,7 +197,7 @@ public:
                     memcpy(record.data + offset, value.str_val.c_str(), value.str_val.size());
                     break;
                 default:
-                    throw InternalError("Unexpected sv value type");
+                    throw InternalError("Unexpected sv value type 3");
             }
             offset += output_cols_[i].len;
         }
@@ -153,69 +209,64 @@ public:
     }
 };
 
-void AggExecutor::aggregate(const RmRecord &record) {
-    std::string group_key = get_group_key(record);
-    auto &agg_values = agg_groups_[group_key];
-    if (agg_values.empty()) {
-        insert_order_.emplace_back(group_key); // 记录分组键的插入顺序
-        agg_values.resize(sel_cols_.size());
-        for (size_t i = 0; i < sel_cols_.size(); ++i) {
-            auto agg_type = sel_cols_[i].aggFuncType;
-            if (ast::AggFuncType::COUNT == agg_type) {
-                agg_values[i].set_int(0);
-            } else if (ast::AggFuncType::SUM == agg_type || ast::AggFuncType::MAX == agg_type || ast::AggFuncType::MIN == agg_type) {
-                auto col = get_col(child_executor_->cols(), {sel_cols_[i].tab_name, sel_cols_[i].col_name});
-                switch (col->type) {
-                    case TYPE_INT:
-                        if (ast::AggFuncType::MIN == agg_type)
-                            agg_values[i].set_int(std::numeric_limits<int>::max());
-                        else if (ast::AggFuncType::MAX == agg_type)
-                            agg_values[i].set_int(std::numeric_limits<int>::min());
-                        else
-                            agg_values[i].set_int(0);
-                        break;
-                    case TYPE_FLOAT:
-                        if (ast::AggFuncType::MIN == agg_type)
-                            agg_values[i].set_float(std::numeric_limits<float>::max());
-                        else if (ast::AggFuncType::MAX == agg_type)
-                            agg_values[i].set_float(std::numeric_limits<float>::lowest());
-                        else
-                            agg_values[i].set_float(0.0f);
-                        break;
-                    case TYPE_STRING:
-                        if (ast::AggFuncType::MIN == agg_type) {
-                            auto str_len = col->len;
-                            std::string max_str(str_len, '~');
-                            agg_values[i].set_str(max_str);
-                        } else if (ast::AggFuncType::MAX == agg_type) {
-                            agg_values[i].set_str("");
-                        } else {
-                            throw RMDBError();
-                        }
-                        break;
-                }
+void AggExecutor::init(std::vector<Value> &agg_values, const std::vector<TabCol> sel_cols_, const RmRecord &record){
+    for (size_t i = 0; i < sel_cols_.size(); ++i) {
+        auto agg_type = sel_cols_[i].aggFuncType;
+        if (ast::AggFuncType::COUNT == agg_type) {
+            agg_values[i].set_int(0);
+        } else if (ast::AggFuncType::SUM == agg_type || ast::AggFuncType::MAX == agg_type || ast::AggFuncType::MIN == agg_type) {
+            auto col = get_col(child_executor_->cols(), {sel_cols_[i].tab_name, sel_cols_[i].col_name});
+            switch (col->type) {
+                case TYPE_INT:
+                    if (ast::AggFuncType::MIN == agg_type)
+                        agg_values[i].set_int(std::numeric_limits<int>::max());
+                    else if (ast::AggFuncType::MAX == agg_type)
+                        agg_values[i].set_int(std::numeric_limits<int>::min());
+                    else
+                        agg_values[i].set_int(0);
+                    break;
+                case TYPE_FLOAT:
+                    if (ast::AggFuncType::MIN == agg_type)
+                        agg_values[i].set_float(std::numeric_limits<float>::max());
+                    else if (ast::AggFuncType::MAX == agg_type)
+                        agg_values[i].set_float(std::numeric_limits<float>::lowest());
+                    else
+                        agg_values[i].set_float(0.0f);
+                    break;
+                case TYPE_STRING:
+                    if (ast::AggFuncType::MIN == agg_type) {
+                        auto str_len = col->len;
+                        std::string max_str(str_len, '~');
+                        agg_values[i].set_str(max_str);
+                    } else if (ast::AggFuncType::MAX == agg_type) {
+                        agg_values[i].set_str("");
+                    } else {
+                        throw RMDBError();
+                    }
+                    break;
             }
-            // 如果是 GROUP BY 列，初始化其值
-            else if (ast::AggFuncType::NO_TYPE == agg_type) {
-                auto col_meta = *get_col(child_executor_->cols(), sel_cols_[i]);
-                switch (col_meta.type) {
-                    case TYPE_INT:
-                        agg_values[i].set_int(*reinterpret_cast<const int*>(record.data + col_meta.offset));
-                        break;
-                    case TYPE_FLOAT:
-                        agg_values[i].set_float(*reinterpret_cast<const float*>(record.data + col_meta.offset));
-                        break;
-                    case TYPE_STRING:
-                        agg_values[i].set_str(std::string(record.data + col_meta.offset, col_meta.len));
-                        break;
-                    default:
-                        throw InternalError("Unexpected sv value type");
-                }
+        }
+        // 如果是 GROUP BY 列，初始化其值
+        else if (ast::AggFuncType::NO_TYPE == agg_type) {
+            auto col_meta = *get_col(child_executor_->cols(), sel_cols_[i]);
+            switch (col_meta.type) {
+                case TYPE_INT:
+                    agg_values[i].set_int(*reinterpret_cast<const int*>(record.data + col_meta.offset));
+                    break;
+                case TYPE_FLOAT:
+                    agg_values[i].set_float(*reinterpret_cast<const float*>(record.data + col_meta.offset));
+                    break;
+                case TYPE_STRING:
+                    agg_values[i].set_str(std::string(record.data + col_meta.offset, col_meta.len));
+                    break;
+                default:
+                    throw InternalError("Unexpected sv value type 4");
             }
         }
     }
+}
 
-    // 更新聚合值
+void AggExecutor::aggregate_values(std::vector<Value> &agg_values, const std::vector<TabCol> sel_cols_, const RmRecord &record){
     for (size_t i = 0; i < sel_cols_.size(); ++i) {
         auto agg_type = sel_cols_[i].aggFuncType;
         if (ast::AggFuncType::NO_TYPE == agg_type) {
@@ -236,7 +287,7 @@ void AggExecutor::aggregate(const RmRecord &record) {
                 value.set_str(std::string(record.data + col_meta.offset, col_meta.len));
                 break;
             default:
-                throw InternalError("Unexpected sv value type");
+                throw InternalError("Unexpected sv value type 5");
         }
 
         switch (agg_type) {
@@ -270,6 +321,23 @@ void AggExecutor::aggregate(const RmRecord &record) {
     }
 }
 
+void AggExecutor::aggregate(const RmRecord &record) {
+    std::string group_key = get_group_key(record);
+    auto &agg_values = agg_groups_[group_key];
+    auto &having_lhs_agg_values = having_lhs_agg_groups_[group_key];
+    auto &having_rhs_agg_values = having_rhs_agg_groups_[group_key];
+    if (agg_values.empty()) {
+        insert_order_.emplace_back(group_key); // 记录分组键的插入顺序
+        agg_values.resize(sel_cols_.size());
+        init(agg_values, sel_cols_, record);
+        init(having_lhs_agg_values, having_lhs_cols_, record);
+        init(having_rhs_agg_values, having_rhs_cols_, record);
+    }
+    aggregate_values(agg_values, sel_cols_, record);
+    aggregate_values(having_lhs_agg_values, having_lhs_cols_, record);
+    aggregate_values(having_rhs_agg_values, having_rhs_cols_, record);
+}
+
 std::string AggExecutor::get_group_key(const RmRecord &record) {
     if (group_by_cols_.empty())
     {
@@ -289,9 +357,56 @@ std::string AggExecutor::get_group_key(const RmRecord &record) {
                 key += std::string(record.data + col_meta.offset, col_meta.len);
                 break;
             default:
-                throw InternalError("Unexpected sv value type");
+                throw InternalError("Unexpected sv value type 6");
         }
         key += "|"; // 分隔符
     }
     return key;
+}
+
+bool AggExecutor::check_having_conditions(const std::vector<Value> &having_lhs_agg_values, const std::vector<Value> &having_rhs_agg_values)
+{
+    auto lhs_it = having_lhs_agg_values.begin();
+    auto rhs_it = having_rhs_agg_values.begin();
+    for (const auto &cond : having_conds_) {
+        // 获取左操作数的值
+        Value lhs_value = *lhs_it;
+        lhs_it++;
+
+        // 获取右操作数的值
+        Value rhs_value;
+        if (cond.is_rhs_val) {
+            rhs_value = cond.rhs_val;
+        } else {
+            rhs_value = *rhs_it;
+            rhs_it++;
+        }
+
+        // 检查条件是否满足
+        if (!compare_values(lhs_value, rhs_value, cond.op)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool AggExecutor::compare_values(const Value &lhs_value, const Value &rhs_value, CompOp op)
+{
+    switch (op)
+    {
+        case OP_EQ:
+            return lhs_value == rhs_value;
+        case OP_NE:
+            return lhs_value != rhs_value;
+        case OP_LT:
+            return lhs_value < rhs_value;
+        case OP_LE:
+            return lhs_value <= rhs_value;
+        case OP_GT:
+            return lhs_value > rhs_value;
+        case OP_GE:
+            return lhs_value >= rhs_value;
+        default:
+            throw InternalError("Unexpected comparison operator");
+    }
 }

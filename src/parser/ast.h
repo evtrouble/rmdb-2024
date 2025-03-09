@@ -240,9 +240,11 @@ struct SelectStmt : public TreeNode {
     std::vector<std::shared_ptr<BinaryExpr>> conds;
     std::vector<std::shared_ptr<JoinExpr>> jointree;
     std::vector<std::shared_ptr<Col>> groupby;
+    std::vector<std::shared_ptr<BinaryExpr>> having_conds;
 
     bool has_agg = false;
     bool has_groupby;
+    bool has_having;
     bool has_sort;
     std::shared_ptr<OrderBy> order;
 
@@ -251,11 +253,13 @@ struct SelectStmt : public TreeNode {
                const std::vector<std::string> &tabs_,
                const std::vector<std::shared_ptr<BinaryExpr>> &conds_,
                std::vector<std::shared_ptr<Col>> groupby_,
+               std::vector<std::shared_ptr<BinaryExpr>> having_conds_,
                std::shared_ptr<OrderBy> order_) :
             cols(std::move(cols_)), tabs(std::move(tabs_)), conds(std::move(conds_)), 
-            groupby(std::move(groupby_)),order(std::move(order_)) {
+            groupby(std::move(groupby_)), having_conds(std::move(having_conds_)), order(std::move(order_)) {
                 has_sort = (bool)order;
                 has_groupby = (!groupby.empty());
+                has_having = (!having_conds.empty());
             }
 };
 

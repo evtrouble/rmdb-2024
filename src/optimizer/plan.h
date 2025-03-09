@@ -175,9 +175,10 @@ public:
     std::shared_ptr<Plan> subplan_;
     std::vector<TabCol> sel_cols_;
     std::vector<TabCol> groupby_cols_;
+    std::vector<Condition> having_conds_;
 
-    AggPlan(PlanTag tag, std::shared_ptr<Plan> subplan,  std::vector<TabCol> sel_cols_, std::vector<TabCol> groupby_cols_) : 
-    Plan(tag),  subplan_(std::move(subplan)), sel_cols_(std::move(sel_cols_)), groupby_cols_(std::move(groupby_cols_)){}
+    AggPlan(PlanTag tag, std::shared_ptr<Plan> subplan,  std::vector<TabCol> sel_cols_, std::vector<TabCol> groupby_cols_, std::vector<Condition> having_conds_) : 
+    Plan(tag),  subplan_(std::move(subplan)), sel_cols_(std::move(sel_cols_)), groupby_cols_(std::move(groupby_cols_)), having_conds_(std::move(having_conds_)){}
 
     ~AggPlan() override = default;
 };

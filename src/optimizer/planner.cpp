@@ -313,20 +313,8 @@ std::shared_ptr<Plan> Planner::generate_agg_plan(const std::shared_ptr<Query> &q
     {
         return plan;
     }
-    // 获取聚合函数
-    std::vector<TabCol> agg_sel_cols;
-    for (const auto &col : query->cols)
-    {
-        agg_sel_cols.emplace_back(TabCol(col.tab_name, col.col_name, col.aggFuncType, col.alias));
-    }
-    // 获取groupby字段
-    std::vector<TabCol> groupby_cols;
-    for (const auto &col : query->groupby)
-    {
-        groupby_cols.emplace_back(TabCol(col.tab_name, col.col_name));
-    }
     // 生成聚合计划
-    plan = std::make_shared<AggPlan>(T_Agg, std::move(plan), agg_sel_cols, groupby_cols);
+    plan = std::make_shared<AggPlan>(T_Agg, std::move(plan), query->cols, query->groupby, query->having_conds);
     return plan;
 }
 
