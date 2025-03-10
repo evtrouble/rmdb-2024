@@ -345,7 +345,7 @@ void Analyze::get_clause(const std::vector<std::shared_ptr<ast::BinaryExpr>> &sv
     for (auto &expr : sv_conds)
     {
         Condition cond;
-        cond.lhs_col = TabCol(expr->lhs->tab_name, expr->lhs->col_name);
+        cond.lhs_col = TabCol(expr->lhs->tab_name, expr->lhs->col_name, expr->lhs->agg_type);
         cond.op = convert_sv_comp_op(expr->op);
         if (auto rhs_val = std::dynamic_pointer_cast<ast::Value>(expr->rhs))
         {
@@ -355,7 +355,7 @@ void Analyze::get_clause(const std::vector<std::shared_ptr<ast::BinaryExpr>> &sv
         else if (auto rhs_col = std::dynamic_pointer_cast<ast::Col>(expr->rhs))
         {
             cond.is_rhs_val = false;
-            cond.rhs_col = TabCol(rhs_col->tab_name, rhs_col->col_name);
+            cond.rhs_col = TabCol(rhs_col->tab_name, rhs_col->col_name, expr->lhs->agg_type);
         }
         conds.emplace_back(std::move(cond));
     }
@@ -382,54 +382,55 @@ void Analyze::check_clause(const std::vector<std::string> &tab_names, std::vecto
         {
             cond.rhs_col = check_column(all_cols, cond.rhs_col);
         }
+        if ((is_having && cond.lhs_col.col_name!="*") || !is_having){
+            TabMeta &lhs_tab = sm_manager_->db_.get_table(cond.lhs_col.tab_name);
+            auto lhs_col = lhs_tab.get_col(cond.lhs_col.col_name);
+            ColType lhs_type = lhs_col->type;
+            ColType rhs_type;
 
-        TabMeta &lhs_tab = sm_manager_->db_.get_table(cond.lhs_col.tab_name);
-        auto lhs_col = lhs_tab.get_col(cond.lhs_col.col_name);
-        ColType lhs_type = lhs_col->type;
-        ColType rhs_type;
+            if (cond.is_rhs_val)
+            {
+                rhs_type = cond.rhs_val.type;
 
-        if (cond.is_rhs_val)
-        {
-            rhs_type = cond.rhs_val.type;
+                // 处理类型转换
+                if (lhs_type != rhs_type)
+                {
+                    // 如果左侧是FLOAT，右侧是INT，将INT转换为FLOAT
+                    if (lhs_type == TYPE_FLOAT && rhs_type == TYPE_INT)
+                    {
+                        float float_val = static_cast<float>(cond.rhs_val.int_val);
+                        cond.rhs_val.set_float(float_val);
+                        rhs_type = TYPE_FLOAT;
+                    }
+                    // 如果左侧是INT，右侧是FLOAT，将FLOAT转换为INT
+                    else if (lhs_type == TYPE_INT && rhs_type == TYPE_FLOAT)
+                    {
+                        int int_val = static_cast<int>(cond.rhs_val.float_val);
+                        cond.rhs_val.set_int(int_val);
+                        rhs_type = TYPE_INT;
+                    }
+                }
+                cond.rhs_val.raw = nullptr;
+                cond.rhs_val.init_raw(lhs_col->len);
+            }
+            else
+            {
+                TabMeta &rhs_tab = sm_manager_->db_.get_table(cond.rhs_col.tab_name);
+                auto rhs_col = rhs_tab.get_col(cond.rhs_col.col_name);
+                rhs_type = rhs_col->type;
 
-            // 处理类型转换
+                // 对于列与列比较，暂不支持自动类型转换
+            }
+
+            // 检查类型是否兼容
             if (lhs_type != rhs_type)
             {
-                // 如果左侧是FLOAT，右侧是INT，将INT转换为FLOAT
-                if (lhs_type == TYPE_FLOAT && rhs_type == TYPE_INT)
+                // 如果是INT和FLOAT之间的比较，我们已经处理了转换
+                if (!((lhs_type == TYPE_INT && rhs_type == TYPE_FLOAT) ||
+                    (lhs_type == TYPE_FLOAT && rhs_type == TYPE_INT)))
                 {
-                    float float_val = static_cast<float>(cond.rhs_val.int_val);
-                    cond.rhs_val.set_float(float_val);
-                    rhs_type = TYPE_FLOAT;
+                    throw IncompatibleTypeError(coltype2str(lhs_type), coltype2str(rhs_type));
                 }
-                // 如果左侧是INT，右侧是FLOAT，将FLOAT转换为INT
-                else if (lhs_type == TYPE_INT && rhs_type == TYPE_FLOAT)
-                {
-                    int int_val = static_cast<int>(cond.rhs_val.float_val);
-                    cond.rhs_val.set_int(int_val);
-                    rhs_type = TYPE_INT;
-                }
-            }
-            cond.rhs_val.raw = nullptr;
-            cond.rhs_val.init_raw(lhs_col->len);
-        }
-        else
-        {
-            TabMeta &rhs_tab = sm_manager_->db_.get_table(cond.rhs_col.tab_name);
-            auto rhs_col = rhs_tab.get_col(cond.rhs_col.col_name);
-            rhs_type = rhs_col->type;
-
-            // 对于列与列比较，暂不支持自动类型转换
-        }
-
-        // 检查类型是否兼容
-        if (lhs_type != rhs_type)
-        {
-            // 如果是INT和FLOAT之间的比较，我们已经处理了转换
-            if (!((lhs_type == TYPE_INT && rhs_type == TYPE_FLOAT) ||
-                  (lhs_type == TYPE_FLOAT && rhs_type == TYPE_INT)))
-            {
-                throw IncompatibleTypeError(coltype2str(lhs_type), coltype2str(rhs_type));
             }
         }
     }

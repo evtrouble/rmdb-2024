@@ -21,7 +21,6 @@ private:
     std::vector<TabCol> sel_cols_;                    // 聚合的目标列
     std::vector<TabCol> group_by_cols_;               // GROUP BY 列
     std::vector<Condition> having_conds_;              // HAVING 条件
-    Context *context_;                                // 执行器上下文
     std::vector<ColMeta> output_cols_;                // 输出列的元数据
     size_t TupleLen;                                  // 输出元组的长度
     std::unordered_map<std::string, std::vector<Value>> agg_groups_; // 分组聚合值
@@ -39,7 +38,7 @@ private:
     size_t current_group_index_; // 当前遍历的分组索引
 
     void init(std::vector<Value> &agg_values, std::vector<TabCol> sel_cols_, const RmRecord &record);
-    void aggregate_values(std::vector<Value> &agg_values, std::vector<TabCol> sel_cols_, const RmRecord &record);
+    void aggregate_values(std::vector<Value> &agg_values, const std::vector<TabCol> sel_cols_, const std::vector<std::vector<ColMeta>::const_iterator> sel_col_metas_, const RmRecord &record);
     void aggregate(const RmRecord &record);                             // 聚合计算
     std::string get_group_key(const RmRecord &record);                  // 获取分组键
     bool check_having_conditions(const std::vector<Value> &having_lhs_agg_values, const std::vector<Value> &having_rhs_agg_values);// 判断having
@@ -47,7 +46,7 @@ private:
 
 public:
     AggExecutor(std::unique_ptr<AbstractExecutor> child_executor, std::vector<TabCol> sel_cols, std::vector<TabCol> group_by_cols, std::vector<Condition> having_conds, Context *context)
-        : child_executor_(std::move(child_executor)), sel_cols_(std::move(sel_cols)), group_by_cols_(std::move(group_by_cols)),  having_conds_(std::move(having_conds)), context_(context), is_aggregated_(false),  current_group_index_(0) {
+        : AbstractExecutor(context),child_executor_(std::move(child_executor)), sel_cols_(std::move(sel_cols)), group_by_cols_(std::move(group_by_cols)),  having_conds_(std::move(having_conds)), is_aggregated_(false),  current_group_index_(0) {
         // 初始化输出列
         TupleLen = 0;
         int offset = 0;
@@ -266,11 +265,18 @@ void AggExecutor::init(std::vector<Value> &agg_values, const std::vector<TabCol>
     }
 }
 
-void AggExecutor::aggregate_values(std::vector<Value> &agg_values, const std::vector<TabCol> sel_cols_, const RmRecord &record){
+void AggExecutor::aggregate_values(std::vector<Value> &agg_values, const std::vector<TabCol> sel_cols_, const std::vector<std::vector<ColMeta>::const_iterator> sel_col_metas_,const RmRecord &record){
     for (size_t i = 0; i < sel_cols_.size(); ++i) {
         auto agg_type = sel_cols_[i].aggFuncType;
+        // GROUP BY 列不需要更新
         if (ast::AggFuncType::NO_TYPE == agg_type) {
-            continue; // GROUP BY 列不需要更新
+            continue;
+        }
+        // COUNT 列直接+1
+        if (ast::AggFuncType::COUNT == agg_type)
+        {
+            agg_values[i].int_val += 1;
+            continue;
         }
         auto col_meta = *sel_col_metas_[i];
         Value value;
@@ -297,9 +303,6 @@ void AggExecutor::aggregate_values(std::vector<Value> &agg_values, const std::ve
                 } else if (TYPE_FLOAT == value.type) {
                     agg_values[i].float_val += value.float_val;
                 }
-                break;
-            case ast::AggFuncType::COUNT:
-                agg_values[i].set_int(agg_values[i].int_val + 1);
                 break;
             case ast::AggFuncType::MAX:
                 if (TYPE_INT == value.type && agg_values[i].int_val < value.int_val) {
@@ -333,9 +336,9 @@ void AggExecutor::aggregate(const RmRecord &record) {
         init(having_lhs_agg_values, having_lhs_cols_, record);
         init(having_rhs_agg_values, having_rhs_cols_, record);
     }
-    aggregate_values(agg_values, sel_cols_, record);
-    aggregate_values(having_lhs_agg_values, having_lhs_cols_, record);
-    aggregate_values(having_rhs_agg_values, having_rhs_cols_, record);
+    aggregate_values(agg_values, sel_cols_, sel_col_metas_, record);
+    aggregate_values(having_lhs_agg_values, having_lhs_cols_, having_lhs_col_metas_, record);
+    aggregate_values(having_rhs_agg_values, having_rhs_cols_, having_rhs_col_metas_, record);
 }
 
 std::string AggExecutor::get_group_key(const RmRecord &record) {
