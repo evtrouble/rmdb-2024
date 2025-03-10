@@ -166,52 +166,27 @@ public:
                     agg_values[i].set_int(0);
                 } else if (ast::AggFuncType::SUM == agg_type || ast::AggFuncType::MAX == agg_type || ast::AggFuncType::MIN == agg_type) {
                     auto col = get_col(child_executor_->cols(), {sel_cols_[i].tab_name, sel_cols_[i].col_name});
-                    switch (col->type) {
-                        case TYPE_INT:
-                            if (ast::AggFuncType::MIN == agg_type)
-                                agg_values[i].set_int(std::numeric_limits<int>::max());
-                            else if (ast::AggFuncType::MAX == agg_type)
-                                agg_values[i].set_int(std::numeric_limits<int>::min());
-                            else
+                    if (ast::AggFuncType::MIN == agg_type)
+                        agg_values[i].set_max(col->type, col->len);
+                    else if (ast::AggFuncType::MAX == agg_type)
+                        agg_values[i].set_min(col->type, col->len);
+                    else {
+                        switch (col->type)
+                        {
+                            case TYPE_INT:
                                 agg_values[i].set_int(0);
-                            break;
-                        case TYPE_FLOAT:
-                            if (ast::AggFuncType::MIN == agg_type)
-                                agg_values[i].set_float(std::numeric_limits<float>::max());
-                            else if (ast::AggFuncType::MAX == agg_type)
-                                agg_values[i].set_float(std::numeric_limits<float>::lowest());
-                            else
+                                break;
+                            case TYPE_FLOAT:
                                 agg_values[i].set_float(0.0f);
-                            break;
-                        case TYPE_STRING:
-                            if (ast::AggFuncType::MIN == agg_type) {
-                                auto str_len = col->len;
-                                std::string max_str(str_len, '~');
-                                agg_values[i].set_str(max_str);
-                            } else if (ast::AggFuncType::MAX == agg_type) {
-                                agg_values[i].set_str("");
-                            } else {
+                                break;
+                            default:
                                 throw RMDBError();
-                            }
-                            break;
+                        }
                     }
                 }
             }
             for (size_t i = 0; i < sel_cols_.size(); ++i) {
-                const auto &value = agg_values[i];
-                switch (value.type) {
-                    case TYPE_INT:
-                        *(int*)(record.data + offset) = value.int_val;
-                        break;
-                    case TYPE_FLOAT:
-                        *(float*)(record.data + offset) = value.float_val;
-                        break;
-                    case TYPE_STRING:
-                        memcpy(record.data + offset, value.str_val.c_str(), value.str_val.size());
-                        break;
-                    default:
-                        throw InternalError("Unexpected sv value type 3");
-                }
+                agg_values[i].export_val(record.data + offset, output_cols_[i].len);
                 offset += output_cols_[i].len;
             }
             results_.emplace_back(std::move(record));   
@@ -239,20 +214,7 @@ public:
 
         // 遍历 sel_cols_，动态写入值
         for (size_t i = 0; i < sel_cols_.size(); ++i) {
-            const auto &value = agg_values[i];
-            switch (value.type) {
-                case TYPE_INT:
-                    *(int*)(record.data + offset) = value.int_val;
-                    break;
-                case TYPE_FLOAT:
-                    *(float*)(record.data + offset) = value.float_val;
-                    break;
-                case TYPE_STRING:
-                    memcpy(record.data + offset, value.str_val.c_str(), value.str_val.size());
-                    break;
-                default:
-                    throw InternalError("Unexpected sv value type 3");
-            }
+            agg_values[i].export_val(record.data + offset, output_cols_[i].len);
             offset += output_cols_[i].len;
         }
 
@@ -279,34 +241,22 @@ void AggExecutor::init(std::vector<Value> &agg_values, const std::vector<TabCol>
             agg_values[i].set_int(0);
         } else if (ast::AggFuncType::SUM == agg_type || ast::AggFuncType::MAX == agg_type || ast::AggFuncType::MIN == agg_type) {
             auto col = get_col(child_executor_->cols(), {sel_cols_[i].tab_name, sel_cols_[i].col_name});
-            switch (col->type) {
-                case TYPE_INT:
-                    if (ast::AggFuncType::MIN == agg_type)
-                        agg_values[i].set_int(std::numeric_limits<int>::max());
-                    else if (ast::AggFuncType::MAX == agg_type)
-                        agg_values[i].set_int(std::numeric_limits<int>::min());
-                    else
+            if (ast::AggFuncType::MIN == agg_type)
+                agg_values[i].set_max(col->type, col->len);
+            else if (ast::AggFuncType::MAX == agg_type)
+                agg_values[i].set_min(col->type, col->len);
+            else {
+                switch (col->type)
+                {
+                    case TYPE_INT:
                         agg_values[i].set_int(0);
-                    break;
-                case TYPE_FLOAT:
-                    if (ast::AggFuncType::MIN == agg_type)
-                        agg_values[i].set_float(std::numeric_limits<float>::max());
-                    else if (ast::AggFuncType::MAX == agg_type)
-                        agg_values[i].set_float(std::numeric_limits<float>::lowest());
-                    else
+                        break;
+                    case TYPE_FLOAT:
                         agg_values[i].set_float(0.0f);
-                    break;
-                case TYPE_STRING:
-                    if (ast::AggFuncType::MIN == agg_type) {
-                        auto str_len = col->len;
-                        std::string max_str(str_len, '~');
-                        agg_values[i].set_str(max_str);
-                    } else if (ast::AggFuncType::MAX == agg_type) {
-                        agg_values[i].set_str("");
-                    } else {
+                        break;
+                    default:
                         throw RMDBError();
-                    }
-                    break;
+                }
             }
         }
         // 如果是 GROUP BY 列，初始化其值
@@ -342,7 +292,7 @@ void AggExecutor::aggregate_values(std::vector<Value> &agg_values, const std::ve
             agg_values[i].int_val += 1;
             continue;
         }
-        auto col_meta = *sel_col_metas_[i];
+        auto &col_meta = *sel_col_metas_[i];
         Value value;
         value.type = col_meta.type;
 
@@ -369,18 +319,10 @@ void AggExecutor::aggregate_values(std::vector<Value> &agg_values, const std::ve
                 }
                 break;
             case ast::AggFuncType::MAX:
-                if (TYPE_INT == value.type && agg_values[i].int_val < value.int_val) {
-                    agg_values[i].int_val = value.int_val;
-                } else if (TYPE_FLOAT == value.type && agg_values[i].float_val < value.float_val) {
-                    agg_values[i].float_val = value.float_val;
-                }
+                agg_values[i] = std::max(agg_values[i], value);
                 break;
             case ast::AggFuncType::MIN:
-                if (TYPE_INT == value.type && agg_values[i].int_val > value.int_val) {
-                    agg_values[i].int_val = value.int_val;
-                } else if (TYPE_FLOAT == value.type && agg_values[i].float_val > value.float_val) {
-                    agg_values[i].float_val = value.float_val;
-                }
+                agg_values[i] = std::min(agg_values[i], value);
                 break;
             default:
                 break;
