@@ -1,5 +1,6 @@
 {
     "files.associations": {
+        "*.v": "verilog",
         "any": "cpp",
         "array": "cpp",
         "atomic": "cpp",
@@ -65,7 +66,8 @@
         "thread": "cpp",
         "typeinfo": "cpp",
         "variant": "cpp",
-        "shared_mutex": "cpp",
-        "future": "cpp"
-    }
+        "future": "cpp",
+        "shared_mutex": "cpp"
+    },
+    "cmake.sourceDirectory": "/home/nero/db2024/rmdb/src/optimizer"
 }

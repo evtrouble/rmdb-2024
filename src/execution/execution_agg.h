@@ -162,6 +162,68 @@ public:
         if (!is_aggregated_) {
             nextTuple();
         }
+        // 如果 agg_groups_ 为空，返回初始值
+        if (agg_groups_.empty()) {
+            RmRecord record(TupleLen);
+            int offset = 0;
+            std::vector<Value> agg_values; 
+            agg_values.resize(sel_cols_.size());
+            for (size_t i = 0; i < sel_cols_.size(); ++i) {
+                auto agg_type = sel_cols_[i].aggFuncType;
+                if (ast::AggFuncType::COUNT == agg_type) {
+                    agg_values[i].set_int(0);
+                } else if (ast::AggFuncType::SUM == agg_type || ast::AggFuncType::MAX == agg_type || ast::AggFuncType::MIN == agg_type) {
+                    auto col = get_col(child_executor_->cols(), {sel_cols_[i].tab_name, sel_cols_[i].col_name});
+                    switch (col->type) {
+                        case TYPE_INT:
+                            if (ast::AggFuncType::MIN == agg_type)
+                                agg_values[i].set_int(std::numeric_limits<int>::max());
+                            else if (ast::AggFuncType::MAX == agg_type)
+                                agg_values[i].set_int(std::numeric_limits<int>::min());
+                            else
+                                agg_values[i].set_int(0);
+                            break;
+                        case TYPE_FLOAT:
+                            if (ast::AggFuncType::MIN == agg_type)
+                                agg_values[i].set_float(std::numeric_limits<float>::max());
+                            else if (ast::AggFuncType::MAX == agg_type)
+                                agg_values[i].set_float(std::numeric_limits<float>::lowest());
+                            else
+                                agg_values[i].set_float(0.0f);
+                            break;
+                        case TYPE_STRING:
+                            if (ast::AggFuncType::MIN == agg_type) {
+                                auto str_len = col->len;
+                                std::string max_str(str_len, '~');
+                                agg_values[i].set_str(max_str);
+                            } else if (ast::AggFuncType::MAX == agg_type) {
+                                agg_values[i].set_str("");
+                            } else {
+                                throw RMDBError();
+                            }
+                            break;
+                    }
+                }
+            }
+            for (size_t i = 0; i < sel_cols_.size(); ++i) {
+                const auto &value = agg_values[i];
+                switch (value.type) {
+                    case TYPE_INT:
+                        *(int*)(record.data + offset) = value.int_val;
+                        break;
+                    case TYPE_FLOAT:
+                        *(float*)(record.data + offset) = value.float_val;
+                        break;
+                    case TYPE_STRING:
+                        memcpy(record.data + offset, value.str_val.c_str(), value.str_val.size());
+                        break;
+                    default:
+                        throw InternalError("Unexpected sv value type 3");
+                }
+                offset += output_cols_[i].len;
+            }
+            return std::make_unique<RmRecord>(record);
+        }
         if (current_group_index_ >= insert_order_.size()) {
             return nullptr;
         }
@@ -332,6 +394,8 @@ void AggExecutor::aggregate(const RmRecord &record) {
     if (agg_values.empty()) {
         insert_order_.emplace_back(group_key); // 记录分组键的插入顺序
         agg_values.resize(sel_cols_.size());
+        having_lhs_agg_values.resize(having_lhs_cols_.size());
+        having_rhs_agg_values.resize(having_rhs_cols_.size());
         init(agg_values, sel_cols_, record);
         init(having_lhs_agg_values, having_lhs_cols_, record);
         init(having_rhs_agg_values, having_rhs_cols_, record);
