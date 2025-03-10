@@ -233,11 +233,19 @@ void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, 
             char *rec_buf = Tuple->data + col.offset;
             if (col.type == TYPE_INT)
             {
-                col_str = std::to_string(*(int *)rec_buf);
+                auto val = *(int *)rec_buf;
+                if (std::numeric_limits<int>::max() == val || std::numeric_limits<int>::min() == val)
+                    col_str = "";
+                else
+                    col_str = std::to_string(*(int *)rec_buf);
             }
             else if (col.type == TYPE_FLOAT)
             {
-                col_str = std::to_string(*(float *)rec_buf);
+                auto val = *(float *)rec_buf;
+                if (std::numeric_limits<float>::max() == val || std::numeric_limits<float>::lowest() == val)
+                    col_str = "";
+                else
+                    col_str = std::to_string(*(float *)rec_buf);
             }
             else if (col.type == TYPE_STRING)
             {

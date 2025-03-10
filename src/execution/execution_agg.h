@@ -31,11 +31,11 @@ private:
     std::vector<TabCol>  having_lhs_cols_;                    //  HAVING 左聚合的目标列
     std::vector<TabCol>  having_rhs_cols_;                    //  HAVING 右聚合的目标列
     std::vector<std::vector<ColMeta>::const_iterator> having_lhs_col_metas_;// HAVING 左列元数据
-    std::vector<std::vector<ColMeta>::const_iterator> having_rhs_col_metas_;// HAVING 右列元数据 
-    bool is_aggregated_;                              // 是否已完成聚合
-    std::unordered_map<std::string, std::vector<Value>>::iterator group_iter_; // 分组迭代器
+    std::vector<std::vector<ColMeta>::const_iterator> having_rhs_col_metas_;// HAVING 右列元数据
     std::vector<std::string> insert_order_; // 记录分组键的插入顺序
     size_t current_group_index_; // 当前遍历的分组索引
+    std::vector<RmRecord> results_; // 储存结果
+    std::vector<RmRecord>::iterator result_it_; // 结果迭代器
 
     void init(std::vector<Value> &agg_values, std::vector<TabCol> sel_cols_, const RmRecord &record);
     void aggregate_values(std::vector<Value> &agg_values, const std::vector<TabCol> sel_cols_, const std::vector<std::vector<ColMeta>::const_iterator> sel_col_metas_, const RmRecord &record);
@@ -46,7 +46,7 @@ private:
 
 public:
     AggExecutor(std::unique_ptr<AbstractExecutor> child_executor, std::vector<TabCol> sel_cols, std::vector<TabCol> group_by_cols, std::vector<Condition> having_conds, Context *context)
-        : AbstractExecutor(context),child_executor_(std::move(child_executor)), sel_cols_(std::move(sel_cols)), group_by_cols_(std::move(group_by_cols)),  having_conds_(std::move(having_conds)), is_aggregated_(false),  current_group_index_(0) {
+        : AbstractExecutor(context),child_executor_(std::move(child_executor)), sel_cols_(std::move(sel_cols)), group_by_cols_(std::move(group_by_cols)),  having_conds_(std::move(having_conds)), current_group_index_(0) {
         // 初始化输出列
         TupleLen = 0;
         int offset = 0;
@@ -125,43 +125,35 @@ public:
 
     void beginTuple() {
         child_executor_->beginTuple();
-        is_aggregated_ = false;
         agg_groups_.clear();
         having_lhs_agg_groups_.clear();
         having_rhs_agg_groups_.clear();
-        group_iter_ = agg_groups_.begin();
+        while (!child_executor_->is_end()) {
+            auto record = child_executor_->Next();
+            if (record) {
+                aggregate(*record);
+            }
+            child_executor_->nextTuple();
+        }
+        addResult();
+        result_it_ = results_.begin();
     }
 
     void nextTuple() {
-        if (!is_aggregated_) {
-            while (!child_executor_->is_end()) {
-                auto record = child_executor_->Next();
-                if (record) {
-                    aggregate(*record);
-                }
-                child_executor_->nextTuple();
-            }
-            is_aggregated_ = true;
-            group_iter_ = agg_groups_.begin();
-        } else {
-            if (group_iter_ != agg_groups_.end()) {
-                ++group_iter_;
-            }
+        if (result_it_ != results_.end()) {
+            ++result_it_;
         }
     }
-
+    
     bool is_end() const {
-        return is_aggregated_ && group_iter_ == agg_groups_.end();
+        return result_it_ == results_.end();
     }
 
     Rid &rid() {
         return _abstract_rid;
     }
 
-    std::unique_ptr<RmRecord> Next() {
-        if (!is_aggregated_) {
-            nextTuple();
-        }
+    void addResult() {
         // 如果 agg_groups_ 为空，返回初始值
         if (agg_groups_.empty()) {
             RmRecord record(TupleLen);
@@ -222,10 +214,11 @@ public:
                 }
                 offset += output_cols_[i].len;
             }
-            return std::make_unique<RmRecord>(record);
+            results_.emplace_back(std::move(record));   
+            return ;
         }
         if (current_group_index_ >= insert_order_.size()) {
-            return nullptr;
+            return ;
         }
 
         // 获取当前分组键
@@ -238,7 +231,7 @@ public:
         if (!check_having_conditions(having_lhs_agg_values, having_rhs_agg_values))
         {
             ++current_group_index_;
-            return Next(); // 跳过不满足条件的分组
+            return addResult(); // 跳过不满足条件的分组
         }
 
         RmRecord record(TupleLen);
@@ -265,8 +258,17 @@ public:
 
         // 移动到下一个分组
         ++current_group_index_;
+        results_.emplace_back(std::move(record));
+        return addResult();
+    }
 
-        return std::make_unique<RmRecord>(record);
+    std::unique_ptr<RmRecord> Next() {
+        if (result_it_ == results_.end())
+        {
+            return nullptr;
+        }
+        auto record = std::make_unique<RmRecord>(*result_it_);
+        return record;
     }
 };
 
