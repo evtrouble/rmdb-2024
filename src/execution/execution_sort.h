@@ -23,25 +23,84 @@ class SortExecutor : public AbstractExecutor {
     bool is_desc_;
     std::vector<size_t> used_tuple;
     std::unique_ptr<RmRecord> current_tuple;
+    std::vector<std::unique_ptr<RmRecord>> sorted_tuples_; // 排序后的记录
+    size_t current_index_;                      // 当前记录的索引
 
+    Value get_col_value(const RmRecord &record, const ColMeta &col_meta) {
+        Value value;
+        const char *data = record.data + col_meta.offset;
+
+        switch (col_meta.type) {
+            case TYPE_INT:
+                value.set_int(*reinterpret_cast<const int*>(data));
+                break;
+            case TYPE_FLOAT:
+                value.set_float(*reinterpret_cast<const float*>(data));
+                break;
+            case TYPE_STRING:
+                value.set_str(std::string(data, col_meta.len));
+                break;
+            default:
+                throw RMDBError("Unsupported column type");
+        }
+
+        return value;
+    }
+
+    void sortInMemory() {
+        // 将所有记录读入内存
+        for (prev_->beginTuple(); !prev_->is_end(); prev_->nextTuple())
+        {
+            tuple_num++;
+            sorted_tuples_.emplace_back(prev_->Next());
+        }
+        if (sorted_tuples_.empty())
+            return;
+
+        // 对记录进行排序
+        std::sort(sorted_tuples_.begin(), sorted_tuples_.end(), 
+            [this](const std::unique_ptr<RmRecord> &a, const std::unique_ptr<RmRecord> &b) {
+                Value val_a = get_col_value(*a, cols_);
+                Value val_b = get_col_value(*b, cols_);
+                if (is_desc_) {
+                    return val_a > val_b;
+                } else {
+                    return val_a < val_b;
+                }
+            });
+    }
    public:
     SortExecutor(std::unique_ptr<AbstractExecutor> prev, const TabCol &sel_cols, bool is_desc) 
         : prev_(std::move(prev)), tuple_num(0), is_desc_(is_desc)
     {
-        cols_ = prev_->get_col_offset(sel_cols);
+        cols_ = *get_col(prev_->cols(), sel_cols);
     }
 
     void beginTuple() override { 
-        
+        current_index_ = 0;
+        if (!sorted_tuples_.empty())
+            return;
+        sortInMemory();
     }
 
     void nextTuple() override {
-        
+        if (current_index_ < sorted_tuples_.size())
+        {
+            ++current_index_;
+        }
     }
 
     std::unique_ptr<RmRecord> Next() override {
-        return nullptr;
+        if (is_end())
+        {
+            return nullptr;
+        }
+        return std::make_unique<RmRecord>(*sorted_tuples_[current_index_]);
     }
 
     Rid &rid() override { return _abstract_rid; }
+
+    bool is_end() const override { return sorted_tuples_.empty() || current_index_ >= sorted_tuples_.size(); }
+    
+    const std::vector<ColMeta> &cols() const override { return prev_->cols(); }
 };
