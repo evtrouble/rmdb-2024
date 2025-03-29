@@ -218,6 +218,8 @@ public:
     
     const std::vector<ColMeta> &cols() const override { return prev_->cols(); }
 
+    size_t tupleLen() const override { return record_size; }
+
     ~SortExecutor() {
         for (const auto &block_file : sorted_blocks_) {
             std::remove(block_file.c_str());

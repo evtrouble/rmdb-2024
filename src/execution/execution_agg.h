@@ -201,10 +201,10 @@ public:
                 const auto &value = agg_values[i];
                 switch (value.type) {
                     case TYPE_INT:
-                        *(int*)(record.data + offset) = value.int_val;
+                        *reinterpret_cast<int*>(record.data + offset) = value.int_val;
                         break;
                     case TYPE_FLOAT:
-                        *(float*)(record.data + offset) = value.float_val;
+                        *reinterpret_cast<float*>(record.data + offset) = value.float_val;
                         break;
                     case TYPE_STRING:
                         memcpy(record.data + offset, value.str_val.c_str(), value.str_val.size());
@@ -242,10 +242,10 @@ public:
             const auto &value = agg_values[i];
             switch (value.type) {
                 case TYPE_INT:
-                    *(int*)(record.data + offset) = value.int_val;
+                    *reinterpret_cast<int*>(record.data + offset) = value.int_val;
                     break;
                 case TYPE_FLOAT:
-                    *(float*)(record.data + offset) = value.float_val;
+                    *reinterpret_cast<float*>(record.data + offset) = value.float_val;
                     break;
                 case TYPE_STRING:
                     memcpy(record.data + offset, value.str_val.c_str(), value.str_val.size());

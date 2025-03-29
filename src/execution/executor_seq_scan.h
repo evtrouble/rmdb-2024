@@ -140,6 +140,8 @@ public:
 
     const std::vector<ColMeta> &cols() const override { return tab_.cols; }
 
+    size_t tupleLen() const override { return len_; }
+
     Rid &rid() override { return rid_; }
 
 private:
