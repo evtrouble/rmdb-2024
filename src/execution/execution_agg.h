@@ -45,10 +45,13 @@ private:
     bool compare_values(const Value &lhs_value, const Value &rhs_value, CompOp op);// 比较两个value对象的值是否满足指定的比较操作符
 
 public:
-    AggExecutor(std::unique_ptr<AbstractExecutor> child_executor, std::vector<TabCol> sel_cols, std::vector<TabCol> group_by_cols, std::vector<Condition> having_conds, Context *context)
-        : AbstractExecutor(context),child_executor_(std::move(child_executor)), sel_cols_(std::move(sel_cols)), group_by_cols_(std::move(group_by_cols)),  having_conds_(std::move(having_conds)), current_group_index_(0) {
+    AggExecutor(std::unique_ptr<AbstractExecutor> child_executor, const std::vector<TabCol> &sel_cols, 
+        const std::vector<TabCol> &group_by_cols, const std::vector<Condition> &having_conds, 
+        Context *context)
+        : AbstractExecutor(context),child_executor_(std::move(child_executor)), 
+        sel_cols_(std::move(sel_cols)), group_by_cols_(std::move(group_by_cols)), having_conds_(std::move(having_conds)), 
+        TupleLen(0), current_group_index_(0) {
         // 初始化输出列
-        TupleLen = 0;
         int offset = 0;
         for (const auto &col : sel_cols_) {
             ColMeta col_meta;
@@ -56,7 +59,7 @@ public:
                 col_meta = {col.tab_name, col.col_name, TYPE_INT, sizeof(int), offset, false};
                 TupleLen += col_meta.len;
                 offset += col_meta.len;
-                output_cols_.emplace_back(col_meta);
+                output_cols_.emplace_back(std::move(col_meta));
                 sel_col_metas_.emplace_back(output_cols_.begin());
             } else {
                 if (col.col_name == "*") {
@@ -68,13 +71,13 @@ public:
                 col_meta.offset = offset;
                 TupleLen += col_meta.len;
                 offset += col_meta.len;
-                output_cols_.emplace_back(col_meta);
+                output_cols_.emplace_back(std::move(col_meta));
             }
         }
         // 初始化 GROUP BY 列元数据
         for (const auto &col : group_by_cols_) {
             auto temp = get_col(child_executor_->cols(), col);
-            group_by_col_metas_.emplace_back(temp);
+            group_by_col_metas_.emplace_back(std::move(temp));
         }
         // 初始化 HAVING 列元数据
         for (const auto &cond : having_conds_) {
@@ -82,7 +85,7 @@ public:
             if (ast::AggFuncType::COUNT == cond.lhs_col.aggFuncType) {
                 ColMeta col_meta = {cond.lhs_col.tab_name, cond.lhs_col.col_name, TYPE_INT, sizeof(int), 0, false};
                 having_lhs_cols_.emplace_back(cond.lhs_col);
-                col_metas.emplace_back(col_meta);
+                col_metas.emplace_back(std::move(col_meta));
                 having_lhs_col_metas_.emplace_back(col_metas.begin());
             } else {
                 if (cond.lhs_col.col_name == "*") {
@@ -90,14 +93,14 @@ public:
                 }
                 auto temp = get_col(child_executor_->cols(), cond.lhs_col);
                 having_lhs_cols_.emplace_back(cond.lhs_col);
-                having_lhs_col_metas_.emplace_back(temp);
+                having_lhs_col_metas_.emplace_back(std::move(temp));
             }
 
             if (!cond.is_rhs_val) {
                 if (ast::AggFuncType::COUNT == cond.rhs_col.aggFuncType) {
                     ColMeta col_meta = {cond.rhs_col.tab_name, cond.rhs_col.col_name, TYPE_INT, sizeof(int), 0, false};
                     having_lhs_cols_.emplace_back(cond.rhs_col);
-                    col_metas.emplace_back(col_meta);
+                    col_metas.emplace_back(std::move(col_meta));
                     having_lhs_col_metas_.emplace_back(col_metas.begin());
                 } else {
                     if (cond.rhs_col.col_name == "*") {
@@ -105,7 +108,7 @@ public:
                     }
                     auto temp = get_col(child_executor_->cols(), cond.rhs_col);
                     having_lhs_cols_.emplace_back(cond.rhs_col);
-                    having_lhs_col_metas_.emplace_back(temp);
+                    having_lhs_col_metas_.emplace_back(std::move(temp));
                 }
             }
         }
@@ -190,10 +193,10 @@ public:
                 offset += output_cols_[i].len;
             }
             results_.emplace_back(std::move(record));   
-            return ;
+            return;
         }
         if (current_group_index_ >= insert_order_.size()) {
-            return ;
+            return;
         }
 
         // 获取当前分组键
@@ -229,8 +232,7 @@ public:
         {
             return nullptr;
         }
-        auto record = std::make_unique<RmRecord>(*result_it_);
-        return record;
+        return std::make_unique<RmRecord>(*result_it_);
     }
 };
 
@@ -289,7 +291,7 @@ void AggExecutor::aggregate_values(std::vector<Value> &agg_values, const std::ve
         // COUNT 列直接+1
         if (ast::AggFuncType::COUNT == agg_type)
         {
-            agg_values[i].int_val += 1;
+            agg_values[i].int_val++;
             continue;
         }
         auto &col_meta = *sel_col_metas_[i];

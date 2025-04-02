@@ -245,6 +245,13 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query)
             } else if(enable_nestedloop_join) {
                 table_join_executors = std::make_shared<JoinPlan>(T_NestLoop, std::move(left), std::move(right), join_conds);
             } else if(enable_sortmerge_join) {
+                auto x = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
+                if (left->tag != T_IndexScan){
+                    left = std::make_shared<SortPlan>(T_Sort, std::move(left), join_conds[0].lhs_col, false);
+                }
+                if (right->tag != T_IndexScan){
+                    right = std::make_shared<SortPlan>(T_Sort, std::move(right), join_conds[0].rhs_col, false);
+                }
                 table_join_executors = std::make_shared<JoinPlan>(T_SortMerge, std::move(left), std::move(right), join_conds);
             } else {
                 // error
@@ -321,10 +328,10 @@ std::shared_ptr<Plan> Planner::generate_agg_plan(const std::shared_ptr<Query> &q
 std::shared_ptr<Plan> Planner::generate_sort_plan(std::shared_ptr<Query> query, std::shared_ptr<Plan> plan)
 {
     auto x = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
-    if(!x->has_sort) {
+    std::vector<std::string> &tables = query->tables;
+    if(!x->has_sort || tables.size() > 1) {
         return plan;
     }
-    std::vector<std::string> &tables = query->tables;
     std::vector<ColMeta> all_cols;
     for (auto &sel_tab_name : tables) {
         // 这里db_不能写成get_db(), 注意要传指针

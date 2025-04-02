@@ -44,6 +44,16 @@ enum AggFuncType {
     MIN
 };
 
+// enum class TreeNodeType {
+//     Help, ShowTables, TxnBegin, TxnCommit, TxnAbort, 
+//     TxnRollback, TypeLen, Field, ColDef, CreateTable, 
+//     DropTable, DescTable, CreateIndex, DropIndex, ShowIndex,
+//     Expr, Value, IntLit, FloatLit, StringLit, BoolLit,
+//     Col, SetClause, BinaryExpr, OrderBy, InsertStmt, 
+//     DeleteStmt, UpdateStmt, JoinExpr, SelectStmt, SetStmt, 
+//     SemValue
+// };
+
 // Base class for tree nodes
 struct TreeNode {
     virtual ~TreeNode() = default;  // enable polymorphism
