@@ -180,8 +180,9 @@ private:
 public:
     SortExecutor(std::unique_ptr<AbstractExecutor> prev, const TabCol &sel_cols, bool is_desc, 
                  const std::string &temp_dir = "/tmp", size_t block_size = 8192) 
-        : prev_(std::move(prev)), is_desc_(is_desc), temp_dir_(temp_dir), block_size_(block_size),record_size(0) {
+        : prev_(std::move(prev)), is_desc_(is_desc), temp_dir_(temp_dir), block_size_(block_size) {
         cols_ = *get_col(prev_->cols(), sel_cols);
+        record_size = prev_->tupleLen();
     }
 
     void beginTuple() override { 
@@ -232,9 +233,6 @@ private:
         for (prev_->beginTuple(); !prev_->is_end(); prev_->nextTuple()) {
             auto record = prev_->Next();
             size += record->size;
-            if (record_size == 0) {
-                record_size = record->size;
-            }
         }
         return size;
     }

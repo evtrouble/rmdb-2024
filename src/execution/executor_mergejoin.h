@@ -15,7 +15,7 @@ See the Mulan PSL v2 for more details. */
 #include "index/ix.h"
 #include "system/sm.h"
 
-class NestedLoopJoinExecutor : public AbstractExecutor {
+class MergeJoinExecutor : public AbstractExecutor {
 private:
     std::unique_ptr<AbstractExecutor> left_;    // 左儿子节点（需要join的表）
     std::unique_ptr<AbstractExecutor> right_;   // 右儿子节点（需要join的表）
@@ -27,27 +27,27 @@ private:
     std::unique_ptr<RmRecord> right_current_;
     bool isend;
 
+    // 因为只考虑只有一个where条件，所以这个cond一定是连接条件
     void find_valid_tuples() {
-        while (!left_->is_end()) {
-            while (!right_->is_end()) {
-                bool is_valid = std::all_of(fed_conds_.begin(), fed_conds_.end(), 
-                    [&](const Condition &cond) { return check_cond(cond); });
-                if (is_valid) {
-                    return;
-                } else {
-                    right_->nextTuple();
-                    right_current_ = right_->Next();
-                }
+        while (!left_->is_end() && !right_->is_end()) {
+            int cmp = std::all_of(fed_conds_.begin(), fed_conds_.end(), 
+                [&](const Condition &cond) { return check_cond(cond); });
+            if (cmp == 0) {
+                return;
+            } 
+            else if (cmp < 0) {
+                right_->nextTuple();
+                right_current_ = right_->Next();
             }
-            left_->nextTuple();
-            right_->beginTuple();
-            left_current_ = left_->Next();
-            right_current_ = right_->Next();
+            else{
+                left_->nextTuple();
+                left_current_ = left_->Next();
+            }
         }
         isend = true;
     }
 
-    bool check_cond(const Condition& cond) {
+    int check_cond(const Condition& cond) {
         auto left_col = left_->get_col(left_->cols(), cond.lhs_col);
         char* left_value = left_current_->data + left_col->offset;
         char* right_value;
@@ -60,11 +60,67 @@ private:
             right_type = rhs_col->type;
             right_value = right_current_->data + rhs_col->offset;
         }
-        return check_condition(left_value, left_col->type, right_value, right_type, cond.op);
+        return compare_values(left_value, left_col->type, right_value, right_type, cond.op);
     }
 
+    int compare_values(char *lhs_value, ColType lhs_type, char *rhs_value, ColType rhs_type, CompOp op){
+        int cmp;
+
+        // 处理INT和FLOAT类型之间的比较
+        if ((lhs_type == TYPE_INT && rhs_type == TYPE_FLOAT) ||
+            (lhs_type == TYPE_FLOAT && rhs_type == TYPE_INT))
+        {
+            float lhs_float, rhs_float;
+
+            // 将INT转换为FLOAT进行比较
+            if (lhs_type == TYPE_INT) {
+                lhs_float = static_cast<float>(*(int *)lhs_value);
+                rhs_float = *(float *)rhs_value;
+            } else {
+                lhs_float = *(float *)lhs_value;
+                rhs_float = static_cast<float>(*(int *)rhs_value);
+            }
+
+            cmp = (lhs_float < rhs_float) ? -1 : ((lhs_float > rhs_float) ? 1 : 0);
+        }
+        else if (lhs_type != rhs_type)
+        {
+            throw IncompatibleTypeError(coltype2str(lhs_type), coltype2str(rhs_type));
+        }
+        else
+        {
+            // 相同类型的比较
+            switch (lhs_type)
+            {
+            case TYPE_INT:
+            {
+                int lhs = *(int *)lhs_value;
+                int rhs = *(int *)rhs_value;
+                cmp = lhs - rhs;
+                break;
+            }
+            case TYPE_FLOAT:
+            {
+                float lhs = *(float *)lhs_value;
+                float rhs = *(float *)rhs_value;
+                cmp = (lhs < rhs) ? -1 : ((lhs > rhs) ? 1 : 0);
+                break;
+            }
+            case TYPE_STRING:
+            {
+                cmp = memcmp(lhs_value, rhs_value, strlen(rhs_value));
+                break;
+            }
+            default:
+                throw InternalError("Unsupported column type");
+            }
+        }
+        return cmp;
+    }
+
+
 public:
-    NestedLoopJoinExecutor(std::unique_ptr<AbstractExecutor> left, std::unique_ptr<AbstractExecutor> right, 
+    MergeJoinExecutor(std::unique_ptr<AbstractExecutor> left, std::unique_ptr<AbstractExecutor> right, 
                             const std::vector<Condition> &conds)
         : left_(std::move(left)), right_(std::move(right)), 
         fed_conds_(std::move(conds)), isend(false)
