@@ -26,16 +26,23 @@ private:
     std::unique_ptr<RmRecord> left_current_;
     std::unique_ptr<RmRecord> right_current_;
     bool isend;
+    std::vector<std::unique_ptr<RmRecord>> left_cache_; // 缓存左表重复键的记录
+    size_t left_cache_idx_;                             // 当前缓存的左表记录索引
+    std::vector<std::unique_ptr<RmRecord>> right_cache_;// 缓存右表重复键的记录
+    size_t right_cache_idx_;                            // 当前缓存的右表记录索引
+    
 
     // 因为只考虑只有一个where条件，所以这个cond一定是连接条件
     void find_valid_tuples() {
         while (!left_->is_end() && !right_->is_end()) {
-            int cmp = std::all_of(fed_conds_.begin(), fed_conds_.end(), 
-                [&](const Condition &cond) { return check_cond(cond); });
+            int cmp = check_cond(fed_conds_[0]);
             if (cmp == 0) {
+                // 缓存左表所有相同键值的记录
+                cache_left_duplicates();
+                cache_right_duplicates();
                 return;
             } 
-            else if (cmp < 0) {
+            else if (cmp > 0) {
                 right_->nextTuple();
                 right_current_ = right_->Next();
             }
@@ -45,6 +52,81 @@ private:
             }
         }
         isend = true;
+    }
+    
+    // 缓存左表中所有与当前记录键值相同的记录
+    void cache_left_duplicates() {
+        left_cache_.clear();
+        left_cache_idx_ = 0;
+        
+        // 保存当前左表记录
+        auto current_key = get_left_key(left_current_.get());
+        left_cache_.emplace_back(std::move(left_current_));
+        
+        // 遍历左表后续记录，缓存所有相同键值的记录
+        while (true) {
+            left_->nextTuple();
+            if (left_->is_end()) break;
+            
+            auto next_rec = left_->Next();
+            auto next_key = get_left_key(next_rec.get());
+            
+            if (compare_keys(current_key, next_key, next_key->size) != 0) {
+                // 遇到不同的键值，回退并停止缓存
+                left_current_ = std::move(next_rec);
+                break;
+            }
+            
+            left_cache_.emplace_back(std::move(next_rec));
+        }
+    }
+
+    std::unique_ptr<RmRecord> get_left_key(RmRecord* rec) {
+        auto cond = fed_conds_[0];
+        auto left_col = left_->get_col(left_->cols(), cond.lhs_col);
+        auto key_rec = std::make_unique<RmRecord>(left_col->len);
+        memcpy(key_rec->data, rec->data + left_col->offset, left_col->len);
+        return key_rec;
+    }
+
+    // 缓存右表中所有与当前记录键值相同的记录
+    void cache_right_duplicates() {
+        right_cache_.clear();
+        right_cache_idx_ = 0;
+        
+        // 保存当前右表记录
+        auto current_key = get_right_key(right_current_.get());
+        right_cache_.emplace_back(std::move(right_current_));
+        
+        // 遍历右表后续记录，缓存所有相同键值的记录
+        while (true) {
+            right_->nextTuple();
+            if (right_->is_end()) break;
+            
+            auto next_rec = right_->Next();
+            auto next_key = get_right_key(next_rec.get());
+            
+            if (compare_keys(current_key, next_key, next_key->size) != 0) {
+                // 遇到不同的键值，回退并停止缓存
+                right_current_ = std::move(next_rec);
+                break;
+            }
+            
+            right_cache_.emplace_back(std::move(next_rec));
+        }
+    }
+
+    std::unique_ptr<RmRecord> get_right_key(RmRecord* rec) {
+        auto cond = fed_conds_[0];
+        auto right_col = right_->get_col(right_->cols(), cond.rhs_col);
+        auto key_rec = std::make_unique<RmRecord>(right_col->len);
+        memcpy(key_rec->data, rec->data + right_col->offset, right_col->len);
+        return key_rec;
+    }
+
+    // 比较两个键值
+    int compare_keys(std::unique_ptr<RmRecord>& key1, std::unique_ptr<RmRecord>& key2, size_t len) {
+        return memcmp(key1->data, key2->data, len);
     }
 
     int check_cond(const Condition& cond) {
@@ -123,7 +205,7 @@ public:
     MergeJoinExecutor(std::unique_ptr<AbstractExecutor> left, std::unique_ptr<AbstractExecutor> right, 
                             const std::vector<Condition> &conds)
         : left_(std::move(left)), right_(std::move(right)), 
-        fed_conds_(std::move(conds)), isend(false)
+        fed_conds_(std::move(conds)), isend(false),left_cache_idx_(0)
     {
         len_ = left_->tupleLen() + right_->tupleLen();
         cols_ = left_->cols();
@@ -140,26 +222,43 @@ public:
         isend = false;
         left_current_ = left_->Next();
         right_current_ = right_->Next();
+        left_cache_.clear();
+        left_cache_idx_ = 0;
+        right_cache_.clear();
+        right_cache_idx_ = 0;
         find_valid_tuples();
     }
 
     void nextTuple() override {
-        if (right_->is_end()) {
-            left_->nextTuple();
-            right_->beginTuple();
-            left_current_ = left_->Next();
-            right_current_ = right_->Next();
+        if (!left_cache_.empty() && !right_cache_.empty()) {
+            right_cache_idx_++;
+            if (right_cache_idx_ >= right_cache_.size()) {
+                // 已经遍历完所有缓存的右表记录，移动左表缓存
+                left_cache_idx_++;
+                right_cache_idx_ = 0;
+                if(left_cache_idx_ >= left_cache_.size()){
+                    // 重复键全部遍历完了
+                    left_cache_idx_ = 0;
+                    find_valid_tuples();
+                }
+            }
         } else {
             right_->nextTuple();
             right_current_ = right_->Next();
+            find_valid_tuples();
         }
-        find_valid_tuples();
     }
 
     std::unique_ptr<RmRecord> Next() override {
         auto record = std::make_unique<RmRecord>(len_);
-        std::memcpy(record->data, left_current_->data, left_->tupleLen());
-        std::memcpy(record->data + left_->tupleLen(), right_current_->data, right_->tupleLen());
+        
+        if (!left_cache_.empty() && !right_cache_.empty()) {
+            std::memcpy(record->data, left_cache_[left_cache_idx_]->data, left_->tupleLen());
+            std::memcpy(record->data + left_->tupleLen(), right_cache_[right_cache_idx_]->data, right_->tupleLen());
+        } else {
+            std::memcpy(record->data, left_current_->data, left_->tupleLen());
+            std::memcpy(record->data + left_->tupleLen(), right_current_->data, right_->tupleLen());
+        }
         return record;
     }
 
