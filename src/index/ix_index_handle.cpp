@@ -329,7 +329,7 @@ IxNodeHandle IxIndexHandle::split(IxNodeHandle &node) {
         node.page_hdr->next_leaf = split_node.get_page_no();
     } else {
         // 3. 如果新的右兄弟结点不是叶子结点，更新该结点的所有孩子结点的父节点信息(使用IxIndexHandle::maintain_child())
-        for (int i = 0; i < split_node.page_hdr->num_key; i++)
+        for (int i = 0; i < split_node.page_hdr->num_key; ++i)
             maintain_child(split_node, i);
     }
     return split_node;
@@ -576,13 +576,13 @@ bool IxIndexHandle::coalesce(IxNodeHandle &neighbor_node, IxNodeHandle &node, Ix
     if (!index)
     {
         std::swap(node, neighbor_node);
-        index++;
+        ++index;
     }
 
     // 2. 把node结点的键值对移动到neighbor_node中，并更新node结点孩子结点的父节点信息（调用maintain_child函数）
     int insert_pos = neighbor_node.page_hdr->num_key;
     neighbor_node.insert_pairs(insert_pos, node.get_key(0), node.get_rid(0), node.page_hdr->num_key);
-    for (int i = 0; i < node.page_hdr->num_key; i++)
+    for (int i = 0; i < node.page_hdr->num_key; ++i)
         maintain_child(neighbor_node, i + insert_pos);
 
     // 3. 释放和删除node结点，并删除parent中node结点的信息，返回parent是否需要被删除

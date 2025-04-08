@@ -144,6 +144,8 @@ public:
 
     Rid &rid() override { return rid_; }
 
+    ExecutionType type() const override { return ExecutionType::SeqScan;  }
+
 private:
     void find_next_valid_tuple()
     {

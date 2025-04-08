@@ -59,6 +59,15 @@ void TransactionManager::commit(Transaction *txn, LogManager *log_manager)
     // 写操作已经在执行时完成，这里不需要额外操作
     txn->get_write_set()->clear();
 
+    txn->set_commit_ts(next_timestamp_++); // 设置提交时间戳
+
+    // 阶段2：更新内存中的版本链（关键！）
+    // auto write_version_set = txn->get_write_version_set();
+    // for (auto& modified_row : *write_version_set) {
+    //     modified_row->version = txn->get_commit_ts(); // 内存中标记新版本生效
+    //     modified_row->next_version = tx.undo_log.back(); // 挂接Undo记录
+    // }
+
     // 2. 释放所有锁
     auto lock_set = txn->get_lock_set();
     for (auto &lock_data_id : *lock_set)

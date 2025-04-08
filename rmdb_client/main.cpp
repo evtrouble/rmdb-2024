@@ -142,7 +142,7 @@ int main(int argc, char *argv[]) {
                 printf("Connection has been closed\n");
                 break;
             } else {
-                for (int i = 0; i <= len; i++) {
+                for (int i = 0; i <= len; ++i) {
                     if (recv_buf[i] == '\0') {
                         break;
                     } else {

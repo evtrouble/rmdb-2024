@@ -31,14 +31,15 @@ private:
 
     const std::vector<ColMeta> &cols() const override
     {
-        if (dynamic_cast<SeqScanExecutor *>(prev_.get()) != nullptr)
-            return cols_;
-        else if (dynamic_cast<NestedLoopJoinExecutor *>(prev_.get()) != nullptr)
-            return cols_;
-        else if (dynamic_cast<SortExecutor *>(prev_.get()) != nullptr)
-            return cols_;
-        else
-            return prev_->cols();
+        switch (prev_->type())
+        {
+            case ExecutionType::SeqScan:
+            case ExecutionType::NestedLoopJoin:
+            case ExecutionType::Sort:
+                return cols_; 
+            default:
+                return prev_->cols();
+        }
     };
 
     void beginTuple() override { prev_->beginTuple(); }
@@ -50,4 +51,6 @@ private:
     bool is_end() const override { return prev_->is_end(); };
 
     Rid &rid() override { return _abstract_rid; }
+
+    ExecutionType type() const override { return ExecutionType::Projection; }
 };

@@ -47,7 +47,7 @@ class IndexScanExecutor : public AbstractExecutor {
     {
         auto iter = tab_.cols_map.find(col_name);
         if(iter != tab_.cols_map.end())
-            return tab_.cols.at(iter->second);
+            return tab_.cols[iter->second];
         throw ColumnNotFoundError(col_name);
     }
 
@@ -182,7 +182,7 @@ class IndexScanExecutor : public AbstractExecutor {
         bool init = false;
         for (auto &col : index_meta_.cols)
         {
-            auto &interval = gaplock.intervals.at(tab_.cols_map.at(col.name));
+            auto &interval = gaplock.intervals[tab_.cols_map.at(col.name)];
             auto &lower = interval.lower_;
             auto &upper = interval.upper_;
             lower.export_val(low_key + offset, col.len);
@@ -229,4 +229,6 @@ class IndexScanExecutor : public AbstractExecutor {
         else
             upper_position_ = index_handle_->lower_bound(upper);
     }
+
+    ExecutionType type() const override { return ExecutionType::IndexScan; }
 };

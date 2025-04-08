@@ -29,7 +29,7 @@ public:
     }
 
     void print_separator(Context *context) const {
-        for (size_t i = 0; i < num_cols; i++) {
+        for (size_t i = 0; i < num_cols; ++i) {
             // std::cout << '+' << std::string(COL_WIDTH + 2, '-');
             std::string str = "+" + std::string(COL_WIDTH + 2, '-');
             if(context->ellipsis_ == false && *context->offset_ + RECORD_COUNT_LENGTH + str.length() < BUFFER_LENGTH) {

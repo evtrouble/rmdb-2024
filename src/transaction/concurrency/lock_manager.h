@@ -85,10 +85,10 @@ class GapLock
 
         bool compatible(const GapLock &other) {
             assert(intervals.size() == other.intervals.size());
-            for (size_t id = 0; id < intervals.size(); id++) {
-                if(!(intervals.at(id).init && other.intervals.at(id).init))
+            for (size_t id = 0; id < intervals.size(); ++id) {
+                if(!(intervals[id].init && other.intervals[id].init))
                     continue;
-                if(!intervals.at(id).overlap(other.intervals.at(id)))
+                if(!intervals[id].overlap(other.intervals[id]))
                     return true;
             }
             return false;
@@ -101,8 +101,8 @@ class GapLock
             {
                 size_t id = tab.cols_map.at(cond.lhs_col.col_name);
                 Interval interval;
-                auto &pos = intervals.at(id);
-                auto &col = tab.cols.at(id);
+                auto &pos = intervals[id];
+                auto &col = tab.cols[id];
                 switch (cond.op)
                 {
                     case CompOp::OP_EQ:

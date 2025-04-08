@@ -46,7 +46,7 @@ public:
 
         // Make record buffer
         RmRecord rec(fh_->get_file_hdr().record_size);
-        for (size_t i = 0; i < values_.size(); i++)
+        for (size_t i = 0; i < values_.size(); ++i)
         {
             auto &col = tab_.cols[i];
             auto &val = values_[i];
@@ -80,4 +80,5 @@ public:
         return nullptr;
     }
     Rid &rid() override { return rid_; }
+    ExecutionType type() const override { return ExecutionType::Insert;  }
 };

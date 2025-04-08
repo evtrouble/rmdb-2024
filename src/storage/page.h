@@ -53,6 +53,7 @@ class alignas(64) Page {
     friend class IxIndexHandle;
 
     public:
+    std::shared_mutex latch_;
     
     Page() { reset_memory(); }
 
@@ -87,7 +88,6 @@ private:
 
     /** page的唯一标识符 */
     PageId id_ = {.fd = -1, .page_no = INVALID_PAGE_ID};
-    std::shared_mutex latch_;
 
     /** The actual data that is stored within a page.
      *  该页面在bufferPool中的偏移地址

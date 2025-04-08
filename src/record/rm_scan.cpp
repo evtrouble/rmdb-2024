@@ -31,7 +31,7 @@ void RmScan::next()
             return;
         }
         // 移动到下一页
-        rid_.page_no++;
+        ++rid_.page_no;
         rid_.slot_no = -1;
     }
     // 如果没有找到有效的记录，设置为文件结束

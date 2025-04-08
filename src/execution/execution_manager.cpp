@@ -48,7 +48,7 @@ const char *help_info = "Supported SQL syntax:\n"
 // 主要负责执行DDL语句
 void QlManager::run_mutli_query(std::shared_ptr<Plan> plan, Context *context)
 {
-    if (auto x = std::dynamic_pointer_cast<DDLPlan>(plan))
+    if (auto x = std::static_pointer_cast<DDLPlan>(plan))
     {
         switch (x->tag)
         {
@@ -87,10 +87,8 @@ void QlManager::run_mutli_query(std::shared_ptr<Plan> plan, Context *context)
 // 执行help; show tables; desc table; begin; commit; abort;语句
 void QlManager::run_cmd_utility(std::shared_ptr<Plan> plan, txn_id_t *txn_id, Context *context)
 {
-    if (auto x = std::dynamic_pointer_cast<OtherPlan>(plan))
+    switch (plan->tag)
     {
-        switch (x->tag)
-        {
         case T_Help:
         {
             int help_len = strlen(help_info);
@@ -110,6 +108,7 @@ void QlManager::run_cmd_utility(std::shared_ptr<Plan> plan, txn_id_t *txn_id, Co
         }
         case T_DescTable:
         {
+            auto x = std::static_pointer_cast<OtherPlan>(plan);
             sm_manager_->desc_table(x->tab_name_, context);
             break;
         }
@@ -137,31 +136,32 @@ void QlManager::run_cmd_utility(std::shared_ptr<Plan> plan, txn_id_t *txn_id, Co
             txn_mgr_->abort(context->txn_, context->log_mgr_);
             break;
         }
+        case T_SetKnob:
+        {
+            auto x = std::static_pointer_cast<SetKnobPlan>(plan);
+            switch (x->set_knob_type_)
+            {
+                case ast::SetKnobType::EnableNestLoop:
+                {
+                    planner_->set_enable_nestedloop_join(x->bool_value_);
+                    break;
+                }
+                case ast::SetKnobType::EnableSortMerge:
+                {
+                    planner_->set_enable_sortmerge_join(x->bool_value_);
+                    break;
+                }
+                default:
+                {
+                    throw RMDBError("Not implemented!\n");
+                    break;
+                }
+            }
+            break;
+        }
         default:
             throw InternalError("Unexpected field type");
             break;
-        }
-    }
-    else if (auto x = std::dynamic_pointer_cast<SetKnobPlan>(plan))
-    {
-        switch (x->set_knob_type_)
-        {
-        case ast::SetKnobType::EnableNestLoop:
-        {
-            planner_->set_enable_nestedloop_join(x->bool_value_);
-            break;
-        }
-        case ast::SetKnobType::EnableSortMerge:
-        {
-            planner_->set_enable_sortmerge_join(x->bool_value_);
-            break;
-        }
-        default:
-        {
-            throw RMDBError("Not implemented!\n");
-            break;
-        }
-        }
     }
 }
 
@@ -169,16 +169,16 @@ std::string makeAggFuncCaptions(const TabCol &sel_col)
 {
     switch (sel_col.aggFuncType)
     {
-    case ast::AggFuncType::COUNT:
-        return "COUNT(" + sel_col.col_name + ")";
-    case ast::AggFuncType::SUM:
-        return "SUM(" + sel_col.col_name + ")";
-    case ast::AggFuncType::MAX:
-        return "MAX(" + sel_col.col_name + ")";
-    case ast::AggFuncType::MIN:
-        return "MIN(" + sel_col.col_name + ")";
-    default:
-        throw RMDBError();
+        case ast::AggFuncType::COUNT:
+            return "COUNT(" + sel_col.col_name + ")";
+        case ast::AggFuncType::SUM:
+            return "SUM(" + sel_col.col_name + ")";
+        case ast::AggFuncType::MAX:
+            return "MAX(" + sel_col.col_name + ")";
+        case ast::AggFuncType::MIN:
+            return "MIN(" + sel_col.col_name + ")";
+        default:
+            throw RMDBError();
     }
 }
 

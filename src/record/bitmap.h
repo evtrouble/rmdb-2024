@@ -39,7 +39,7 @@ class Bitmap {
      * @return 找到了就返回偏移位置，没找到就返回max_n
      */
     static int next_bit(bool bit, const char *bm, int max_n, int curr) {
-        for (int i = curr + 1; i < max_n; i++) {
+        for (int i = curr + 1; i < max_n; ++i) {
             if (is_set(bm, i) == bit) {
                 return i;
             }

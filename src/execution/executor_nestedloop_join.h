@@ -114,4 +114,6 @@ public:
     size_t tupleLen() const override { return len_; }
 
     const std::vector<ColMeta> &cols() const { return cols_; }
+
+    ExecutionType type() const override { return ExecutionType::NestedLoopJoin;  }
 };

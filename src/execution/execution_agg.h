@@ -234,6 +234,8 @@ public:
         }
         return std::make_unique<RmRecord>(*result_it_);
     }
+
+    ExecutionType type() const override { return ExecutionType::Agg;  }
 };
 
 void AggExecutor::init(std::vector<Value> &agg_values, const std::vector<TabCol> sel_cols_, const RmRecord &record){
@@ -291,7 +293,7 @@ void AggExecutor::aggregate_values(std::vector<Value> &agg_values, const std::ve
         // COUNT 列直接+1
         if (ast::AggFuncType::COUNT == agg_type)
         {
-            agg_values[i].int_val++;
+            ++agg_values[i].int_val;
             continue;
         }
         auto &col_meta = *sel_col_metas_[i];
@@ -384,7 +386,7 @@ bool AggExecutor::check_having_conditions(const std::vector<Value> &having_lhs_a
     for (const auto &cond : having_conds_) {
         // 获取左操作数的值
         Value lhs_value = *lhs_it;
-        lhs_it++;
+        ++lhs_it;
 
         // 获取右操作数的值
         Value rhs_value;
@@ -392,7 +394,7 @@ bool AggExecutor::check_having_conditions(const std::vector<Value> &having_lhs_a
             rhs_value = cond.rhs_val;
         } else {
             rhs_value = *rhs_it;
-            rhs_it++;
+            ++rhs_it;
         }
 
         // 检查条件是否满足

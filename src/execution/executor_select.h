@@ -72,7 +72,7 @@ public:
         }
         else
         {
-            rid_idx_++;
+            ++rid_idx_;
             is_end_ = (rid_idx_ >= rids_.size());
         }
     }
@@ -154,4 +154,6 @@ public:
     {
         return _abstract_rid;
     }
+
+    ExecutionType type() const override { return ExecutionType::Select;  }
 };

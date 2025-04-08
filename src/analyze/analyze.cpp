@@ -19,254 +19,262 @@ See the Mulan PSL v2 for more details. */
 std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
 {
     std::shared_ptr<Query> query = std::make_shared<Query>();
-    if (auto x = std::dynamic_pointer_cast<ast::SelectStmt>(parse))
+    switch (parse->Nodetype())
     {
-        // 处理表名
-        query->tables = std::move(x->tabs);
+        case ast::TreeNodeType::SelectStmt:
+        {
+            auto x = std::static_pointer_cast<ast::SelectStmt>(parse);
+            // 处理表名
+            query->tables = std::move(x->tabs);
 
-        for (auto &tab_name : query->tables)
-        {
-            if (!sm_manager_->db_.is_table(tab_name))
+            for (auto &tab_name : query->tables)
             {
-                throw TableNotFoundError(tab_name);
+                if (!sm_manager_->db_.is_table(tab_name))
+                {
+                    throw TableNotFoundError(tab_name);
+                }
             }
-        }
 
-        // 处理target list，再target list中添加上表名，例如 a.id
-        query->cols.reserve(x->cols.size());
-        for (auto &sv_sel_col : x->cols)
-        {
-            query->cols.emplace_back(TabCol(sv_sel_col->tab_name, sv_sel_col->col_name, sv_sel_col->agg_type, sv_sel_col->alias));
-            if(ast::AggFuncType::NO_TYPE !=sv_sel_col->agg_type)
+            // 处理target list，再target list中添加上表名，例如 a.id
+            query->cols.reserve(x->cols.size());
+            for (auto &sv_sel_col : x->cols)
             {
-                x->has_agg = true;
+                query->cols.emplace_back(TabCol(sv_sel_col->tab_name, sv_sel_col->col_name, sv_sel_col->agg_type, sv_sel_col->alias));
+                if(ast::AggFuncType::NO_TYPE !=sv_sel_col->agg_type)
+                {
+                    x->has_agg = true;
+                }
             }
-        }
 
-        std::vector<ColMeta> all_cols;
-        get_all_cols(query->tables, all_cols);
-        if (query->cols.empty())
-        {
-            // select all columns
-            query->cols.reserve(all_cols.size());
-            for (auto &col : all_cols)
+            std::vector<ColMeta> all_cols;
+            get_all_cols(query->tables, all_cols);
+            if (query->cols.empty())
             {
-                query->cols.emplace_back(TabCol(col.tab_name, col.name));
-            }
-        }
-        else
-        {
-            // infer table name from column name
-            for (auto &sel_col : query->cols)
-            {
-                if (sel_col.col_name != "*")// 避免count(*)检查
-                    sel_col = check_column(all_cols, sel_col); // 列元数据校验
-            }
-        }
-        // groupby检查
-        // 同时包含聚合函数和非聚合列时，必须有groupby
-        bool has_non_agg_col = false;
-        bool has_agg_col = false;
-        for (const auto &sel_col : query->cols)
-        {
-            if (!has_agg_col || !has_non_agg_col){
-                if (ast::AggFuncType::NO_TYPE != sel_col.aggFuncType)
-                    has_agg_col = true;
-                else
-                    has_non_agg_col = true;
+                // select all columns
+                query->cols.reserve(all_cols.size());
+                for (auto &col : all_cols)
+                {
+                    query->cols.emplace_back(TabCol(col.tab_name, col.name));
+                }
             }
             else
-                break;
-        }
-        if (has_non_agg_col && has_agg_col && !x->has_groupby)
-        {
-            throw RMDBError("should have GROUP BY in this query");
-        }
-        // 非聚合列必须出现在groupby中
-        if (has_non_agg_col && x->has_groupby)
-        {
+            {
+                // infer table name from column name
+                for (auto &sel_col : query->cols)
+                {
+                    if (sel_col.col_name != "*")// 避免count(*)检查
+                        sel_col = check_column(all_cols, sel_col); // 列元数据校验
+                }
+            }
+            // groupby检查
+            // 同时包含聚合函数和非聚合列时，必须有groupby
+            bool has_non_agg_col = false;
+            bool has_agg_col = false;
             for (const auto &sel_col : query->cols)
             {
-                if (ast::AggFuncType::NO_TYPE == sel_col.aggFuncType)
+                if (!has_agg_col || !has_non_agg_col){
+                    if (ast::AggFuncType::NO_TYPE != sel_col.aggFuncType)
+                        has_agg_col = true;
+                    else
+                        has_non_agg_col = true;
+                }
+                else
+                    break;
+            }
+            if (has_non_agg_col && has_agg_col && !x->has_groupby)
+            {
+                throw RMDBError("should have GROUP BY in this query");
+            }
+            // 非聚合列必须出现在groupby中
+            if (has_non_agg_col && x->has_groupby)
+            {
+                for (const auto &sel_col : query->cols)
                 {
-                    bool is_in_groupby = false;
-                    for (const auto &group_col : x->groupby)
+                    if (ast::AggFuncType::NO_TYPE == sel_col.aggFuncType)
                     {
-                        if (sel_col.col_name == group_col->col_name)
+                        bool is_in_groupby = false;
+                        for (const auto &group_col : x->groupby)
                         {
-                            is_in_groupby = true;
-                            break;
+                            if (sel_col.col_name == group_col->col_name)
+                            {
+                                is_in_groupby = true;
+                                break;
+                            }
+                        }
+                        if (!is_in_groupby)
+                        {
+                            throw RMDBError("Non-aggregated column '" + sel_col.col_name + "' must appear in GROUP BY clause");
                         }
                     }
-                    if (!is_in_groupby)
-                    {
-                        throw RMDBError("Non-aggregated column '" + sel_col.col_name + "' must appear in GROUP BY clause");
-                    }
                 }
-            }
-            // 检查是否同时出现非聚合列和聚合列(比如：id ,max(id))
-            std::unordered_map<std::string, bool> col_agg_map;
-            for (const auto &sel_col : query->cols)
-            {
-                if (ast::AggFuncType::NO_TYPE != sel_col.aggFuncType)
+                // 检查是否同时出现非聚合列和聚合列(比如：id ,max(id))
+                std::unordered_map<std::string, bool> col_agg_map;
+                for (const auto &sel_col : query->cols)
                 {
-                    col_agg_map[sel_col.col_name] = true;
-                }
-                else if(col_agg_map.try_emplace(sel_col.col_name, false).first->second)
-                    throw RMDBError("Column '" + sel_col.col_name + "' appears both as non-aggregated and aggregated");
-            }
-        }
-        if (x->has_groupby) {
-            // 是否在表里
-            for (auto& g : x->groupby) {
-                TabCol group_col = { g->tab_name, g->col_name };
-                group_col = check_column(all_cols, group_col);
-                query->groupby.emplace_back(group_col);
-            }
-        }
-
-        // having检查
-        // having必须与groupby一起使用
-        if (x->has_having) {
-            if (!x->has_groupby) {
-                throw RMDBError("HAVING clause must be used with GROUP BY clause");
-            }
-        // having中的列必须出现在groupby或聚合函数中
-            for (const auto& having_cond : x->having_conds) {
-                if (having_cond->lhs->col_name != "*") {
-                    bool is_valid = false;
-                    for (const auto& group_col : query->groupby) {
-                        if (having_cond->lhs->col_name == group_col.col_name) {
-                            is_valid = true;
-                            break;
-                        }
+                    if (ast::AggFuncType::NO_TYPE != sel_col.aggFuncType)
+                    {
+                        col_agg_map[sel_col.col_name] = true;
                     }
-                    if (!is_valid) {
-                        for (const auto& sel_col : query->cols) {
-                            if (having_cond->lhs->col_name == sel_col.col_name &&
-                                ast::AggFuncType::NO_TYPE != sel_col.aggFuncType) {
+                    else if(col_agg_map.try_emplace(sel_col.col_name, false).first->second)
+                        throw RMDBError("Column '" + sel_col.col_name + "' appears both as non-aggregated and aggregated");
+                }
+            }
+            if (x->has_groupby) {
+                // 是否在表里
+                for (auto& g : x->groupby) {
+                    TabCol group_col = { g->tab_name, g->col_name };
+                    group_col = check_column(all_cols, group_col);
+                    query->groupby.emplace_back(group_col);
+                }
+            }
+
+            // having检查
+            // having必须与groupby一起使用
+            if (x->has_having) {
+                if (!x->has_groupby) {
+                    throw RMDBError("HAVING clause must be used with GROUP BY clause");
+                }
+            // having中的列必须出现在groupby或聚合函数中
+                for (const auto& having_cond : x->having_conds) {
+                    if (having_cond->lhs->col_name != "*") {
+                        bool is_valid = false;
+                        for (const auto& group_col : query->groupby) {
+                            if (having_cond->lhs->col_name == group_col.col_name) {
                                 is_valid = true;
                                 break;
                             }
                         }
-                    }
-                    if (!is_valid) {
-                        throw RMDBError("Column '" + having_cond->lhs->col_name + "' in HAVING clause must appear in GROUP BY or be used in an aggregate function");
+                        if (!is_valid) {
+                            for (const auto& sel_col : query->cols) {
+                                if (having_cond->lhs->col_name == sel_col.col_name &&
+                                    ast::AggFuncType::NO_TYPE != sel_col.aggFuncType) {
+                                    is_valid = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (!is_valid) {
+                            throw RMDBError("Column '" + having_cond->lhs->col_name + "' in HAVING clause must appear in GROUP BY or be used in an aggregate function");
+                        }
                     }
                 }
+
+                // 处理 HAVING 条件
+                get_clause(x->having_conds, query->having_conds);
+                check_clause(query->tables, query->having_conds, true);
             }
-
-            // 处理 HAVING 条件
-            get_clause(x->having_conds, query->having_conds);
-            check_clause(query->tables, query->having_conds, true);
+            // 处理where条件
+            get_clause(x->conds, query->conds);
+            check_clause(query->tables, query->conds, false);
         }
-        // 处理where条件
-        get_clause(x->conds, query->conds);
-        check_clause(query->tables, query->conds, false);
-    }
-    else if (auto x = std::dynamic_pointer_cast<ast::UpdateStmt>(parse))
-    {
-
-        if (!sm_manager_->db_.is_table(x->tab_name))
+        break;
+        case ast::TreeNodeType::UpdateStmt:
         {
-            throw TableNotFoundError(x->tab_name);
-        }
-
-        // 将表名添加到查询的表列表中
-        query->tables = {x->tab_name};
-        // 获取所有列信息用于验证
-        std::vector<ColMeta> all_cols;
-        get_all_cols({x->tab_name}, all_cols);
-
-        // 处理set子句
-        for (auto &sv_set_clause : x->set_clauses)
-        {
-            SetClause set_clause;
-            // 设置要更新的列
-            TabCol col(x->tab_name, sv_set_clause->col_name);
-            // 验证列是否存在
-            col = check_column(all_cols, col);
-            set_clause.lhs = col;
-
-            // 获取列的类型信息
-            TabMeta &tab = sm_manager_->db_.get_table(col.tab_name);
-            auto col_meta = tab.get_col(col.col_name);
-            ColType target_type = col_meta->type;
-
-            // 设置新值并进行类型转换
-            Value val = convert_sv_value(sv_set_clause->val);
-
-            // 如果类型不匹配，尝试进行类型转换
-            if (val.type != target_type)
+            auto x = std::static_pointer_cast<ast::UpdateStmt>(parse);
+            if (!sm_manager_->db_.is_table(x->tab_name))
             {
-                val = convert_value_type(val, target_type);
+                throw TableNotFoundError(x->tab_name);
             }
 
-            // 初始化原始数据
-            val.raw = nullptr;
-            val.init_raw(col_meta->len);
-            set_clause.rhs = val;
+            // 将表名添加到查询的表列表中
+            query->tables = {x->tab_name};
+            // 获取所有列信息用于验证
+            std::vector<ColMeta> all_cols;
+            get_all_cols({x->tab_name}, all_cols);
 
-            // 添加到查询的set子句列表中
-            query->set_clauses.emplace_back(std::move(set_clause));
-        }
-
-        // 处理where条件
-        get_clause(x->conds, query->conds);
-        check_clause({x->tab_name}, query->conds, false);
-    }
-    else if (auto x = std::dynamic_pointer_cast<ast::DeleteStmt>(parse))
-    {
-        query->tables = {x->tab_name};
-        // 处理where条件
-        get_clause(x->conds, query->conds);
-        check_clause({x->tab_name}, query->conds, false);
-    }
-    else if (auto x = std::dynamic_pointer_cast<ast::InsertStmt>(parse))
-    {
-        query->tables = {x->tab_name};
-
-        if (!sm_manager_->db_.is_table(x->tab_name))
-        {
-            throw TableNotFoundError(x->tab_name);
-        }
-
-        // 获取表的元数据
-        TabMeta &tab = sm_manager_->db_.get_table(x->tab_name);
-
-        // 检查插入的值的数量是否与表的列数匹配
-        if (x->vals.size() != tab.cols.size())
-        {
-            throw InvalidValueCountError();
-        }
-
-        // 处理insert的values值，并进行类型转换
-        query->values.reserve(x->vals.size());
-        for (size_t i = 0; i < x->vals.size(); i++)
-        {
-            // 获取当前列的类型信息
-            auto &col = tab.cols[i];
-            ColType target_type = col.type;
-
-            // 转换值并进行类型检查
-            Value val = convert_sv_value(x->vals[i]);
-
-            // 如果类型不匹配，尝试进行类型转换
-            if (val.type != target_type)
+            // 处理set子句
+            for (auto &sv_set_clause : x->set_clauses)
             {
-                val = convert_value_type(val, target_type);
+                SetClause set_clause;
+                // 设置要更新的列
+                TabCol col(x->tab_name, sv_set_clause->col_name);
+                // 验证列是否存在
+                col = check_column(all_cols, col);
+                set_clause.lhs = col;
+
+                // 获取列的类型信息
+                TabMeta &tab = sm_manager_->db_.get_table(col.tab_name);
+                auto col_meta = tab.get_col(col.col_name);
+                ColType target_type = col_meta->type;
+
+                // 设置新值并进行类型转换
+                Value val = convert_sv_value(sv_set_clause->val);
+
+                // 如果类型不匹配，尝试进行类型转换
+                if (val.type != target_type)
+                {
+                    val = convert_value_type(val, target_type);
+                }
+
+                // 初始化原始数据
+                val.raw = nullptr;
+                val.init_raw(col_meta->len);
+                set_clause.rhs = val;
+
+                // 添加到查询的set子句列表中
+                query->set_clauses.emplace_back(std::move(set_clause));
             }
 
-            // 初始化原始数据
-            val.raw = nullptr;
-            val.init_raw(col.len);
-
-            query->values.emplace_back(std::move(val));
+            // 处理where条件
+            get_clause(x->conds, query->conds);
+            check_clause({x->tab_name}, query->conds, false);
         }
-    }
-    else
-    {
-        // do nothing
+        break;
+        case ast::TreeNodeType::DeleteStmt:
+        {
+            auto x = std::static_pointer_cast<ast::DeleteStmt>(parse);
+            query->tables = {x->tab_name};
+            // 处理where条件
+            get_clause(x->conds, query->conds);
+            check_clause({x->tab_name}, query->conds, false);
+        }
+        break;
+        case ast::TreeNodeType::InsertStmt:
+        {
+            auto x = std::static_pointer_cast<ast::InsertStmt>(parse);
+            query->tables = {x->tab_name};
+
+            if (!sm_manager_->db_.is_table(x->tab_name))
+            {
+                throw TableNotFoundError(x->tab_name);
+            }
+
+            // 获取表的元数据
+            TabMeta &tab = sm_manager_->db_.get_table(x->tab_name);
+
+            // 检查插入的值的数量是否与表的列数匹配
+            if (x->vals.size() != tab.cols.size())
+            {
+                throw InvalidValueCountError();
+            }
+
+            // 处理insert的values值，并进行类型转换
+            query->values.reserve(x->vals.size());
+            for (size_t i = 0; i < x->vals.size(); ++i)
+            {
+                // 获取当前列的类型信息
+                auto &col = tab.cols[i];
+                ColType target_type = col.type;
+
+                // 转换值并进行类型检查
+                Value val = convert_sv_value(x->vals[i]);
+
+                // 如果类型不匹配，尝试进行类型转换
+                if (val.type != target_type)
+                {
+                    val = convert_value_type(val, target_type);
+                }
+
+                // 初始化原始数据
+                val.raw = nullptr;
+                val.init_raw(col.len);
+
+                query->values.emplace_back(std::move(val));
+            }
+        }
+        break;
+        default:
+            break;
     }
     query->parse = std::move(parse);
     return query;
@@ -341,13 +349,15 @@ void Analyze::get_clause(const std::vector<std::shared_ptr<ast::BinaryExpr>> &sv
         Condition cond;
         cond.lhs_col = TabCol(expr->lhs->tab_name, expr->lhs->col_name, expr->lhs->agg_type);
         cond.op = convert_sv_comp_op(expr->op);
-        if (auto rhs_val = std::dynamic_pointer_cast<ast::Value>(expr->rhs))
+        if (expr->rhs->Nodetype() == ast::TreeNodeType::Value)
         {
+            auto rhs_val = std::static_pointer_cast<ast::Value>(expr->rhs);
             cond.is_rhs_val = true;
             cond.rhs_val = convert_sv_value(rhs_val);
         }
-        else if (auto rhs_col = std::dynamic_pointer_cast<ast::Col>(expr->rhs))
+        else if (expr->rhs->Nodetype() == ast::TreeNodeType::Col)
         {
+            auto rhs_col = std::static_pointer_cast<ast::Col>(expr->rhs);
             cond.is_rhs_val = false;
             cond.rhs_col = TabCol(rhs_col->tab_name, rhs_col->col_name, expr->lhs->agg_type);
         }
@@ -433,21 +443,28 @@ void Analyze::check_clause(const std::vector<std::string> &tab_names, std::vecto
 Value Analyze::convert_sv_value(const std::shared_ptr<ast::Value> &sv_val)
 {
     Value val;
-    if (auto int_lit = std::dynamic_pointer_cast<ast::IntLit>(sv_val))
+    switch (sv_val->Nodetype())
     {
-        val.set_int(int_lit->val);
-    }
-    else if (auto float_lit = std::dynamic_pointer_cast<ast::FloatLit>(sv_val))
-    {
-        val.set_float(float_lit->val);
-    }
-    else if (auto str_lit = std::dynamic_pointer_cast<ast::StringLit>(sv_val))
-    {
-        val.set_str(str_lit->val);
-    }
-    else
-    {
-        throw InternalError("Unexpected sv value type 2");
+        case ast::TreeNodeType::IntLit:
+        {
+            auto int_lit = std::static_pointer_cast<ast::IntLit>(sv_val);
+            val.set_int(int_lit->val);
+        }
+        break;
+        case ast::TreeNodeType::FloatLit:
+        {
+            auto float_lit = std::static_pointer_cast<ast::FloatLit>(sv_val);
+            val.set_float(float_lit->val);
+        }
+        break;
+        case ast::TreeNodeType::StringLit:
+        {
+            auto str_lit = std::static_pointer_cast<ast::StringLit>(sv_val);
+            val.set_str(str_lit->val);
+        }
+        break;
+        default:
+            throw InternalError("Unexpected sv value type 2");
     }
     return val;
 }

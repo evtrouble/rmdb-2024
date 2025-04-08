@@ -145,7 +145,7 @@ struct TabMeta {
             if(i == compare_index_cols.size()) return index;
         }
         std::vector<std::string> col_names(compare_index_cols.size());
-        for (size_t id = 0; id < compare_index_cols.size(); id++)
+        for (size_t id = 0; id < compare_index_cols.size(); ++id)
             col_names[id] = std::move(compare_index_cols[id].name);
         throw IndexNotFoundError(name, col_names);
     }
@@ -189,7 +189,7 @@ struct TabMeta {
         size_t n;
         is >> tab.name >> n;
         tab.cols.reserve(n);
-        for (size_t i = 0; i < n; i++)
+        for (size_t i = 0; i < n; ++i)
         {
             ColMeta col;
             is >> col;
@@ -249,7 +249,7 @@ class DbMeta {
     friend std::istream &operator>>(std::istream &is, DbMeta &db_meta) {
         size_t n;
         is >> db_meta.name_ >> n;
-        for (size_t i = 0; i < n; i++) {
+        for (size_t i = 0; i < n; ++i) {
             TabMeta tab;
             is >> tab;
             db_meta.tabs_.emplace(tab.name, std::move(tab));

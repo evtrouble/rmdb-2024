@@ -227,6 +227,8 @@ public:
         }
     }
 
+    ExecutionType type() const override { return ExecutionType::Sort;  }
+
 private:
     size_t estimateDataSize() {
         size_t size = 0;

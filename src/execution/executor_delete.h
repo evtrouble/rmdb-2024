@@ -71,4 +71,6 @@ private:
     }
 
     Rid &rid() override { return _abstract_rid; }
+
+    ExecutionType type() const override { return ExecutionType::Delete;  }
 };

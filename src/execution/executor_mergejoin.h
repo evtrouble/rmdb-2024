@@ -125,7 +125,7 @@ private:
     }
 
     // 比较两个键值
-    int compare_keys(std::unique_ptr<RmRecord>& key1, std::unique_ptr<RmRecord>& key2, size_t len) {
+    inline int compare_keys(std::unique_ptr<RmRecord>& key1, std::unique_ptr<RmRecord>& key2, size_t len) {
         return memcmp(key1->data, key2->data, len);
     }
 
@@ -231,10 +231,10 @@ public:
 
     void nextTuple() override {
         if (!left_cache_.empty() && !right_cache_.empty()) {
-            right_cache_idx_++;
+            ++right_cache_idx_;
             if (right_cache_idx_ >= right_cache_.size()) {
                 // 已经遍历完所有缓存的右表记录，移动左表缓存
-                left_cache_idx_++;
+                ++left_cache_idx_;
                 right_cache_idx_ = 0;
                 if(left_cache_idx_ >= left_cache_.size()){
                     // 重复键全部遍历完了
@@ -269,4 +269,6 @@ public:
     size_t tupleLen() const override { return len_; }
 
     const std::vector<ColMeta> &cols() const { return cols_; }
+
+    ExecutionType type() const override { return ExecutionType::MergeJoin;  }
 };

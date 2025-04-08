@@ -44,37 +44,43 @@ enum AggFuncType {
     MIN
 };
 
-// enum class TreeNodeType {
-//     Help, ShowTables, TxnBegin, TxnCommit, TxnAbort, 
-//     TxnRollback, TypeLen, Field, ColDef, CreateTable, 
-//     DropTable, DescTable, CreateIndex, DropIndex, ShowIndex,
-//     Expr, Value, IntLit, FloatLit, StringLit, BoolLit,
-//     Col, SetClause, BinaryExpr, OrderBy, InsertStmt, 
-//     DeleteStmt, UpdateStmt, JoinExpr, SelectStmt, SetStmt, 
-//     SemValue
-// };
+enum class TreeNodeType {
+    Help, ShowTables, TxnBegin, TxnCommit, TxnAbort, 
+    TxnRollback, TypeLen, Field, ColDef, CreateTable, 
+    DropTable, DescTable, CreateIndex, DropIndex, ShowIndex,
+    Expr, Value, IntLit, FloatLit, StringLit, BoolLit,
+    Col, SetClause, BinaryExpr, OrderBy, InsertStmt, 
+    DeleteStmt, UpdateStmt, JoinExpr, SelectStmt, SetStmt
+};
 
 // Base class for tree nodes
 struct TreeNode {
     virtual ~TreeNode() = default;  // enable polymorphism
+    virtual TreeNodeType Nodetype() const = 0;
 };
 
 struct Help : public TreeNode {
+    TreeNodeType Nodetype() const override { return TreeNodeType::Help; }
 };
 
 struct ShowTables : public TreeNode {
+    TreeNodeType Nodetype() const override { return TreeNodeType::ShowTables; }
 };
 
 struct TxnBegin : public TreeNode {
+    TreeNodeType Nodetype() const override { return TreeNodeType::TxnBegin; }
 };
 
 struct TxnCommit : public TreeNode {
+    TreeNodeType Nodetype() const override { return TreeNodeType::TxnCommit; }
 };
 
 struct TxnAbort : public TreeNode {
+    TreeNodeType Nodetype() const override { return TreeNodeType::TxnAbort; }
 };
 
 struct TxnRollback : public TreeNode {
+    TreeNodeType Nodetype() const override { return TreeNodeType::TxnRollback; }
 };
 
 struct TypeLen : public TreeNode {
@@ -82,9 +88,11 @@ struct TypeLen : public TreeNode {
     int len;
 
     TypeLen(SvType type_, int len_) : type(type_), len(len_) {}
+    TreeNodeType Nodetype() const override { return TreeNodeType::TypeLen; }
 };
 
 struct Field : public TreeNode {
+    virtual TreeNodeType Nodetype() const override { return TreeNodeType::Field; }
 };
 
 struct ColDef : public Field {
@@ -93,6 +101,7 @@ struct ColDef : public Field {
 
     ColDef(const std::string &col_name_, std::shared_ptr<TypeLen> type_len_) :
             col_name(std::move(col_name_)), type_len(std::move(type_len_)) {}
+    TreeNodeType Nodetype() const override { return TreeNodeType::ColDef; }
 };
 
 struct CreateTable : public TreeNode {
@@ -101,18 +110,21 @@ struct CreateTable : public TreeNode {
 
     CreateTable(const std::string &tab_name_, const std::vector<std::shared_ptr<Field>> &fields_) :
             tab_name(std::move(tab_name_)), fields(std::move(fields_)) {}
+            TreeNodeType Nodetype() const override { return TreeNodeType::CreateTable; }
 };
 
 struct DropTable : public TreeNode {
     std::string tab_name;
 
     DropTable(const std::string &tab_name_) : tab_name(std::move(tab_name_)) {}
+    TreeNodeType Nodetype() const override { return TreeNodeType::DropTable; }
 };
 
 struct DescTable : public TreeNode {
     std::string tab_name;
 
     DescTable(const std::string &tab_name_) : tab_name(std::move(tab_name_)) {}
+    TreeNodeType Nodetype() const override { return TreeNodeType::DescTable; }
 };
 
 struct CreateIndex : public TreeNode {
@@ -121,6 +133,7 @@ struct CreateIndex : public TreeNode {
 
     CreateIndex(const std::string &tab_name_, const std::vector<std::string> &col_names_) :
             tab_name(std::move(tab_name_)), col_names(std::move(col_names_)) {}
+            TreeNodeType Nodetype() const override { return TreeNodeType::CreateIndex; }
 };
 
 struct DropIndex : public TreeNode {
@@ -129,42 +142,50 @@ struct DropIndex : public TreeNode {
 
     DropIndex(const std::string &tab_name_, const std::vector<std::string> &col_names_) :
             tab_name(std::move(tab_name_)), col_names(std::move(col_names_)) {}
+            TreeNodeType Nodetype() const override { return TreeNodeType::DropIndex; }
 };
 
 struct ShowIndex : public TreeNode{
     std::string tab_name;
 
     ShowIndex(const std::string &tab_name_): tab_name(std::move(tab_name_)){};
+    TreeNodeType Nodetype() const override { return TreeNodeType::ShowIndex; }
 };
 
 struct Expr : public TreeNode {
+    TreeNodeType Nodetype() const override { return TreeNodeType::Expr; }
 };
 
 struct Value : public Expr {
+    TreeNodeType Nodetype() const override { return TreeNodeType::Value; }
 };
 
 struct IntLit : public Value {
     int val;
 
     IntLit(int val_) : val(val_) {}
+    TreeNodeType Nodetype() const override { return TreeNodeType::IntLit; }
 };
 
 struct FloatLit : public Value {
     float val;
 
     FloatLit(float val_) : val(val_) {}
+    TreeNodeType Nodetype() const override { return TreeNodeType::FloatLit; }
 };
 
 struct StringLit : public Value {
     std::string val;
 
     StringLit(const std::string &val_) : val(std::move(val_)) {}
+    TreeNodeType Nodetype() const override { return TreeNodeType::StringLit; }
 };
 
 struct BoolLit : public Value {
     bool val;
 
     BoolLit(bool val_) : val(val_) {}
+    TreeNodeType Nodetype() const override { return TreeNodeType::BoolLit; }
 };
 
 struct Col : public Expr {
@@ -178,6 +199,8 @@ struct Col : public Expr {
 
     Col(std::string tab_name_, std::string col_name_, AggFuncType agg_type, std::string alias_ = "") :
         tab_name(std::move(tab_name_)), col_name(std::move(col_name_)), agg_type(agg_type), alias(std::move(alias_)) {}
+
+        TreeNodeType Nodetype() const override { return TreeNodeType::Col; }
 };
 
 
@@ -187,6 +210,7 @@ struct SetClause : public TreeNode {
 
     SetClause(const std::string &col_name_, std::shared_ptr<Value> val_) :
             col_name(std::move(col_name_)), val(std::move(val_)) {}
+            TreeNodeType Nodetype() const override { return TreeNodeType::SetClause; }
 };
 
 struct BinaryExpr : public TreeNode {
@@ -196,6 +220,7 @@ struct BinaryExpr : public TreeNode {
 
     BinaryExpr(std::shared_ptr<Col> lhs_, SvCompOp op_, std::shared_ptr<Expr> rhs_) :
             lhs(std::move(lhs_)), op(op_), rhs(std::move(rhs_)) {}
+            TreeNodeType Nodetype() const override { return TreeNodeType::BinaryExpr; }
 };
 
 struct OrderBy : public TreeNode
@@ -204,6 +229,7 @@ struct OrderBy : public TreeNode
     OrderByDir orderby_dir;
     OrderBy(std::shared_ptr<Col> cols_, OrderByDir orderby_dir_) :
        cols(std::move(cols_)), orderby_dir(std::move(orderby_dir_)) {}
+       TreeNodeType Nodetype() const override { return TreeNodeType::OrderBy; }
 };
 
 struct InsertStmt : public TreeNode {
@@ -212,6 +238,7 @@ struct InsertStmt : public TreeNode {
 
     InsertStmt(const std::string &tab_name_, const std::vector<std::shared_ptr<Value>> &vals_) :
             tab_name(std::move(tab_name_)), vals(std::move(vals_)) {}
+            TreeNodeType Nodetype() const override { return TreeNodeType::InsertStmt; }
 };
 
 struct DeleteStmt : public TreeNode {
@@ -220,6 +247,7 @@ struct DeleteStmt : public TreeNode {
 
     DeleteStmt(const std::string &tab_name_, const std::vector<std::shared_ptr<BinaryExpr>> &conds_) :
             tab_name(std::move(tab_name_)), conds(std::move(conds_)) {}
+            TreeNodeType Nodetype() const override { return TreeNodeType::DeleteStmt; }
 };
 
 struct UpdateStmt : public TreeNode {
@@ -231,6 +259,7 @@ struct UpdateStmt : public TreeNode {
                const std::vector<std::shared_ptr<SetClause>> &set_clauses_,
                const std::vector<std::shared_ptr<BinaryExpr>> &conds_) :
             tab_name(std::move(tab_name_)), set_clauses(std::move(set_clauses_)), conds(std::move(conds_)) {}
+            TreeNodeType Nodetype() const override { return TreeNodeType::UpdateStmt; }
 };
 
 struct JoinExpr : public TreeNode {
@@ -242,6 +271,7 @@ struct JoinExpr : public TreeNode {
     JoinExpr(const std::string &left_, const std::string &right_,
                const std::vector<std::shared_ptr<BinaryExpr>> &conds_, JoinType type_) :
             left(std::move(left_)), right(std::move(right_)), conds(std::move(conds_)), type(type_) {}
+    TreeNodeType Nodetype() const override { return TreeNodeType::JoinExpr; }
 };
 
 struct SelectStmt : public TreeNode {
@@ -271,6 +301,7 @@ struct SelectStmt : public TreeNode {
                 has_groupby = (!groupby.empty());
                 has_having = (!having_conds.empty());
             }
+    TreeNodeType Nodetype() const override { return TreeNodeType::SelectStmt; }
 };
 
 // set enable_nestloop
@@ -280,6 +311,7 @@ struct SetStmt : public TreeNode {
 
     SetStmt(SetKnobType &type, bool bool_value) : 
         set_knob_type_(type), bool_val_(bool_value) { }
+    TreeNodeType Nodetype() const override { return TreeNodeType::SetStmt; }
 };
 
 // Semantic value

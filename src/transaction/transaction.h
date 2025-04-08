@@ -18,6 +18,16 @@ See the Mulan PSL v2 for more details. */
 #include <unordered_set>
 
 #include "txn_defs.h"
+#include "system/sm_meta.h"
+
+struct Version
+{
+    struct{
+        PageId page_id;
+        int slot_no;
+    } next_version;
+    timestamp_t version;
+};
 
 class Transaction
 {
@@ -66,6 +76,11 @@ public:
     inline std::shared_ptr<std::unordered_set<int>> get_lock_set() { return lock_set_; }
     inline void append_lock_set(int fd) { lock_set_->emplace(fd); }
 
+    inline std::shared_ptr<std::deque<Version*>> get_write_version_set() { return write_version_set_; }
+    inline void append_write_version_set(Version* version) { write_version_set_->emplace_back(version); }
+
+    inline static std::vector<ColMeta> &trx_fields() { return fields_;}
+
 private:
     bool txn_mode_;                  // 用于标识当前事务为显式事务还是单条SQL语句的隐式事务
     TransactionState state_;         // 事务状态
@@ -77,7 +92,10 @@ private:
     timestamp_t commit_ts_;          // 事务的提交时间戳
 
     std::shared_ptr<std::deque<WriteRecord>> write_set_;  // 事务包含的所有写操作
+    std::shared_ptr<std::deque<Version*>> write_version_set_;    // 事务包含的所有写操作，MVCC需要修改对应的版本号
     std::shared_ptr<std::unordered_set<int>> lock_set_;  // 事务申请的所有锁
     std::shared_ptr<std::deque<Page*>> index_latch_page_set_;          // 维护事务执行过程中加锁的索引页面
     std::shared_ptr<std::deque<Page*>> index_deleted_page_set_;    // 维护事务执行过程中删除的索引页面
+
+    static std::vector<ColMeta> fields_;  // 存储事务数据需要用到的字段元数据，所有表结构都需要带的
 };

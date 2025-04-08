@@ -38,7 +38,7 @@ Page* BufferPoolManager::fetch_page(PageId page_id) {
         if (it != bucket.page_table.end()) {
             frame_id_t frame_id = it->second;
             replacer_->pin(frame_id);
-            pages_[frame_id].pin_count_++;
+            ++pages_[frame_id].pin_count_;
             return &pages_[frame_id];
         }
     }
@@ -49,7 +49,7 @@ Page* BufferPoolManager::fetch_page(PageId page_id) {
     if (it != bucket.page_table.end()) {
         frame_id_t frame_id = it->second;
         replacer_->pin(frame_id);
-        pages_[frame_id].pin_count_++;
+        ++pages_[frame_id].pin_count_;
         return &pages_[frame_id];
     }
 
