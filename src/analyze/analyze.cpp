@@ -471,7 +471,7 @@ Value Analyze::convert_sv_value(const std::shared_ptr<ast::Value> &sv_val)
 
 CompOp Analyze::convert_sv_comp_op(ast::SvCompOp op)
 {
-    std::map<ast::SvCompOp, CompOp> m = {
+    static std::map<ast::SvCompOp, CompOp> m = {
         {ast::SV_OP_EQ, OP_EQ},
         {ast::SV_OP_NE, OP_NE},
         {ast::SV_OP_LT, OP_LT},

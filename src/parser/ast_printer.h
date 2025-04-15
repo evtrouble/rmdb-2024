@@ -220,6 +220,7 @@ private:
             print_val_list(x->tabs, offset);
             print_node_list(x->conds, offset);
         }
+        break;
         case ast::TreeNodeType::TxnBegin:
             std::cout << "BEGIN\n";
             break;
