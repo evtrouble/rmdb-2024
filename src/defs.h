@@ -29,8 +29,12 @@ std::istream &operator>>(std::istream &is, T &enum_val) {
 }
 
 struct Rid {
-    int page_no;
+    int page_no = INVALID_PAGE_ID;
     int slot_no;
+
+    bool is_valid() const {
+        return page_no != INVALID_PAGE_ID && slot_no >= 0;
+    }
 
     friend bool operator==(const Rid &x, const Rid &y) {
         return x.page_no == y.page_no && x.slot_no == y.slot_no;

@@ -35,6 +35,14 @@ void DiskManager::write_page(int fd, page_id_t page_no, const char *offset, int 
         throw InternalError("DiskManager::write_page Error");
 }
 
+void DiskManager::write_page(const std::string& path, int offset, const std::string& bytes)
+{
+    int fd = ::open(path.c_str(), O_RDWR);
+    ::lseek(fd, offset, SEEK_SET);
+    if(::write(fd, bytes.c_str(), bytes.length()) != bytes.length())
+        throw InternalError("DiskManager::write_page Error");
+}
+
 /**
  * @description: 读取文件中指定编号的页面中的部分数据到内存中
  * @param {int} fd 磁盘文件的文件句柄

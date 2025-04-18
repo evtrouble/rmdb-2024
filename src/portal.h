@@ -71,7 +71,7 @@ class Portal
             case PlanTag::T_Transaction_commit:
             case PlanTag::T_Transaction_rollback:
             case PlanTag::T_SetKnob:
-                return std::make_shared<PortalStmt>(PORTAL_CMD_UTILITY, std::vector<TabCol>(), std::unique_ptr<AbstractExecutor>(),plan);
+                return std::make_shared<PortalStmt>(PORTAL_CMD_UTILITY, std::vector<TabCol>(), std::unique_ptr<AbstractExecutor>(), plan);
             case PlanTag::T_CreateTable:  
             case PlanTag::T_DropTable:   
             case PlanTag::T_CreateIndex:  

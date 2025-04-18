@@ -20,15 +20,6 @@ See the Mulan PSL v2 for more details. */
 #include "txn_defs.h"
 #include "system/sm_meta.h"
 
-struct Version
-{
-    struct{
-        PageId page_id;
-        int slot_no;
-    } next_version;
-    timestamp_t version;
-};
-
 class Transaction
 {
 public:
@@ -51,10 +42,10 @@ public:
     inline void set_txn_mode(bool txn_mode) { txn_mode_ = txn_mode; }
     inline bool get_txn_mode() { return txn_mode_; }
 
-    inline void set_start_ts(timestamp_t start_ts) { start_ts_ = start_ts; }
-    inline timestamp_t get_start_ts() { return start_ts_; }
-    inline void set_commit_ts(timestamp_t commit_ts) { commit_ts_ = commit_ts; }
-    inline timestamp_t get_commit_ts() { return commit_ts_; }
+    // inline void set_start_ts(timestamp_t start_ts) { start_ts_ = start_ts; }
+    // inline timestamp_t get_start_ts() { return start_ts_; }
+    // inline void set_commit_ts(timestamp_t commit_ts) { commit_ts_ = commit_ts; }
+    // inline timestamp_t get_commit_ts() { return commit_ts_; }
 
     inline IsolationLevel get_isolation_level() { return isolation_level_; }
 
@@ -88,11 +79,10 @@ private:
     std::thread::id thread_id_;      // 当前事务对应的线程id
     lsn_t prev_lsn_;                 // 当前事务执行的最后一条操作对应的lsn，用于系统故障恢复
     txn_id_t txn_id_;                // 事务的ID，唯一标识符
-    timestamp_t start_ts_;           // 事务的开始时间戳
-    timestamp_t commit_ts_;          // 事务的提交时间戳
+    // timestamp_t start_ts_;           // 事务的开始时间戳
+    // timestamp_t commit_ts_;          // 事务的提交时间戳
 
     std::shared_ptr<std::deque<WriteRecord>> write_set_;  // 事务包含的所有写操作
-    std::shared_ptr<std::deque<Version*>> write_version_set_;    // 事务包含的所有写操作，MVCC需要修改对应的版本号
     std::shared_ptr<std::unordered_set<int>> lock_set_;  // 事务申请的所有锁
     std::shared_ptr<std::deque<Page*>> index_latch_page_set_;          // 维护事务执行过程中加锁的索引页面
     std::shared_ptr<std::deque<Page*>> index_deleted_page_set_;    // 维护事务执行过程中删除的索引页面
