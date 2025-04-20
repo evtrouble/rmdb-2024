@@ -20,11 +20,11 @@ key和value的存储格式（长度固定）
 |Entry#1|Entry#2|...|Entry#N|num_of_elements |
 ----------------------------------------------
 
---------------------------------------------
-|              Entry #1 |              ... |
--------------------------------------|-----|
-|key(keylen)|val(vallen)|tranc_id(8B)| ... |
---------------------------------------------
+------------------------------------------
+|              Entry #1 |            ... |
+-----------------------------------|-----|
+|key(keylen)|val(vallen)|txn_id(8B)| ... |
+------------------------------------------
 */
 
 class Block : public std::enable_shared_from_this<Block> {
@@ -33,8 +33,9 @@ class Block : public std::enable_shared_from_this<Block> {
   private:
     std::vector<uint8_t> data;
     LsmFileHdr *file_hdr_;
-    uint16_t num_elements;
+    uint16_t num_elements = 0; // 元素个数
     size_t capacity;
+    size_t entry_size = 0; // 每个entry的大小
 
     struct Entry {
       std::string key;
@@ -48,12 +49,13 @@ class Block : public std::enable_shared_from_this<Block> {
     int compare_key_at(size_t offset, const std::string &target) const;
   
     // 根据id的可见性调整位置
-    int adjust_idx_by_txn_id(size_t idx, uint64_t txn_id);
+    // int adjust_idx_by_ts(size_t idx, txn_id_t txn_id);
   
     bool is_same_key(size_t idx, const std::string &target_key) const;
   
   public:
-    Block() = default;
+    Block(LsmFileHdr *file_hdr) : file_hdr_(file_hdr), num_elements(0), 
+      entry_size(file_hdr_->col_tot_len + sizeof(Rid) + sizeof(txn_id_t)){}
     Block(size_t capacity);
     // ! 这里的编码函数不包括 hash
     std::vector<uint8_t> encode();
@@ -62,16 +64,15 @@ class Block : public std::enable_shared_from_this<Block> {
                                          bool with_hash = false);
     std::string get_first_key();
     size_t get_offset_at(size_t idx) const;
-    bool add_entry(const std::string &key, const std::string &value,
-                   uint64_t tranc_id, bool force_write);
-    std::optional<std::string> get_value_binary(const std::string &key,
-                                                uint64_t tranc_id);
+    bool add_entry(const std::string &key, const Rid &value,
+      txn_id_t txn_id, bool force_write);
+    string get_value_binary(const std::string &key,
+      txn_id_t txn_id);
   
     size_t size() const;
     size_t cur_size() const;
     bool is_empty() const;
-    std::optional<size_t> get_idx_binary(const std::string &key,
-                                         uint64_t tranc_id);
+    int get_idx_binary(const std::string &key, txn_id_t txn_id);
   
     // 按照谓词返回迭代器, 左闭右开
     // std::optional<

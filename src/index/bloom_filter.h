@@ -58,11 +58,11 @@ class BloomFilter {
             return hash | 1;  // 确保hash2不为0
         }
     
-        static size_t OptimalNumOfBits(double false_positive_rate) {
+        static inline size_t OptimalNumOfBits(double false_positive_rate) {
             return size_t(-std::log(false_positive_rate) / (std::log(2) * std::log(2)));
         }
     
-        static size_t OptimalNumOfHashFunctions(size_t bits_per_key) {
+        static inline size_t OptimalNumOfHashFunctions(size_t bits_per_key) {
             return size_t(bits_per_key * std::log(2));
         }
  };
