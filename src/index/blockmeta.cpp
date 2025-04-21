@@ -1,7 +1,5 @@
 #include "blockmeta.h"
 #include <cstring>
-#include <functional>
-#include <stdexcept>
 
 BlockMeta::BlockMeta(int col_tot_len) : offset(0), first_key(""), last_key(""), 
     col_tot_len(col_tot_len){}
@@ -11,28 +9,12 @@ BlockMeta::BlockMeta(int col_tot_len, size_t offset, const std::string &first_ke
     : offset(offset), first_key(first_key), last_key(last_key), col_tot_len(col_tot_len) {}
 
 void BlockMeta::encode_meta_to_slice(std::vector<BlockMeta> &meta_entries,
-                                     std::vector<uint8_t> &metadata) {
-  // 1. 计算总大小：num_entries(32) + 所有entries的大小 + hash(32)
-  uint32_t num_entries = meta_entries.size();
-  size_t total_size = sizeof(uint32_t); // num_entries
-
-  // 计算所有entries的大小
-  for (const auto &meta : meta_entries) {
-    total_size += sizeof(uint32_t) +      // offset
-                  meta.first_key.size() + // first_key
-                  meta.last_key.size();   // last_key
-  }
-  total_size += sizeof(uint32_t); // hash
-
-  // 2. 分配空间
-  metadata.resize(total_size);
-  uint8_t *ptr = metadata.data();
-
-  // 3. 写入元素个数
+                                     uint8_t *ptr) {
+  // 1. 写入元素个数
   memcpy(ptr, &num_entries, sizeof(uint32_t));
   ptr += sizeof(uint32_t);
 
-  // 4. 写入每个entry
+  // 2. 写入每个entry
   for (const auto &meta : meta_entries) {
     // 写入 offset
     uint32_t offset32 = static_cast<uint32_t>(meta.offset);
@@ -50,7 +32,7 @@ void BlockMeta::encode_meta_to_slice(std::vector<BlockMeta> &meta_entries,
     ptr += last_key_len;
   }
 
-  // 5. 计算并写入hash
+  // 3. 计算并写入hash
   const uint8_t *data_start = metadata.data() + sizeof(uint32_t);
   const uint8_t *data_end = ptr;
   size_t data_len = data_end - data_start;
@@ -60,6 +42,22 @@ void BlockMeta::encode_meta_to_slice(std::vector<BlockMeta> &meta_entries,
       std::string_view(reinterpret_cast<const char *>(data_start), data_len));
 
   memcpy(ptr, &hash, sizeof(uint32_t));
+}
+
+size_t BlockMeta::size(std::vector<BlockMeta> &meta_entries)
+{
+    // 计算总大小：num_entries(32) + 所有entries的大小 + hash(32)
+    uint32_t num_entries = meta_entries.size();
+    size_t total_size = sizeof(uint32_t); // num_entries
+  
+    // 计算所有entries的大小
+    for (const auto &meta : meta_entries) {
+      total_size += sizeof(uint32_t) +      // offset
+                    meta.first_key.size() + // first_key
+                    meta.last_key.size();   // last_key
+    }
+    total_size += sizeof(uint32_t); // hash
+    return total_size;
 }
 
 std::vector<BlockMeta>

@@ -4,7 +4,7 @@
 SkipList::SkipList(LsmFileHdr *file_hdr, int max_height, size_t expected_num_items)
     : max_height_(max_height),
       current_height_(1),
-      bloom_filter_(expected_num_items),
+      bloom_filter_(make_shared<BloomFilter>(expected_num_items)),
       file_hdr_(file_hdr),
       head_(std::make_shared<SkipListNode>("", Rid(), max_height_, 0)),
       gen_(std::random_device()()),
@@ -27,7 +27,7 @@ std::shared_ptr<SkipListNode> SkipList::FindGreaterOrEqual(
     
     while (true) {
         auto next = current->next_[level];
-        if (next && ix_compare(next->key.c_str(), key.c_str(), file_hdr_->col_types_, file_hdr_->col_lens_) < 0) {
+        if (next && compare_key(next->key, key) < 0) {
             current = next;
         } else {
             if (prev) {
@@ -45,8 +45,8 @@ void SkipList::put(const std::string& key, const Rid& value, txn_id_t txn_id) {
     std::vector<std::shared_ptr<SkipListNode>> prev(max_height_);
     auto node = FindGreaterOrEqual(key, &prev);
     
-    if (node && ix_compare(node->key_.c_str(), key.c_str(), file_hdr_->col_types_, file_hdr_->col_lens_) == 0) {
-        if(value.is_valid()) {
+    if (node && compare_key(node->key_, key) == 0) {
+        if(value.is_valid() && node->value_.is_valid()) {
             throw IndexEntryAlreadyExistError();
         }
         node->value_ = value;
@@ -83,7 +83,7 @@ bool SkipList::get(const std::string& key, Rid& value, txn_id_t txn_id) const {
     for (int i = current_height_ - 1; i >= 0; i--) {
         while (current->next_[i]) {
             auto next = current->next_[i];
-            if (ix_compare(next->key.c_str(), key.c_str(), file_hdr_->col_types_, file_hdr_->col_lens_) >= 0) break;
+            if (compare_key(next->key, key) >= 0) break;
             current = next;
         }
     }
@@ -97,7 +97,7 @@ bool SkipList::get(const std::string& key, Rid& value, txn_id_t txn_id) const {
     //     current = current->next_[0];
     // }
     
-    if (current && ix_compare(current->key_.c_str(), key.c_str(), file_hdr_->col_types_, file_hdr_->col_lens_) == 0) {
+    if (current && compare_key(current->key_, key) == 0) {
         return true;
     }
 
@@ -123,3 +123,22 @@ SkipListIterator SkipList::find(const std::string& key, txn_id_t txn_id) const {
     // }
     return SkipListIterator(node);
 }
+
+// 找到前缀的起始位置
+// 返回第一个前缀匹配或者大于前缀的迭代器
+SkipListIterator SkipList::lower_bound(const std::string &key)
+{
+    auto node = FindGreaterOrEqual(key, nullptr);
+    return SkipListIterator(node);
+}
+  
+  // 找到前缀的终结位置
+SkipListIterator SkipList::upper_bound(const std::string &key) 
+{
+    auto node = FindGreaterOrEqual(key, nullptr);
+    
+    while (node && compare_key(node->key_, key) == 0) {
+        node = node->next_[0];
+    }
+    return SkipListIterator(node);
+  }

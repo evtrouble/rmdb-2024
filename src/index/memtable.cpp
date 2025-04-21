@@ -37,6 +37,43 @@ bool MemTable::get(const std::string &key, Rid& value, txn_id_t txn_id)
   return frozen_get(key, value, txn_id);
 }
 
+std::vector<size_t> MemTable::get_batch(const std::vector<std::string> &keys, std::vector<Rid> &value, txn_id_t txn_id)
+{
+  std::vector<size_t> ret;
+  value.reserve(keys.size());
+  {
+    std::shared_lock lock(cur_mtx);
+    for (auto &key : keys) {
+      Rid val;
+      if(active_memtable_->get(key, val, txn_id)) {
+        value.emplace_back(val);
+      } else {
+        value.emplace_back(Rid());
+      }
+    }
+  }
+
+  bool need_search = false;
+  for(auto &val : value) {
+    if(val.is_valid()) continue;
+    need_search = true;
+    break;
+  }
+  if(!need_search) return ret;
+
+  std::shared_lock lock2(frozen_mtx);
+  for (size_t i = 0; i < keys.size(); ++i) {
+    if(value[i].is_valid()) continue;
+    Rid val;
+    if(frozen_get(keys[i], val, txn_id)) {
+      value[i] = val;
+    } else {
+      ret.emplace_back(i);
+    }
+  }
+  return ret;
+}
+
 bool MemTable::frozen_get(const std::string &key, Rid& value, txn_id_t txn_id)
 {
   // 检查frozen memtable
@@ -77,4 +114,38 @@ void MemTable::frozen_table()
   frozen_bytes += active_memtable_->get_size();
   immutable_memtables_.push_front(std::move(active_memtable_));
   active_memtable_ = std::make_unique<SkipList>(comparator);
+}
+
+// 将最老的 memtable 写入 SST, 并返回控制类
+std::shared_ptr<SSTable>
+MemTable::flush_last(SSTBuilder &builder, std::string &sst_path, size_t sst_id,
+                     std::shared_ptr<BlockCache> block_cache) {
+  // 由于 flush 后需要移除最老的 memtable, 因此需要加写锁
+  std::unique_lock<std::shared_mutex> lock(frozen_mtx);
+
+  if (frozen_tables.empty()) {
+    // 如果当前表为空，直接返回nullptr
+    if (current_table->get_size() == 0) {
+      return nullptr;
+    }
+    // 将当前表加入到frozen_tables头部
+    frozen_tables.push_front(current_table);
+    frozen_bytes += current_table->get_size();
+    // 创建新的空表作为当前表
+    current_table = std::make_shared<SkipList>();
+  }
+
+  // 将最老的 memtable 写入 SST
+  std::shared_ptr<SkipList> table = frozen_tables.back();
+  frozen_tables.pop_back();
+  frozen_bytes -= table->get_size();
+
+  std::vector<std::tuple<std::string, std::string, uint64_t>> flush_data =
+      table->flush();
+  for (auto &[k, v, t] : flush_data) {
+    builder.add(k, v, t);
+  }
+  auto sst = builder.build(sst_id, sst_path, block_cache);
+
+  return sst;
 }

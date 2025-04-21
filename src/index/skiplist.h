@@ -64,28 +64,22 @@ public:
     SkipListIterator end() const;
     SkipListIterator find(const std::string& key, txn_id_t txn_id) const;
     size_t SkipList::get_size() { return size_bytes; }
-    
+    std::vector<std::tuple<std::string, std::string, uint64_t>> flush();
+    SkipListIterator lower_bound(const std::string &key);
+    SkipListIterator upper_bound(const std::string &key);
+
 private:
     int RandomHeight();
     std::shared_ptr<SkipListNode> FindGreaterOrEqual(const std::string& key, 
                                                     std::vector<std::shared_ptr<SkipListNode>>* prev) const;
-    // int Compare(const SkipListNode& a, const SkipListNode& b) const {
-    //     int res = ix_compare(a.key_.c_str(), b.key_.c_str(), file_hdr_->col_types_, file_hdr_->col_lens_);
-    //     if(res == 0)
-    //     {
-    //         if(a.txn_id_ < b.txn_id_)
-    //             return 1;
-    //         if(a.txn_id_ > b.txn_id_)
-    //             return -1;
-    //         return 0;
-    //     }
-    //     return res;
-    // }
+    inline int compare_key(const std::string &key1, const std::string &key2) {
+        return ix_compare(key1.c_str(), key2.c_str(), file_hdr_->col_types_, file_hdr_->col_lens_);
+    }
 
     std::shared_ptr<SkipListNode> head_;
     int max_height_;
     int current_height_;
-    BloomFilter bloom_filter_;
+    std::shared_ptr<BloomFilter> bloom_filter_;
     LsmFileHdr *file_hdr_;
 
     std::mt19937 gen_;

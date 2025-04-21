@@ -35,8 +35,9 @@ public:
   std::string first_key; // 块的第一个key
   std::string last_key;  // 块的最后一个key
   int col_tot_len; // 列的总长度
-  static void encode_meta_to_slice(std::vector<BlockMeta> &meta_entries, std::vector<uint8_t> &metadata);
+  static void encode_meta_to_slice(std::vector<BlockMeta> &meta_entries, uint8_t *ptr);
   static std::vector<BlockMeta> decode_meta_from_slice(const std::vector<uint8_t> &metadata);
   BlockMeta(int col_tot_len);
   BlockMeta(int col_tot_len, size_t offset, const std::string& first_key, const std::string& last_key);
+  static size_t size(std::vector<BlockMeta> &meta_entries);
 };

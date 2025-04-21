@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 #include "disk_manager.h"
+#include "lsmtree.h"
 
 class SstIterator;
 
@@ -38,7 +39,7 @@ class SstIterator;
 
 class SSTable : public std::enable_shared_from_this<SSTable> {
   friend class SSTBuilder;
-  static constexpr size_t tail_size = sizeof(timestamp_t) * 2 + sizeof(uint32_t) * 2;
+  static constexpr size_t tail_size = sizeof(uint32_t) * 2;
   // friend std::optional<std::pair<SstIterator, SstIterator>>
   // sst_iters_monotony_predicate(
   //     std::shared_ptr<SST> sst, uint64_t tranc_id,
@@ -55,13 +56,18 @@ private:
   std::string last_key;
   std::shared_ptr<BloomFilter> bloom_filter;
   std::shared_ptr<BlockCache> block_cache;
-  timestamp_t min_ts_;
-  timestamp_t max_ts_ = 0;
   DiskManager* disk_manager_;
+  LsmFileHdr *file_hdr_;
+  size_t file_size;
+
+  inline int compare_key(const std::string &key1, const std::string &key2) {
+    return ix_compare(key1.c_str(), key2.c_str(), file_hdr_->col_types_, file_hdr_->col_lens_);
+  }
 
 public:
-  SSTable(DiskManager *disk_manager, size_t sst_id, const std::string &file_path,
+  SSTable(LsmFileHdr *file_hdr, DiskManager *disk_manager, size_t sst_id, const std::string &file_path,
           std::shared_ptr<BlockCache> block_cache);
+  SSTable() = default;
   ~SSTable()
   {
     disk_manager->close_file(fd);
@@ -77,30 +83,28 @@ public:
   int find_block_idx(const std::string &key);
 
   // 根据key返回迭代器
-  SstIterator get(const std::string &key, uint64_t tranc_id);
+  bool get(const std::string &key, Rid& value, txn_id_t txn_id);
 
   // 返回sst中block的数量
   size_t num_blocks() const;
 
   // 返回sst的首key
-  std::string get_first_key() const;
+  inline std::string get_first_key() const;
 
   // 返回sst的尾key
-  std::string get_last_key() const;
+  inline std::string get_last_key() const;
 
   // 返回sst的大小
-  size_t sst_size() const;
+  inline size_t sst_size() const;
 
   // 返回sst的id
-  size_t get_sst_id() const;
+  inline size_t get_sst_id() const;
 
-  std::optional<std::pair<SstIterator, SstIterator>>
-  iters_monotony_predicate(std::function<bool(const std::string &)> predicate);
+  // std::optional<std::pair<SstIterator, SstIterator>>
+  // iters_monotony_predicate(std::function<bool(const std::string &)> predicate);
 
   SstIterator begin(uint64_t tranc_id);
   SstIterator end();
-
-  std::pair<uint64_t, uint64_t> get_tranc_id_range() const;
 };
 
 class SSTBuilder {
@@ -112,18 +116,19 @@ private:
   std::vector<uint8_t> data;
   size_t block_size;
   std::shared_ptr<BloomFilter> bloom_filter;
-  uint64_t min_tranc_id_ = UINT64_MAX;
-  uint64_t max_tranc_id_ = 0;
+  DiskManager *disk_manager_;
+  LsmFileHdr *file_hdr_;
 
 public:
   // 创建一个sst构建器, 指定目标block的大小
-  SSTBuilder(size_t block_size, bool has_bloom); // 添加一个key-value对
-  void add(const std::string &key, const std::string &value, uint64_t tranc_id);
+  SSTBuilder(DiskManager *disk_manager, LsmFileHdr *file_hdr,
+     size_t block_size, std::shared_ptr<BloomFilter> bloom_filter); // 添加一个key-value对
+  void add(const std::string &key, const Rid &value, txn_id_t txn_id);
   // 估计sst的大小
   size_t estimated_size() const;
   // 完成当前block的构建, 即将block写入data, 并创建新的block
   void finish_block();
   // 构建sst, 将sst写入文件并返回SST描述类
-  std::shared_ptr<SST> build(size_t sst_id, const std::string &path,
+  std::shared_ptr<SSTable> build(size_t sst_id, const std::string &path,
                              std::shared_ptr<BlockCache> block_cache);
 };

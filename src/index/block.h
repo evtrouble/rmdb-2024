@@ -48,15 +48,14 @@ class Block : public std::enable_shared_from_this<Block> {
     txn_id_t get_txn_id_at(size_t offset) const;
     int compare_key_at(size_t offset, const std::string &target) const;
   
-    // 根据id的可见性调整位置
-    // int adjust_idx_by_ts(size_t idx, txn_id_t txn_id);
-  
     bool is_same_key(size_t idx, const std::string &target_key) const;
+
+    inline int compare_key(const std::string &key1, const std::string &key2) {
+      return ix_compare(key1.c_str(), key2.c_str(), file_hdr_->col_types_, file_hdr_->col_lens_);
+    }
   
   public:
-    Block(LsmFileHdr *file_hdr) : file_hdr_(file_hdr), num_elements(0), 
-      entry_size(file_hdr_->col_tot_len + sizeof(Rid) + sizeof(txn_id_t)){}
-    Block(size_t capacity);
+    Block(size_t capacity, LsmFileHdr *file_hdr);
     // ! 这里的编码函数不包括 hash
     std::vector<uint8_t> encode();
     // ! 这里的解码函数可指定切片是否包括 hash
@@ -64,14 +63,13 @@ class Block : public std::enable_shared_from_this<Block> {
                                          bool with_hash = false);
     std::string get_first_key();
     size_t get_offset_at(size_t idx) const;
-    bool add_entry(const std::string &key, const Rid &value,
-      txn_id_t txn_id, bool force_write);
-    string get_value_binary(const std::string &key,
+    bool add_entry(const std::string &key, const Rid &value, txn_id_t txn_id);
+    Rid get_value_binary(const std::string &key,
       txn_id_t txn_id);
   
-    size_t size() const;
-    size_t cur_size() const;
-    bool is_empty() const;
+    inline size_t size() const;
+    inline size_t cur_size() const;
+    inline bool is_empty() const;
     int get_idx_binary(const std::string &key, txn_id_t txn_id);
   
     // 按照谓词返回迭代器, 左闭右开

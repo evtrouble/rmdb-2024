@@ -8,11 +8,12 @@
 #include <functional>
 #include <memory>
 
-SSTable::SSTable(DiskManager *disk_manager, size_t sst_id, const std::string &file_path,
+SSTable::SSTable(LsmFileHdr *file_hdr, DiskManager *disk_manager, size_t sst_id, const std::string &file_path,
     std::shared_ptr<BlockCache> block_cache)
-    : file_path_(file_path), disk_manager_(disk_manager), sst_id(sst_id), block_cache(block_cache) {
+    : file_path_(file_path), disk_manager_(disk_manager), sst_id(sst_id), 
+    block_cache(block_cache), file_hdr_(file_hdr), fd(-1){
     
-    size_t file_size = disk_manager->get_file_size(file_path);
+    file_size = disk_manager->get_file_size(file_path);
     // 读取文件末尾的元数据块
     if (file_size < tail_size) {
         throw std::runtime_error("Invalid SST file: too small");
@@ -31,26 +32,28 @@ SSTable::SSTable(DiskManager *disk_manager, size_t sst_id, const std::string &fi
     offset += sizeof(uint32_t);
 
     // 1. 读取最大和最小的timestamp
-    memcpy(&min_ts_, data.data() + offset, sizeof(timestamp_t));
-    offset += sizeof(timestamp_t);
-    memcpy(&max_ts_, data.data() + offset, sizeof(timestamp_t));
+    // memcpy(&min_ts_, data.data() + offset, sizeof(txn_id_t));
+    // offset += sizeof(timestamp_t);
+    // memcpy(&max_ts_, data.data() + offset, sizeof(txn_id_t));
 
     // 2. 读取 bloom filter
     if (bloom_offset + tail_size < file_size)
     {
         // 布隆过滤器偏移量 + 2*uint32_t 的大小小于文件大小
         // 表示存在布隆过滤器
-        uint32_t bloom_size = file_size - tail_size - sst->bloom_offset;
-        auto bloom_bytes = sst->file.read_to_slice(sst->bloom_offset, bloom_size);
+        uint32_t bloom_size = file_size - tail_size - bloom_offset;
+        data.resize(bloom_size);
+        disk_manager.read_page_bytes(fd, bloom_offset, data.data(), data);
 
-        auto bloom = BloomFilter::decode(bloom_bytes);
+        auto bloom = BloomFilter::decode(data);
         sst->bloom_filter = std::make_shared<BloomFilter>(std::move(bloom));
     }
 
     // 3. 读取并解码元数据块
     uint32_t meta_size = sst->bloom_offset - sst->meta_block_offset;
-    auto meta_bytes = sst->file.read_to_slice(sst->meta_block_offset, meta_size);
-    meta_entries = BlockMeta::decode_meta_from_slice(meta_bytes);
+    data.resize(meta_size);
+    disk_manager.read_page_bytes(fd, meta_block_offset, data.data(), meta_size);
+    meta_entries = BlockMeta::decode_meta_from_slice(data);
 
     // 4. 设置首尾key
     if (!sst->meta_entries.empty()) {
@@ -91,12 +94,13 @@ std::shared_ptr<Block> SSTable::read_block(size_t block_idx) {
   }
 
   // 读取block数据
-  auto block_data = file.read_to_slice(meta.offset, block_size);
+  vector<uint8_t> data(block_size);
+  disk_manager.read_page_bytes(fd, meta.offset, data.data(), block_size);
   auto block_res = Block::decode(block_data, true);
 
   // 更新缓存
   if (block_cache != nullptr) {
-    block_cache->put(this->sst_id, block_idx, block_res);
+    block_cache->put(sst_id, block_idx, block_res);
   } else {
     throw std::runtime_error("Block cache not set");
   }
@@ -105,9 +109,9 @@ std::shared_ptr<Block> SSTable::read_block(size_t block_idx) {
 
 int SSTable::find_block_idx(const std::string &key) {
   // 先在布隆过滤器判断key是否存在
-  if (bloom_filter != nullptr && !bloom_filter->possibly_contains(key)) {
-    return -1;
-  }
+  // if (bloom_filter != nullptr && !bloom_filter->possibly_contains(key)) {
+  //   return -1;
+  // }
 
   // 二分查找
   size_t left = 0;
@@ -117,9 +121,9 @@ int SSTable::find_block_idx(const std::string &key) {
     size_t mid = (left + right) / 2;
     const auto &meta = meta_entries[mid];
 
-    if (key < meta.first_key) {
+    if (compare_key(key, meta.first_key) < 0) {
       right = mid;
-    } else if (key > meta.last_key) {
+    } else if (compare_key(key, meta.last_key) > 0) {
       left = mid + 1;
     } else {
       return mid;
@@ -133,28 +137,44 @@ int SSTable::find_block_idx(const std::string &key) {
   return left;
 }
 
-SstIterator SSTable::get(const std::string &key, timestamp_t tranc_id) {
-  if (key < first_key || key > last_key) {
-    return this->end();
+bool SSTable::get(const std::string &key, Rid& value, txn_id_t txn_id) {
+  if (compare_key(key, first_key) < 0 || compare_key(key, last_key) > 0) {
+    return false;
   }
 
   // 在布隆过滤器判断key是否存在
   if (bloom_filter != nullptr && !bloom_filter->possibly_contains(key)) {
-    return this->end();
+    return false;
   }
-
-  return SstIterator(shared_from_this(), key, tranc_id);
+  try {
+    auto m_block_idx = find_block_idx(key);
+    if (m_block_idx == -1 || m_block_idx >= m_sst->num_blocks()) {
+      return false;
+    }
+    auto block = read_block(m_block_idx);
+    if (!block) {
+      return false;
+    }
+    auto key_idx_ops = block->get_idx_binary(key, txn_id);
+    if (key_idx_ops == -1 || key_idx_ops >= block->size()) {
+      return false;
+    }
+    value = block->get_value_at(block->get_offset_at(key_idx_ops));
+  } catch (const std::exception &) {
+    return false;
+  }
+  return true;
 }
 
-size_t SST::num_blocks() const { return meta_entries.size(); }
+size_t SSTable::num_blocks() const { return meta_entries.size(); }
 
-std::string SST::get_first_key() const { return first_key; }
+std::string SSTable::get_first_key() const { return first_key; }
 
-std::string SST::get_last_key() const { return last_key; }
+std::string SSTable::get_last_key() const { return last_key; }
 
-size_t SST::sst_size() const { return file.size(); }
+size_t SSTable::sst_size() const { return file_size; }
 
-size_t SST::get_sst_id() const { return sst_id; }
+size_t SSTable::get_sst_id() const { return sst_id; }
 
 SstIterator SST::begin(uint64_t tranc_id) {
   return SstIterator(shared_from_this(), tranc_id);
@@ -167,65 +187,41 @@ SstIterator SST::end() {
   return res;
 }
 
-std::pair<uint64_t, uint64_t> SST::get_tranc_id_range() const {
-  return std::make_pair(min_tranc_id_, max_tranc_id_);
-}
-
 // **************************************************
 // SSTBuilder
 // **************************************************
 
-SSTBuilder::SSTBuilder(size_t block_size, bool has_bloom) : block(block_size) {
-  // 初始化第一个block
-  if (has_bloom) {
-    bloom_filter = std::make_shared<BloomFilter>(
-        BLOOM_FILTER_EXPECTED_SIZE, BLOOM_FILTER_EXPECTED_ERROR_RATE);
-  }
-  meta_entries.clear();
-  data.clear();
-  first_key.clear();
-  last_key.clear();
-}
+SSTBuilder::SSTBuilder(DiskManager *disk_manager, LsmFileHdr *file_hdr, size_t block_size,std::shared_ptr<BloomFilter> bloom_filter)
+ : block(block_size, file_hdr), bloom_filter(bloom_filter), disk_manager_(disk_manager), 
+  file_hdr_(file_hdr){}
 
-void SSTBuilder::add(const std::string &key, const std::string &value,
-                     uint64_t tranc_id) {
+void SSTBuilder::add(const std::string &key, const Rid &value,
+                     txn_id_t txn_id) {
   // 记录第一个key
   if (first_key.empty()) {
     first_key = key;
   }
 
-  // 在 布隆过滤器 中添加key
-  if (bloom_filter != nullptr) {
-    bloom_filter->add(key);
-  }
-
-  // 记录 事务id 范围
-  max_tranc_id_ = std::max(max_tranc_id_, tranc_id);
-  min_tranc_id_ = std::min(min_tranc_id_, tranc_id);
-
-  bool force_write = key == last_key;
-  // 连续出现相同的 key 必须位于 同一个 block 中
-
-  if (block.add_entry(key, value, tranc_id, force_write)) {
+  if (block.add_entry(key, value, txn_id)) {
     // block 满足容量限制, 插入成功
-    last_key = key;
+    last_key = std::move(key);
     return;
   }
 
   finish_block(); // 将当前 block 写入
 
-  block.add_entry(key, value, tranc_id, false);
+  block.add_entry(key, value, txn_id);
   first_key = key;
-  last_key = key; // 更新最后一个key
+  last_key = std::move(key); // 更新最后一个key
 }
 
 size_t SSTBuilder::estimated_size() const { return data.size(); }
 
 void SSTBuilder::finish_block() {
-  auto old_block = std::move(this->block);
+  auto old_block = std::move(block);
   auto encoded_block = old_block.encode();
 
-  meta_entries.emplace_back(data.size(), first_key, last_key);
+  meta_entries.emplace_back(data.size(), std::move(first_key), std::move(last_key));
 
   // 计算block的哈希值
   auto block_hash = static_cast<uint32_t>(std::hash<std::string_view>{}(
@@ -241,7 +237,7 @@ void SSTBuilder::finish_block() {
          sizeof(uint32_t));
 }
 
-std::shared_ptr<SST>
+std::shared_ptr<SSTable>
 SSTBuilder::build(size_t sst_id, const std::string &path,
                   std::shared_ptr<BlockCache> block_cache) {
   // 完成最后一个block
@@ -256,7 +252,14 @@ SSTBuilder::build(size_t sst_id, const std::string &path,
 
   // 编码元数据块
   std::vector<uint8_t> meta_block;
-  BlockMeta::encode_meta_to_slice(meta_entries, meta_block);
+  size_t meta_block_size = BlockMeta::size(meta_entries);
+  size_t bloom_filter_size = 0;
+  size_t total_size = meta_block_size + tail_size;
+  if (bloom_filter != nullptr)
+  {
+    bloom_filter_size = bloom_filter->size();
+    total_size += bloom_filter_size;
+  }
 
   // 计算元数据块的偏移量
   uint32_t meta_offset = data.size();
@@ -264,54 +267,46 @@ SSTBuilder::build(size_t sst_id, const std::string &path,
   // 构建完整的文件内容
   // 1. 已有的数据块
   std::vector<uint8_t> file_content = std::move(data);
+  file_content.resize(file_content.size() + total_size);
+  uint8_t *ptr = file_content.data() + meta_offset;
 
   // 2. 添加元数据块
-  file_content.insert(file_content.end(), meta_block.begin(), meta_block.end());
+  BlockMeta::encode_meta_to_slice(meta_entries, ptr);
+  ptr += meta_block_size;
 
   // 3. 编码布隆过滤器
-  uint32_t bloom_offset = file_content.size();
+  uint32_t bloom_offset = meta_offset + meta_block_size;
   if (bloom_filter != nullptr) {
-    auto bf_data = bloom_filter->encode();
-    file_content.insert(file_content.end(), bf_data.begin(), bf_data.end());
+    bloom_filter->encode(ptr);
+    ptr += bloom_filter_size;
   }
 
-  auto extra_len = sizeof(uint32_t) * 2 + sizeof(uint64_t) * 2;
-  file_content.resize(file_content.size() + extra_len);
   // sizeof(uint32_t) * 2  表示: 元数据块的偏移量, 布隆过滤器偏移量,
-  // sizeof(uint64_t) * 2  表示: 最小事务id,, 最大事务id
 
   // 4. 添加元数据块偏移量
-  memcpy(file_content.data() + file_content.size() - extra_len, &meta_offset,
-         sizeof(uint32_t));
+  memcpy(ptr, &meta_offset, sizeof(uint32_t));
+  ptr += sizeof(uint32_t);
 
   // 5. 添加布隆过滤器偏移量
-  memcpy(file_content.data() + file_content.size() - extra_len +
-             sizeof(uint32_t),
-         &bloom_offset, sizeof(uint32_t));
-
-  // 6. 添加最大和最小的事务id
-  memcpy(file_content.data() + file_content.size() - sizeof(uint64_t) * 2,
-         &min_tranc_id_, sizeof(uint64_t));
-  memcpy(file_content.data() + file_content.size() - sizeof(uint64_t),
-         &max_tranc_id_, sizeof(uint64_t));
+  memcpy(ptr, &bloom_offset, sizeof(uint32_t));
 
   // 创建文件
-  FileObj file = FileObj::create_and_write(path, file_content);
+  disk_manager->create_file(path)
+  int fd = disk_manager->open_file(path);
+  disk_manager.write_page_bytes(fd, 0, file_content.data(), file_content.size());
 
   // 返回SST对象
-  auto res = std::make_shared<SST>();
+  auto res = std::make_shared<SSTable>();
 
   res->sst_id = sst_id;
-  res->file = std::move(file);
+  res->fd = fd;
   res->first_key = meta_entries.front().first_key;
   res->last_key = meta_entries.back().last_key;
   res->meta_block_offset = meta_offset;
-  res->bloom_filter = this->bloom_filter;
+  res->bloom_filter = bloom_filter;
   res->bloom_offset = bloom_offset;
   res->meta_entries = std::move(meta_entries);
   res->block_cache = block_cache;
-  res->max_tranc_id_ = max_tranc_id_;
-  res->min_tranc_id_ = min_tranc_id_;
 
   return res;
 }

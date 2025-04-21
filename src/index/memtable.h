@@ -2,11 +2,13 @@
 #include "lsmtree.h"
 #include "transaction.h"
 #include "skiplist.h"
+#include "sstable.h"
 
 class MemTable {
     friend class TranContext;
     friend class HeapIterator;
-    static constexpr int LSM_PER_MEM_SIZE_LIMIT = 4 * 1024 * 1024; // 内存表的大小限制, 4MB
+    static constexpr int LSM_PER_MEM_SIZE_LIMIT = 1 * 1024 * 1024; // 内存表的大小限制, 1MB
+    static constexpr int LSM_TOL_MEM_NUM_LIMIT = 4; // 内存表的数量限制, 4个
 
   private:
     bool frozen_get(const std::string &key, Rid& value, txn_id_t txn_id);
@@ -23,15 +25,14 @@ class MemTable {
                    txn_id_t txn_id);
 
     bool get(const std::string &key, Rid &value, txn_id_t txn_id);
-    // std::vector<std::pair<std::string, std::optional<std::pair<std::string, uint64_t>>>>
-    //                   get_batch(const std::vector<std::string> &keys, Transaction* trn);
+    std::vector<size_t> get_batch(const std::vector<std::string> &keys, std::vector<Rid> &value, txn_id_t txn_id);
     void remove(const std::string &key, txn_id_t txn_id);
     void remove_batch(const std::vector<std::string> &keys, txn_id_t txn_id);
 
     // void clear();
-    // std::shared_ptr<SST> flush_last(SSTBuilder &builder, std::string &sst_path,
-    //                                 size_t sst_id,
-    //                                 std::shared_ptr<BlockCache> block_cache);
+    std::shared_ptr<SST> flush_last(SSTBuilder &builder, std::string &sst_path,
+                                    size_t sst_id,
+                                    std::shared_ptr<BlockCache> block_cache);
 
     // HeapIterator begin(uint64_t tranc_id);
     // HeapIterator iters_preffix(const std::string &preffix, uint64_t tranc_id);

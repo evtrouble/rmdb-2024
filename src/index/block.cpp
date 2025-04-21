@@ -9,7 +9,7 @@
 #include <stdexcept>
 #include <string>
 
-Block::Block(size_t capacity) : file_hdr_(file_hdr), num_elements(0), capacity(capacity), 
+Block::Block(size_t capacity, LsmFileHdr *file_hdr) : file_hdr_(file_hdr), num_elements(0), capacity(capacity), 
   entry_size(file_hdr_->col_tot_len + sizeof(Rid) + sizeof(txn_id_t))
 {
   data.reserve(capacity);
@@ -85,13 +85,10 @@ size_t Block::get_offset_at(size_t idx) const {
   return entry_size * idx;
 }
 
-bool Block::add_entry(const std::string &key, const Rid &value,
-  txn_id_t txn_id, bool force_write) {
+bool Block::add_entry(const std::string &key, const Rid &value, txn_id_t txn_id) 
+{
   assert(key.size() == file_hdr_->col_tot_len_);
-  if (!force_write &&
-      (cur_size() + key.size() + sizeof(Rid) + sizeof(txn_id_t) >
-       capacity) &&
-      !offsets.empty()) {
+  if ((cur_size() + entry_size > capacity) && num_elements) {
     return false;
   }
   // 计算entry大小：key长度(2B) + key + value长度(2B) + value
@@ -139,51 +136,8 @@ txn_id_t Block::get_txn_id_at(size_t offset) const {
 // 比较指定偏移量处的key与目标key
 int Block::compare_key_at(size_t offset, const std::string &target) const {
   std::string key = get_key_at(offset);
-  return key.compare(target);
+  return compare_key(key, target);
 }
-
-// 相同的key连续分布, 且相同的key的时间戳从大到小排布
-// 这里的逻辑是找到最接近 ts 的键值对的索引位置
-// int Block::adjust_idx_by_ts(size_t idx, timestamp_t ts) {
-//   if (idx >= offsets.size()) {
-//     return -1; // 索引超出范围
-//   }
-//   size_t offset = get_offset_at(idx);
-//   auto target_key = get_key_at(offset);
-
-//   auto cur_ts = get_ts_at(offset);
-
-//   if (cur_ts <= ts) {
-//     // 当前记录可见，向前查找更接近的目标
-//     size_t prev_idx = idx;
-//     while (prev_idx > 0 && is_same_key(prev_idx - 1, target_key)) {
-//       prev_idx--;
-//       offset -= entry_size;
-//       auto new_ts = get_ts_at(offset);
-//       if (new_ts > ts) {
-//         return prev_idx + 1; // 更新的记录不可见
-//       }
-//     }
-//     return prev_idx;
-//   } else {
-//     // 当前记录不可见，向后查找
-//     size_t next_idx = idx + 1;
-//     while (next_idx < offsets.size() && is_same_key(next_idx, target_key)) {
-//       offset += entry_size;
-//       auto new_ts = get_ts_at(offset);
-//       if (new_ts <= ts) {
-//         return next_idx; // 找到可见记录
-//       }
-//       next_idx++;
-//     }
-//     return -1; // 没有找到满足条件的记录
-//   }
-// }
-
-// int Block::adjust_idx_by_ts(size_t idx, txn_id_t txn_id)
-// {
-//     return 0;
-// }
 
 bool Block::is_same_key(size_t idx, const std::string &target_key) const
 {
@@ -191,12 +145,12 @@ bool Block::is_same_key(size_t idx, const std::string &target_key) const
     {
         return false; // 索引超出范围
     }
-    return get_key_at(get_offset_at(idx)) == target_key;
+    return compare_key(get_key_at(get_offset_at(idx)), target_key.c_str()) == 0;
 }
 
 // 使用二分查找获取value
 // 要求在插入数据时有序插入
-std::string Block::get_value_binary(const std::string &key, txn_id_t txn_id) 
+Rid Block::get_value_binary(const std::string &key, txn_id_t txn_id) 
 {
   auto idx = get_idx_binary(key, txn_id);
   if (idx == -1) {
@@ -224,7 +178,8 @@ int Block::get_idx_binary(const std::string &key, txn_id_t txn_id)
     if (cmp == 0) {
       // 找到key，返回对应的value
       // 还需要判断事务id可见性
-      return adjust_idx_by_tranc_id(mid, tranc_id);
+      // return adjust_idx_by_tranc_id(mid, tranc_id);
+      return mid;
     } else if (cmp < 0) {
       // 中间的key小于目标key，查找右半部分
       left = mid + 1;
@@ -308,13 +263,13 @@ int Block::get_idx_binary(const std::string &key, txn_id_t txn_id)
 //   return entry;
 // }
 
-// size_t Block::size() const { return num_elements; }
+size_t Block::size() const { return num_elements; }
 
-// size_t Block::cur_size() const {
-//   return data.size() + sizeof(uint16_t);
-// }
+size_t Block::cur_size() const {
+  return data.size() + sizeof(uint16_t);
+}
 
-// bool Block::is_empty() const { return num_elements == 0; }
+bool Block::is_empty() const { return num_elements == 0; }
 
 // BlockIterator Block::begin(uint64_t tranc_id) {
 //   return BlockIterator(shared_from_this(), 0, tranc_id);

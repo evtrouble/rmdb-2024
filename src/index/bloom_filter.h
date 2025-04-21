@@ -2,6 +2,7 @@
 #include <vector>
 #include <string>
 #include <cmath>
+#include <cstring>
 
 class BloomFilter {
     public:
@@ -64,5 +65,24 @@ class BloomFilter {
     
         static inline size_t OptimalNumOfHashFunctions(size_t bits_per_key) {
             return size_t(bits_per_key * std::log(2));
+        }
+
+        size_t size() const {
+            return bits_.size() * sizeof(uint8_t) + sizeof(num_hash_functions_) +
+                   sizeof(bits_per_key_) + sizeof(size_t);
+        }
+
+        void encode(uint8_t *ptr) const {
+            memcpy(ptr, &bits_per_key_, sizeof(bits_per_key_));
+            ptr += sizeof(bits_per_key_);
+
+            memcpy(ptr, &num_hash_functions_, sizeof(num_hash_functions_));
+            ptr += sizeof(num_hash_functions_);
+
+            size_t num_bits = bits_.size();
+            memcpy(ptr, &num_bits, sizeof(num_bits));
+            ptr += sizeof(num_bits);
+            
+            memcpy(ptr, bits_.data(), bits_.size() * sizeof(uint8_t));
         }
  };
