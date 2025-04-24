@@ -1,5 +1,5 @@
 #include <string>
-#include "lsmtree.h"
+#include "ix_defs.h"
 #include "transaction.h"
 #include "skiplist.h"
 #include "sstable.h"
@@ -7,30 +7,27 @@
 class MemTable {
     friend class TranContext;
     friend class HeapIterator;
-    static constexpr int LSM_PER_MEM_SIZE_LIMIT = 1 * 1024 * 1024; // 内存表的大小限制, 1MB
-    static constexpr int LSM_TOL_MEM_NUM_LIMIT = 4; // 内存表的数量限制, 4个
 
   private:
-    bool frozen_get(const std::string &key, Rid& value, txn_id_t txn_id);
+    bool frozen_get(const std::string &key, Rid& value);
     void frozen_table();
   
   public:
-    MemTable(LsmFileHdr* file_hdr_) 
-      : active_memtable_(std::make_unique<SkipList>(file_hdr_)) {}
+    MemTable(LsmFileHdr* file_hdr) 
+      : active_memtable_(std::make_unique<SkipList>(file_hdr)), file_hdr_(file_hdr) {}
 
     ~MemTable() = default;
 
-    void put(const std::string &key, const Rid &value, txn_id_t txn_id);
-    void put_batch(const std::vector<std::pair<std::string, Rid>> &kvs,
-                   txn_id_t txn_id);
+    void put(const std::string &key, const Rid &value);
+    void put_batch(const std::vector<std::pair<std::string, Rid>> &kvs);
 
-    bool get(const std::string &key, Rid &value, txn_id_t txn_id);
-    std::vector<size_t> get_batch(const std::vector<std::string> &keys, std::vector<Rid> &value, txn_id_t txn_id);
-    void remove(const std::string &key, txn_id_t txn_id);
-    void remove_batch(const std::vector<std::string> &keys, txn_id_t txn_id);
+    bool get(const std::string &key, Rid &value);
+    std::vector<size_t> get_batch(const std::vector<std::string> &keys, std::vector<Rid> &value);
+    void remove(const std::string &key);
+    void remove_batch(const std::vector<std::string> &keys);
 
     // void clear();
-    std::shared_ptr<SST> flush_last(SSTBuilder &builder, std::string &sst_path,
+    std::shared_ptr<SSTable> flush_last(SSTBuilder &builder, std::string &sst_path,
                                     size_t sst_id,
                                     std::shared_ptr<BlockCache> block_cache);
 
@@ -49,5 +46,5 @@ class MemTable {
     size_t frozen_bytes;
     std::shared_mutex frozen_mtx; // 冻结表的锁
     std::shared_mutex cur_mtx;    // 活跃表的锁
-    std::shared_ptr<IComparator> comparator;
+    LsmFileHdr *file_hdr_;
 };

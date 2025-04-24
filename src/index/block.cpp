@@ -10,7 +10,7 @@
 #include <string>
 
 Block::Block(size_t capacity, LsmFileHdr *file_hdr) : file_hdr_(file_hdr), num_elements(0), capacity(capacity), 
-  entry_size(file_hdr_->col_tot_len + sizeof(Rid) + sizeof(txn_id_t))
+  entry_size(file_hdr_->col_tot_len_ + sizeof(Rid))
 {
   data.reserve(capacity);
 }
@@ -25,14 +25,13 @@ std::vector<uint8_t> Block::encode() {
 
   // 2. 写入元素个数
   size_t num_pos =
-      data.size() * sizeof(uint8_t) + offsets.size() * sizeof(uint16_t);
-  uint16_t num_elements = offsets.size();
+      data.size() * sizeof(uint8_t) + num_elements * sizeof(uint16_t);
   memcpy(encoded.data() + num_pos, &num_elements, sizeof(uint16_t));
 
   return encoded;
 }
 
-std::shared_ptr<Block> Block::decode(const std::vector<uint8_t> &encoded,
+std::shared_ptr<Block> Block::decode(std::vector<uint8_t> &encoded,
                                      bool with_hash) {
   // 使用 make_shared 创建对象
   auto block = std::make_shared<Block>();
@@ -57,7 +56,7 @@ std::shared_ptr<Block> Block::decode(const std::vector<uint8_t> &encoded,
       throw std::runtime_error("Block hash verification failed");
     }
   }
-  memcpy(&num_elements, encoded.data() + num_elements_pos, sizeof(uint16_t));
+  memcpy(&block->num_elements, encoded.data() + num_elements_pos, sizeof(uint16_t));
 
   // 3. 复制数据段
   block->data.swap(encoded);
@@ -74,7 +73,7 @@ std::string Block::get_first_key() {
   }
 
   // 读取key
-  std::string key(data.data(), file_hdr_->col_tot_len_);
+  std::string key(reinterpret_cast<char*>(data.data()), file_hdr_->col_tot_len_);
   return key;
 }
 
@@ -85,7 +84,7 @@ size_t Block::get_offset_at(size_t idx) const {
   return entry_size * idx;
 }
 
-bool Block::add_entry(const std::string &key, const Rid &value, txn_id_t txn_id) 
+bool Block::add_entry(const std::string &key, const Rid &value) 
 {
   assert(key.size() == file_hdr_->col_tot_len_);
   if ((cur_size() + entry_size > capacity) && num_elements) {
@@ -102,9 +101,6 @@ bool Block::add_entry(const std::string &key, const Rid &value, txn_id_t txn_id)
   // 写入value
   memcpy(data.data() + old_size, &value, sizeof(Rid));
   old_size += sizeof(Rid);
-
-  // 写入事务id
-  memcpy(data.data() + old_size , &txn_id, sizeof(txn_id_t));
 
   num_elements++;
   return true;
@@ -125,14 +121,6 @@ Rid Block::get_value_at(size_t offset) const {
   return rid;
 }
 
-txn_id_t Block::get_txn_id_at(size_t offset) const {
-  // 计算事务id的位置
-  size_t txn_id_pos = offset + sizeof(Rid) + file_hdr_->col_tot_len_;
-  txn_id_t txn_id;
-  memcpy(&txn_id, data.data() + txn_id_pos, sizeof(txn_id_t));
-  return txn_id;
-}
-
 // 比较指定偏移量处的key与目标key
 int Block::compare_key_at(size_t offset, const std::string &target) const {
   std::string key = get_key_at(offset);
@@ -150,21 +138,21 @@ bool Block::is_same_key(size_t idx, const std::string &target_key) const
 
 // 使用二分查找获取value
 // 要求在插入数据时有序插入
-Rid Block::get_value_binary(const std::string &key, txn_id_t txn_id) 
+Rid Block::get_value_binary(const std::string &key) 
 {
-  auto idx = get_idx_binary(key, txn_id);
+  auto idx = get_idx_binary(key);
   if (idx == -1) {
-    return "";
+    return Rid();
   }
 
   return get_value_at(get_offset_at(idx));
 }
 
-int Block::get_idx_binary(const std::string &key, txn_id_t txn_id) 
+int Block::get_idx_binary(const std::string &key) 
 {
-    if(num_elements == 0) {
-        return -1;
-    }
+  if(num_elements == 0) {
+    return -1;
+  }
   // 二分查找
   int left = 0;
   int right = num_elements - 1;
@@ -271,9 +259,9 @@ size_t Block::cur_size() const {
 
 bool Block::is_empty() const { return num_elements == 0; }
 
-// BlockIterator Block::begin(uint64_t tranc_id) {
-//   return BlockIterator(shared_from_this(), 0, tranc_id);
-// }
+BlockIterator Block::begin() {
+  return BlockIterator(shared_from_this(), 0);
+}
 
 // std::optional<
 //     std::pair<std::shared_ptr<BlockIterator>, std::shared_ptr<BlockIterator>>>
@@ -285,5 +273,76 @@ bool Block::is_empty() const { return num_elements == 0; }
 // }
 
 BlockIterator Block::end() {
-  return BlockIterator(shared_from_this(), offsets.size(), 0);
+  return BlockIterator(shared_from_this(), num_elements);
 }
+
+BlockIterator::BlockIterator(std::shared_ptr<Block> b, size_t index)
+  : block(b), current_index(index){}
+
+BlockIterator::BlockIterator(std::shared_ptr<Block> b, const std::string &key)
+: block(b), cached_value(std::nullopt) {
+  auto key_idx = block->get_idx_binary(key);
+  if (key_idx == -1 || key_idx >= block->num_elements) {
+    current_index = block->num_elements;
+  }
+  else
+  {
+    current_index = key_idx;
+  }
+}
+
+BaseIterator& BlockIterator::operator++()
+{
+  if (block && current_index < block->size()) {
+    ++current_index;
+    cached_value.reset(); // 清除缓存
+  }
+  return *this;
+}
+
+bool BlockIterator::operator==(const BaseIterator &other) const
+{
+  if (other.get_type() != IteratorType::BlockIterator)
+    return false;
+  auto other2 = static_cast<const BlockIterator &>(other);
+  if (block == nullptr && other2.block == nullptr) {
+    return true;
+  }
+  if (block == nullptr || other2.block == nullptr) {
+    return false;
+  }
+  auto cmp = block == other2.block && current_index == other2.current_index;
+  return cmp;
+}
+
+bool BlockIterator::operator!=(const BaseIterator &other) const
+{
+  return !(*this == other);
+}
+
+BlockIterator::T& BlockIterator::operator*() const
+{
+  if (!block || current_index >= block->size()) {
+    throw std::out_of_range("Iterator out of range");
+  }
+
+  // 使用缓存避免重复解析
+  if (!cached_value.has_value()) {
+    size_t offset = block->get_offset_at(current_index);
+    cached_value =
+        std::make_pair(block->get_key_at(offset), block->get_value_at(offset));
+  }
+  return cached_value.value();
+}
+
+BlockIterator::T* BlockIterator::operator->() const
+{
+	return &this->operator*();//通过调用operator*来实现operator->
+}
+
+IteratorType BlockIterator::get_type() const
+{
+  return IteratorType::BlockIterator;
+}
+
+bool BlockIterator::is_end() const { return current_index == block->num_elements; }

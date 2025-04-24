@@ -1,18 +1,19 @@
 #pragma once
 
-#include "block.h"
-#include "../block/block_cache.h"
-#include "blockmeta.h"
-#include "../utils/bloom_filter.h"
-#include "../utils/files.h"
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
 #include <vector>
+#include <optional>
+
 #include "disk_manager.h"
-#include "lsmtree.h"
+#include "ix_defs.h"
+#include "block.h"
+// #include "block_cache.h"
+#include "blockmeta.h"
+#include "bloom_filter.h"
 
 class SstIterator;
 
@@ -83,7 +84,7 @@ public:
   int find_block_idx(const std::string &key);
 
   // 根据key返回迭代器
-  bool get(const std::string &key, Rid& value, txn_id_t txn_id);
+  bool get(const std::string &key, Rid& value,);
 
   // 返回sst中block的数量
   size_t num_blocks() const;
@@ -103,7 +104,7 @@ public:
   // std::optional<std::pair<SstIterator, SstIterator>>
   // iters_monotony_predicate(std::function<bool(const std::string &)> predicate);
 
-  SstIterator begin(uint64_t tranc_id);
+  SstIterator begin();
   SstIterator end();
 };
 
@@ -115,15 +116,13 @@ private:
   std::vector<BlockMeta> meta_entries;
   std::vector<uint8_t> data;
   size_t block_size;
-  std::shared_ptr<BloomFilter> bloom_filter;
   DiskManager *disk_manager_;
   LsmFileHdr *file_hdr_;
 
 public:
   // 创建一个sst构建器, 指定目标block的大小
-  SSTBuilder(DiskManager *disk_manager, LsmFileHdr *file_hdr,
-     size_t block_size, std::shared_ptr<BloomFilter> bloom_filter); // 添加一个key-value对
-  void add(const std::string &key, const Rid &value, txn_id_t txn_id);
+  SSTBuilder(DiskManager *disk_manager, LsmFileHdr *file_hdr, size_t block_size); // 添加一个key-value对
+  void add(const std::string &key, const Rid &value);
   // 估计sst的大小
   size_t estimated_size() const;
   // 完成当前block的构建, 即将block写入data, 并创建新的block
@@ -131,4 +130,41 @@ public:
   // 构建sst, 将sst写入文件并返回SST描述类
   std::shared_ptr<SSTable> build(size_t sst_id, const std::string &path,
                              std::shared_ptr<BlockCache> block_cache);
+};
+
+class SstIterator : public BaseIterator {
+  // friend std::optional<std::pair<SstIterator, SstIterator>>
+  // sst_iters_monotony_predicate(
+  //     std::shared_ptr<SST> sst, uint64_t tranc_id,
+  //     std::function<int(const std::string &)> predicate);
+
+  friend class SSTable;
+
+private:
+  std::shared_ptr<SSTable> m_sst;
+  size_t m_block_idx;
+  std::shared_ptr<BlockIterator> m_block_it;
+
+public:
+  // 创建迭代器, 并移动到第一个key
+  SstIterator(std::shared_ptr<SSTable> sst);
+  // 创建迭代器, 并移动到第指定key
+  SstIterator(std::shared_ptr<SSTable> sst, const std::string &key);
+
+  // 创建迭代器, 并移动到第指定前缀的首端或者尾端
+  // static std::optional<std::pair<SstIterator, SstIterator>>
+  // iters_monotony_predicate(std::shared_ptr<SST> sst, uint64_t tranc_id,
+  //                          std::function<bool(const std::string &)> predicate);
+
+  void seek(const std::string &key);
+
+  virtual BaseIterator &operator++() override;
+  virtual bool operator==(const BaseIterator &other) const override;
+  virtual bool operator!=(const BaseIterator &other) const override;
+  virtual T& operator*() const override;
+  virtual IteratorType get_type() const override;
+  virtual bool is_end() const override;
+
+  // static std::pair<HeapIterator, HeapIterator>
+  // merge_sst_iterator(std::vector<SstIterator> iter_vec, uint64_t tranc_id);
 };

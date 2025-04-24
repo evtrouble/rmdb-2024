@@ -176,8 +176,8 @@ size_t SSTable::sst_size() const { return file_size; }
 
 size_t SSTable::get_sst_id() const { return sst_id; }
 
-SstIterator SST::begin(uint64_t tranc_id) {
-  return SstIterator(shared_from_this(), tranc_id);
+SstIterator SSTable::begin() {
+  return SstIterator(shared_from_this());
 }
 
 SstIterator SST::end() {
@@ -191,8 +191,8 @@ SstIterator SST::end() {
 // SSTBuilder
 // **************************************************
 
-SSTBuilder::SSTBuilder(DiskManager *disk_manager, LsmFileHdr *file_hdr, size_t block_size,std::shared_ptr<BloomFilter> bloom_filter)
- : block(block_size, file_hdr), bloom_filter(bloom_filter), disk_manager_(disk_manager), 
+SSTBuilder::SSTBuilder(DiskManager *disk_manager, LsmFileHdr *file_hdr, size_t block_size)
+ : block(block_size, file_hdr), disk_manager_(disk_manager), 
   file_hdr_(file_hdr){}
 
 void SSTBuilder::add(const std::string &key, const Rid &value,
@@ -238,8 +238,9 @@ void SSTBuilder::finish_block() {
 }
 
 std::shared_ptr<SSTable>
-SSTBuilder::build(size_t sst_id, const std::string &path,
-                  std::shared_ptr<BlockCache> block_cache) {
+SSTBuilder::build(size_t sst_id, const std::string &path, 
+  std::shared_ptr<BlockCache> block_cache, std::shared_ptr<BloomFilter> bloom_filter) 
+{
   // 完成最后一个block
   if (!block.is_empty()) {
     finish_block();
@@ -266,7 +267,7 @@ SSTBuilder::build(size_t sst_id, const std::string &path,
 
   // 构建完整的文件内容
   // 1. 已有的数据块
-  std::vector<uint8_t> file_content = std::move(data);
+  std::vector<uint8_t> file_content(std::move(data));
   file_content.resize(file_content.size() + total_size);
   uint8_t *ptr = file_content.data() + meta_offset;
 
@@ -310,3 +311,150 @@ SSTBuilder::build(size_t sst_id, const std::string &path,
 
   return res;
 }
+
+SstIterator::SstIterator(std::shared_ptr<SSTable> sst)
+    : m_sst(sst), m_block_idx(0), m_block_it(nullptr){
+}
+
+SstIterator::SstIterator(std::shared_ptr<SST> sst, const std::string &key,
+                         uint64_t tranc_id)
+    : m_sst(sst), m_block_idx(0), m_block_it(nullptr), max_tranc_id_(tranc_id) {
+  if (m_sst) {
+    seek(key);
+  }
+}
+
+void SstIterator::seek(const std::string &key) {
+  if (!m_sst) {
+    m_block_it = nullptr;
+    return;
+  }
+
+  try {
+    m_block_idx = m_sst->find_block_idx(key);
+    if (m_block_idx == -1 || m_block_idx >= m_sst->num_blocks()) {
+      // 置为 end
+      // TODO: 这个边界情况需要添加单元测试
+      m_block_it = nullptr;
+      m_block_idx = m_sst->num_blocks();
+      return;
+    }
+    auto block = m_sst->read_block(m_block_idx);
+    if (!block) {
+      m_block_it = nullptr;
+      return;
+    }
+    m_block_it = std::make_shared<BlockIterator>(block, key, max_tranc_id_);
+    if (m_block_it->is_end()) {
+      // block 中找不到
+      m_block_idx = m_sst->num_blocks();
+      m_block_it = nullptr;
+      return;
+    }
+  } catch (const std::exception &) {
+    m_block_it = nullptr;
+    return;
+  }
+}
+
+BaseIterator& SstIterator::operator++()
+{
+  if (!m_block_it) { // 添加空指针检查
+    return *this;
+  }
+  ++(*m_block_it);
+
+  if (m_block_it->is_end()) {
+    m_block_idx++;
+    if (m_block_idx < m_sst->num_blocks()) {
+      // 读取下一个block
+      auto next_block = m_sst->read_block(m_block_idx);
+      (*m_block_it) = next_block->begin();
+    } else {
+      // 没有下一个block
+      m_block_it = nullptr;
+    }
+  }
+  return *this;;
+}
+
+bool SstIterator::operator==(const BaseIterator &other) const
+{
+  if (other.get_type() != IteratorType::SstIterator) {
+    return false;
+  }
+  auto other2 = static_cast<const SstIterator &>(other);
+  if (m_sst != other2.m_sst || m_block_idx != other2.m_block_idx) {
+    return false;
+  }
+
+  if (!m_block_it && !other2.m_block_it) {
+    return true;
+  }
+
+  if (!m_block_it || !other2.m_block_it) {
+    return false;
+  }
+
+  return *m_block_it == *other2.m_block_it;
+}
+
+bool SstIterator::operator!=(const BaseIterator &other) const
+{
+  return !(*this == other);
+}
+
+SstIterator::T& SstIterator::operator*() const
+{
+  if (!m_block_it) {
+    throw std::runtime_error("Iterator is invalid");
+  }
+  return (**m_block_it);
+}
+
+IteratorType SstIterator::get_type() const
+{
+  return IteratorType::SstIterator;
+}
+
+bool SstIterator::is_end() const { return !m_block_it; }
+// // predicate返回值:
+// //   0: 谓词
+// //   >0: 不满足谓词, 需要向右移动
+// //   <0: 不满足谓词, 需要向左移动
+// std::optional<std::pair<SstIterator, SstIterator>> sst_iters_monotony_predicate(
+//     std::shared_ptr<SST> sst, uint64_t tranc_id,
+//     std::function<int(const std::string &)> predicate) {
+//   std::optional<SstIterator> final_begin = std::nullopt;
+//   std::optional<SstIterator> final_end = std::nullopt;
+//   for (int block_idx = 0; block_idx < sst->meta_entries.size(); block_idx++) {
+//     auto block = sst->read_block(block_idx);
+
+//     BlockMeta &meta_i = sst->meta_entries[block_idx];
+//     if (predicate(meta_i.first_key) < 0 || predicate(meta_i.last_key) > 0) {
+//       break;
+//     }
+
+//     auto result_i = block->get_monotony_predicate_iters(tranc_id, predicate);
+//     if (result_i.has_value()) {
+//       auto [i_begin, i_end] = result_i.value();
+//       if (!final_begin.has_value()) {
+//         auto tmp_it = SstIterator(sst, tranc_id);
+//         tmp_it.set_block_idx(block_idx);
+//         tmp_it.set_block_it(i_begin);
+//         final_begin = tmp_it;
+//       }
+//       auto tmp_it = SstIterator(sst, tranc_id);
+//       tmp_it.set_block_idx(block_idx);
+//       tmp_it.set_block_it(i_end);
+//       if (tmp_it.is_end() && tmp_it.m_block_idx == sst->num_blocks()) {
+//         tmp_it.set_block_it(nullptr);
+//       }
+//       final_end = tmp_it;
+//     }
+//   }
+//   if (!final_begin.has_value() || !final_end.has_value()) {
+//     return std::nullopt;
+//   }
+//   return std::make_pair(final_begin.value(), final_end.value());
+// }

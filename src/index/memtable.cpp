@@ -1,9 +1,9 @@
 #include "memtable.h"
 
-void MemTable::put(const std::string &key, const Rid &value, txn_id_t txn_id)
+void MemTable::put(const std::string &key, const Rid &value)
 {
   std::unique_lock lock1(cur_mtx);
-  active_memtable_->put(key, value, txn_id);
+  active_memtable_->put(key, value);
   if (active_memtable_->get_size() > LSM_PER_MEM_SIZE_LIMIT) {
     // 冻结当前表还需要获取frozen_mtx的写锁
     std::unique_lock lock2(frozen_mtx);
@@ -11,12 +11,11 @@ void MemTable::put(const std::string &key, const Rid &value, txn_id_t txn_id)
   }
 }
 
-void MemTable::put_batch(const std::vector<std::pair<std::string, Rid>> &kvs,
-  txn_id_t txn_id)
+void MemTable::put_batch(const std::vector<std::pair<std::string, Rid>> &kvs)
 {
   std::unique_lock<std::shared_mutex> lock1(cur_mtx);
   for (auto &[key, value] : kvs) {
-    active_memtable_->put(key, value, txn_id);
+    active_memtable_->put(key, value);
   }
   if (active_memtable_->get_size() > LSM_PER_MEM_SIZE_LIMIT) {
     // 冻结当前表还需要获取frozen_mtx的写锁
@@ -25,19 +24,19 @@ void MemTable::put_batch(const std::vector<std::pair<std::string, Rid>> &kvs,
   }
 }
 
-bool MemTable::get(const std::string &key, Rid& value, txn_id_t txn_id)
+bool MemTable::get(const std::string &key, Rid& value)
 {
   {
     std::shared_lock lock(cur_mtx);
-    if(active_memtable_->get(key, value, txn_id))
+    if(active_memtable_->get(key, value))
       return true;
   }
   
   std::shared_lock lock(frozen_mtx);
-  return frozen_get(key, value, txn_id);
+  return frozen_get(key, value);
 }
 
-std::vector<size_t> MemTable::get_batch(const std::vector<std::string> &keys, std::vector<Rid> &value, txn_id_t txn_id)
+std::vector<size_t> MemTable::get_batch(const std::vector<std::string> &keys, std::vector<Rid> &value)
 {
   std::vector<size_t> ret;
   value.reserve(keys.size());
@@ -45,7 +44,7 @@ std::vector<size_t> MemTable::get_batch(const std::vector<std::string> &keys, st
     std::shared_lock lock(cur_mtx);
     for (auto &key : keys) {
       Rid val;
-      if(active_memtable_->get(key, val, txn_id)) {
+      if(active_memtable_->get(key, val)) {
         value.emplace_back(val);
       } else {
         value.emplace_back(Rid());
@@ -65,7 +64,7 @@ std::vector<size_t> MemTable::get_batch(const std::vector<std::string> &keys, st
   for (size_t i = 0; i < keys.size(); ++i) {
     if(value[i].is_valid()) continue;
     Rid val;
-    if(frozen_get(keys[i], val, txn_id)) {
+    if(frozen_get(keys[i], val)) {
       value[i] = val;
     } else {
       ret.emplace_back(i);
@@ -74,20 +73,20 @@ std::vector<size_t> MemTable::get_batch(const std::vector<std::string> &keys, st
   return ret;
 }
 
-bool MemTable::frozen_get(const std::string &key, Rid& value, txn_id_t txn_id)
+bool MemTable::frozen_get(const std::string &key, Rid& value)
 {
   // 检查frozen memtable
   for (auto &table : immutable_memtables_) {
-    if(table->get(key, value, txn_id))
+    if(table->get(key, value))
       return true;
   }
   return false;
 }
 
-void MemTable::remove(const std::string &key, txn_id_t txn_id)
+void MemTable::remove(const std::string &key)
 {
   std::unique_lock lock(cur_mtx);
-  active_memtable_->put(key, Rid(), txn_id);
+  active_memtable_->put(key, Rid());
   if (active_memtable_->get_size() > LSM_PER_MEM_SIZE_LIMIT) {
     // 冻结当前表还需要获取frozen_mtx的写锁
     std::unique_lock lock2(frozen_mtx);
@@ -95,12 +94,11 @@ void MemTable::remove(const std::string &key, txn_id_t txn_id)
   }
 }
 
-void MemTable::remove_batch(const std::vector<std::string> &keys,
-  txn_id_t txn_id) {
+void MemTable::remove_batch(const std::vector<std::string> &keys) {
   std::unique_lock lock(cur_mtx);
   // 删除的方式是写入空值
   for (auto &key : keys) {
-    active_memtable_->put(key, Rid(), txn_id);
+    active_memtable_->put(key, Rid());
   }
   if (active_memtable_->get_size() > LSM_PER_MEM_SIZE_LIMIT) {
     // 冻结当前表还需要获取frozen_mtx的写锁
@@ -113,7 +111,7 @@ void MemTable::frozen_table()
 {
   frozen_bytes += active_memtable_->get_size();
   immutable_memtables_.push_front(std::move(active_memtable_));
-  active_memtable_ = std::make_unique<SkipList>(comparator);
+  active_memtable_ = std::make_unique<SkipList>(file_hdr_);
 }
 
 // 将最老的 memtable 写入 SST, 并返回控制类
@@ -132,7 +130,7 @@ MemTable::flush_last(SSTBuilder &builder, std::string &sst_path, size_t sst_id,
     frozen_tables.push_front(current_table);
     frozen_bytes += current_table->get_size();
     // 创建新的空表作为当前表
-    current_table = std::make_shared<SkipList>();
+    current_table = std::make_shared<SkipList>(file_hdr_);
   }
 
   // 将最老的 memtable 写入 SST
@@ -145,7 +143,5 @@ MemTable::flush_last(SSTBuilder &builder, std::string &sst_path, size_t sst_id,
   for (auto &[k, v, t] : flush_data) {
     builder.add(k, v, t);
   }
-  auto sst = builder.build(sst_id, sst_path, block_cache);
-
-  return sst;
+  return builder.build(sst_id, sst_path, block_cache, table->bloom_filter());
 }
