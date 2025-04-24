@@ -81,14 +81,6 @@ public:
     inline std::shared_ptr<std::deque<Version *>> get_write_version_set() { return write_version_set_; }
     inline void append_write_version_set(Version *version) { write_version_set_->emplace_back(version); }
 
-    // inline static std::vector<ColMeta> &trx_fields() { return fields_;}
-
-    inline static std::vector<ColMeta> &trx_fields()
-    {
-        static std::vector<ColMeta> empty_clometa; // 注意没有括号，创建对象而不是声明函数
-        return empty_clometa;
-    }
-
 private:
     bool txn_mode_;                  // 用于标识当前事务为显式事务还是单条SQL语句的隐式事务
     TransactionState state_;         // 事务状态

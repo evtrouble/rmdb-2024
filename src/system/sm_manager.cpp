@@ -218,15 +218,8 @@ void SmManager::create_table(const std::string& tab_name, const std::vector<ColD
     // Create table meta
     TabMeta tab;
     tab.name = tab_name;
-    auto &trx_fields = context->txn_->trx_fields();
-    tab.cols.reserve(trx_fields.size() + col_defs.size());
-    for (auto &col : trx_fields)
-    {
-        tab.cols.emplace_back(col);
-        tab.cols.back().tab_name = tab_name;
-        tab.cols_map.emplace(col.name, tab.cols.size() - 1);
-    }
-    int curr_offset = tab.cols.back().offset;
+    tab.cols.reserve(col_defs.size());
+    int curr_offset = 0;
     for (auto &col_def : col_defs)
     {
         ColMeta col = {.tab_name = tab_name,
