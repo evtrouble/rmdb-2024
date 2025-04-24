@@ -85,7 +85,7 @@ public:
 
     inline static std::vector<ColMeta> &trx_fields()
     {
-        vector<ColMeta> empty_clometa;
+        static std::vector<ColMeta> empty_clometa; // 注意没有括号，创建对象而不是声明函数
         return empty_clometa;
     }
 

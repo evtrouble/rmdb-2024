@@ -10,6 +10,9 @@ See the Mulan PSL v2 for more details. */
 
 #include "execution_manager.h"
 
+#include <climits>
+#include <cfloat>
+
 #include "executor_delete.h"
 #include "executor_index_scan.h"
 #include "executor_insert.h"
@@ -89,79 +92,79 @@ void QlManager::run_cmd_utility(std::shared_ptr<Plan> plan, txn_id_t *txn_id, Co
 {
     switch (plan->tag)
     {
-        case T_Help:
+    case T_Help:
+    {
+        int help_len = strlen(help_info);
+        if (help_len + 1 > MAX_BUFFER_SIZE - *(context->offset_))
+        { // 检查缓冲区大小
+            throw InternalError("Buffer overflow when sending help info");
+        }
+        memcpy(context->data_send_ + *(context->offset_), help_info, help_len);
+        *(context->offset_) += help_len;
+        context->data_send_[*(context->offset_)] = '\0'; // 确保字符串以null结尾
+        break;
+    }
+    case T_ShowTable:
+    {
+        sm_manager_->show_tables(context);
+        break;
+    }
+    case T_DescTable:
+    {
+        auto x = std::static_pointer_cast<OtherPlan>(plan);
+        sm_manager_->desc_table(x->tab_name_, context);
+        break;
+    }
+    case T_Transaction_begin:
+    {
+        // 显示开启一个事务
+        context->txn_->set_txn_mode(true);
+        break;
+    }
+    case T_Transaction_commit:
+    {
+        context->txn_ = txn_mgr_->get_transaction(*txn_id);
+        txn_mgr_->commit(context->txn_, context->log_mgr_);
+        break;
+    }
+    case T_Transaction_rollback:
+    {
+        context->txn_ = txn_mgr_->get_transaction(*txn_id);
+        txn_mgr_->abort(context->txn_, context->log_mgr_);
+        break;
+    }
+    case T_Transaction_abort:
+    {
+        context->txn_ = txn_mgr_->get_transaction(*txn_id);
+        txn_mgr_->abort(context->txn_, context->log_mgr_);
+        break;
+    }
+    case T_SetKnob:
+    {
+        auto x = std::static_pointer_cast<SetKnobPlan>(plan);
+        switch (x->set_knob_type_)
         {
-            int help_len = strlen(help_info);
-            if (help_len + 1 > MAX_BUFFER_SIZE - *(context->offset_))
-            { // 检查缓冲区大小
-                throw InternalError("Buffer overflow when sending help info");
-            }
-            memcpy(context->data_send_ + *(context->offset_), help_info, help_len);
-            *(context->offset_) += help_len;
-            context->data_send_[*(context->offset_)] = '\0'; // 确保字符串以null结尾
+        case ast::SetKnobType::EnableNestLoop:
+        {
+            planner_->set_enable_nestedloop_join(x->bool_value_);
             break;
         }
-        case T_ShowTable:
+        case ast::SetKnobType::EnableSortMerge:
         {
-            sm_manager_->show_tables(context);
-            break;
-        }
-        case T_DescTable:
-        {
-            auto x = std::static_pointer_cast<OtherPlan>(plan);
-            sm_manager_->desc_table(x->tab_name_, context);
-            break;
-        }
-        case T_Transaction_begin:
-        {
-            // 显示开启一个事务
-            context->txn_->set_txn_mode(true);
-            break;
-        }
-        case T_Transaction_commit:
-        {
-            context->txn_ = txn_mgr_->get_transaction(*txn_id);
-            txn_mgr_->commit(context->txn_, context->log_mgr_);
-            break;
-        }
-        case T_Transaction_rollback:
-        {
-            context->txn_ = txn_mgr_->get_transaction(*txn_id);
-            txn_mgr_->abort(context->txn_, context->log_mgr_);
-            break;
-        }
-        case T_Transaction_abort:
-        {
-            context->txn_ = txn_mgr_->get_transaction(*txn_id);
-            txn_mgr_->abort(context->txn_, context->log_mgr_);
-            break;
-        }
-        case T_SetKnob:
-        {
-            auto x = std::static_pointer_cast<SetKnobPlan>(plan);
-            switch (x->set_knob_type_)
-            {
-                case ast::SetKnobType::EnableNestLoop:
-                {
-                    planner_->set_enable_nestedloop_join(x->bool_value_);
-                    break;
-                }
-                case ast::SetKnobType::EnableSortMerge:
-                {
-                    planner_->set_enable_sortmerge_join(x->bool_value_);
-                    break;
-                }
-                default:
-                {
-                    throw RMDBError("Not implemented!\n");
-                    break;
-                }
-            }
+            planner_->set_enable_sortmerge_join(x->bool_value_);
             break;
         }
         default:
-            throw InternalError("Unexpected field type");
+        {
+            throw RMDBError("Not implemented!\n");
             break;
+        }
+        }
+        break;
+    }
+    default:
+        throw InternalError("Unexpected field type");
+        break;
     }
 }
 
@@ -169,35 +172,38 @@ std::string makeAggFuncCaptions(const TabCol &sel_col)
 {
     switch (sel_col.aggFuncType)
     {
-        case ast::AggFuncType::COUNT:
-            return "COUNT(" + sel_col.col_name + ")";
-        case ast::AggFuncType::SUM:
-            return "SUM(" + sel_col.col_name + ")";
-        case ast::AggFuncType::MAX:
-            return "MAX(" + sel_col.col_name + ")";
-        case ast::AggFuncType::MIN:
-            return "MIN(" + sel_col.col_name + ")";
-        default:
-            throw RMDBError();
+    case ast::AggFuncType::COUNT:
+        return "COUNT(" + sel_col.col_name + ")";
+    case ast::AggFuncType::SUM:
+        return "SUM(" + sel_col.col_name + ")";
+    case ast::AggFuncType::MAX:
+        return "MAX(" + sel_col.col_name + ")";
+    case ast::AggFuncType::MIN:
+        return "MIN(" + sel_col.col_name + ")";
+    default:
+        throw RMDBError();
     }
 }
 
 // 执行select语句，select语句的输出除了需要返回客户端外，还需要写入output.txt文件中
-void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, const std::vector<TabCol> &sel_cols, 
-                            Context *context) {
+void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, const std::vector<TabCol> &sel_cols,
+                            Context *context)
+{
     std::vector<std::string> captions;
     captions.reserve(sel_cols.size());
-    for (auto &sel_col : sel_cols) {
-        if (sel_col.alias.empty()){
+    for (auto &sel_col : sel_cols)
+    {
+        if (sel_col.alias.empty())
+        {
             if (ast::AggFuncType::NO_TYPE == sel_col.aggFuncType)
                 captions.emplace_back(std::move(sel_col.col_name));
             else
                 captions.emplace_back(std::move(makeAggFuncCaptions(sel_col)));
         }
-        else{
+        else
+        {
             captions.emplace_back(sel_col.alias);
         }
-
     }
 
     // Print header into buffer
@@ -207,14 +213,16 @@ void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, 
     rec_printer.print_separator(context);
 
     int fd = ::open("output.txt", O_WRONLY | O_CREAT | O_APPEND, 0644);
-    if (fd == -1) return;
-    
+    if (fd == -1)
+        return;
+
     // 64KB缓冲区
     std::string buffer;
     buffer.reserve(8096);
-    
+
     buffer.append("|");
-    for(size_t i = 0; i < captions.size(); ++i) {
+    for (size_t i = 0; i < captions.size(); ++i)
+    {
         buffer.append(" ").append(captions[i]).append(" |");
     }
     buffer.append("\n");
@@ -250,7 +258,7 @@ void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, 
             else if (col.type == TYPE_STRING)
             {
                 col_str.reserve(col.len);
-                for (int i = 0; i < col.len && rec_buf[i] != '\0';i++)
+                for (int i = 0; i < col.len && rec_buf[i] != '\0'; i++)
                     col_str.append(1, rec_buf[i]);
             }
             columns.emplace_back(std::move(col_str));
@@ -259,19 +267,22 @@ void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, 
         rec_printer.print_record(columns, context);
         // print record into file
         buffer.append("|");
-        for(size_t i = 0; i < columns.size(); ++i) {
+        for (size_t i = 0; i < columns.size(); ++i)
+        {
             buffer.append(" ").append(columns[i]).append(" |");
         }
         buffer.append("\n");
         num_rec++;
         // 缓冲区满时写入
-        if (buffer.size() >= 8096) {
+        if (buffer.size() >= 8096)
+        {
             discard = ::write(fd, buffer.data(), buffer.size());
             buffer.clear();
         }
     }
     // 写入剩余数据
-    if (!buffer.empty()) {
+    if (!buffer.empty())
+    {
         discard = ::write(fd, buffer.data(), buffer.size());
     }
     close(fd);
@@ -285,4 +296,59 @@ void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, 
 void QlManager::run_dml(std::unique_ptr<AbstractExecutor> exec)
 {
     exec->Next();
+}
+std::unordered_set<Value>
+QlManager::sub_select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, bool converse_to_float)
+{
+    std::unordered_set<Value> results;
+    // 确保一列
+    if (executorTreeRoot->cols().size() != 1)
+        throw RMDBError("subquery must have only one column");
+    const auto &col = executorTreeRoot->cols()[0];
+
+    // 执行query_plan
+    for (executorTreeRoot->beginTuple(); !executorTreeRoot->is_end(); executorTreeRoot->nextTuple())
+    {
+        auto Tuple = executorTreeRoot->Next();
+        char *rec_buf = Tuple->data + col.offset;
+        Value value;
+        switch (col.type)
+        {
+        case TYPE_INT:
+        {
+            auto val = *reinterpret_cast<int *>(rec_buf);
+            if (val != INT_MAX)
+            {
+                if (!converse_to_float)
+                    value.set_int(val);
+                else
+                    value.set_float(static_cast<float>(val));
+            }
+            break;
+        }
+        case TYPE_FLOAT:
+        {
+            auto val = *reinterpret_cast<float *>(rec_buf);
+            if (val != FLT_MAX)
+            {
+                value.set_float(val);
+            }
+            break;
+        }
+        case TYPE_STRING:
+        {
+            std::string col_str(reinterpret_cast<char *>(rec_buf), col.len);
+            col_str.resize(strlen(col_str.c_str()));
+            value.set_str(col_str);
+            break;
+        }
+        default:
+        {
+            throw RMDBError("Unsupported column type");
+        }
+        }
+        results.insert(value);
+    }
+
+    return results;
 }

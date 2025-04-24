@@ -31,8 +31,8 @@ using namespace ast;
 
 // keywords
 %token SHOW TABLES CREATE TABLE DROP DESC INSERT INTO VALUES DELETE FROM ASC ORDER GROUP BY HAVING
-WHERE UPDATE SET SELECT INT CHAR FLOAT INDEX AND JOIN EXIT HELP TXN_BEGIN TXN_COMMIT TXN_ABORT TXN_ROLLBACK ORDER_BY ENABLE_NESTLOOP ENABLE_SORTMERGE
-SUM COUNT MAX MIN AS 
+WHERE UPDATE SET SELECT INT CHAR FLOAT INDEX AND JOIN IN NOT EXIT HELP TXN_BEGIN TXN_COMMIT TXN_ABORT TXN_ROLLBACK ORDER_BY ENABLE_NESTLOOP ENABLE_SORTMERGE
+SUM COUNT MAX MIN AS
 // non-keywords
 %token LEQ NEQ GEQ T_EOF
 
@@ -253,7 +253,16 @@ condition:
     {
         $$ = std::make_shared<BinaryExpr>($1, $2, $3);
     }
+    |   col op '(' dml ')'
+    {
+	$$ = std::make_shared<SubQueryExpr>($1, $2, $4);
+    }
+    |   col op '(' valueList ')'
+    {
+	$$ = std::make_shared<SubQueryExpr>($1, $2, $4);
+    }
     ;
+
 
 optWhereClause:
         /* epsilon */ { /* ignore*/ }
@@ -368,6 +377,14 @@ op:
     {
         $$ = SV_OP_GE;
     }
+    |   IN
+    {
+	    $$ = SV_OP_IN;
+    }
+    |   NOT IN
+    {
+    	$$ = SV_OP_NOT_IN;
+    }
     ;
 
 expr:
@@ -431,9 +448,9 @@ opt_order_clause:
     ;
 
 opt_groupby_clause:
-    GROUP BY colList      
-    { 
-        $$ = $3; 
+    GROUP BY colList
+    {
+        $$ = $3;
     }
     |   /* epsilon */ { /* ignore*/ }
     ;
@@ -461,4 +478,7 @@ tbName: IDENTIFIER;
 colName: IDENTIFIER;
 
 ALIAS: IDENTIFIER;
+
+
+
 %%

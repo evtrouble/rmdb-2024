@@ -35,7 +35,7 @@ public:
     std::vector<SetClause> set_clauses;
     // insert 的values值
     std::vector<Value> values;
-    //groupby字段
+    // groupby字段
     std::vector<TabCol> groupby;
     // having条件
     std::vector<Condition> having_conds;
@@ -62,4 +62,6 @@ private:
     Value convert_sv_value(const std::shared_ptr<ast::Value> &sv_val);
     CompOp convert_sv_comp_op(ast::SvCompOp op);
     Value convert_value_type(const Value &value, ColType target_type);
+    static bool can_cast_type(ColType from, ColType to);
+    static void cast_value(Value &val, ColType to);
 };

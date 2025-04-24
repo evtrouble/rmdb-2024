@@ -35,8 +35,8 @@
    especially those whose name start with YY_ or yy_.  They are
    private implementation details that can be changed or removed.  */
 
-#ifndef YY_YY_YACC_TAB_H_INCLUDED
-# define YY_YY_YACC_TAB_H_INCLUDED
+#ifndef YY_YY_HOME_NERO_RMDB_PROJECT_RMDB_2024_SRC_PARSER_YACC_TAB_H_INCLUDED
+# define YY_YY_HOME_NERO_RMDB_PROJECT_RMDB_2024_SRC_PARSER_YACC_TAB_H_INCLUDED
 /* Debug traces.  */
 #ifndef YYDEBUG
 # define YYDEBUG 0
@@ -80,29 +80,31 @@ extern int yydebug;
     INDEX = 281,                   /* INDEX  */
     AND = 282,                     /* AND  */
     JOIN = 283,                    /* JOIN  */
-    EXIT = 284,                    /* EXIT  */
-    HELP = 285,                    /* HELP  */
-    TXN_BEGIN = 286,               /* TXN_BEGIN  */
-    TXN_COMMIT = 287,              /* TXN_COMMIT  */
-    TXN_ABORT = 288,               /* TXN_ABORT  */
-    TXN_ROLLBACK = 289,            /* TXN_ROLLBACK  */
-    ORDER_BY = 290,                /* ORDER_BY  */
-    ENABLE_NESTLOOP = 291,         /* ENABLE_NESTLOOP  */
-    ENABLE_SORTMERGE = 292,        /* ENABLE_SORTMERGE  */
-    SUM = 293,                     /* SUM  */
-    COUNT = 294,                   /* COUNT  */
-    MAX = 295,                     /* MAX  */
-    MIN = 296,                     /* MIN  */
-    AS = 297,                      /* AS  */
-    LEQ = 298,                     /* LEQ  */
-    NEQ = 299,                     /* NEQ  */
-    GEQ = 300,                     /* GEQ  */
-    T_EOF = 301,                   /* T_EOF  */
-    IDENTIFIER = 302,              /* IDENTIFIER  */
-    VALUE_STRING = 303,            /* VALUE_STRING  */
-    VALUE_INT = 304,               /* VALUE_INT  */
-    VALUE_FLOAT = 305,             /* VALUE_FLOAT  */
-    VALUE_BOOL = 306               /* VALUE_BOOL  */
+    IN = 284,                      /* IN  */
+    NOT = 285,                     /* NOT  */
+    EXIT = 286,                    /* EXIT  */
+    HELP = 287,                    /* HELP  */
+    TXN_BEGIN = 288,               /* TXN_BEGIN  */
+    TXN_COMMIT = 289,              /* TXN_COMMIT  */
+    TXN_ABORT = 290,               /* TXN_ABORT  */
+    TXN_ROLLBACK = 291,            /* TXN_ROLLBACK  */
+    ORDER_BY = 292,                /* ORDER_BY  */
+    ENABLE_NESTLOOP = 293,         /* ENABLE_NESTLOOP  */
+    ENABLE_SORTMERGE = 294,        /* ENABLE_SORTMERGE  */
+    SUM = 295,                     /* SUM  */
+    COUNT = 296,                   /* COUNT  */
+    MAX = 297,                     /* MAX  */
+    MIN = 298,                     /* MIN  */
+    AS = 299,                      /* AS  */
+    LEQ = 300,                     /* LEQ  */
+    NEQ = 301,                     /* NEQ  */
+    GEQ = 302,                     /* GEQ  */
+    T_EOF = 303,                   /* T_EOF  */
+    IDENTIFIER = 304,              /* IDENTIFIER  */
+    VALUE_STRING = 305,            /* VALUE_STRING  */
+    VALUE_INT = 306,               /* VALUE_INT  */
+    VALUE_FLOAT = 307,             /* VALUE_FLOAT  */
+    VALUE_BOOL = 308               /* VALUE_BOOL  */
   };
   typedef enum yytokentype yytoken_kind_t;
 #endif
@@ -129,4 +131,4 @@ struct YYLTYPE
 int yyparse (void);
 
 
-#endif /* !YY_YY_YACC_TAB_H_INCLUDED  */
+#endif /* !YY_YY_HOME_NERO_RMDB_PROJECT_RMDB_2024_SRC_PARSER_YACC_TAB_H_INCLUDED  */

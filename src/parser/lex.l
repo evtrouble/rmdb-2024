@@ -80,6 +80,8 @@ single_op ";"|"("|")"|","|"*"|"="|">"|"<"|"."
 "INDEX" { return INDEX; }
 "AND" { return AND; }
 "JOIN" {return JOIN;}
+"IN" { return IN; }
+"NOT" { return NOT; }
 "EXIT" { return EXIT; }
 "HELP" { return HELP; }
 "ORDER" { return ORDER; }
@@ -94,9 +96,9 @@ single_op ";"|"("|")"|","|"*"|"="|">"|"<"|"."
 "AS" { return AS; }
 "ENABLE_NESTLOOP" { return ENABLE_NESTLOOP; }
 "ENABLE_SORTMERGE" { return ENABLE_SORTMERGE; }
-"TRUE" { 
+"TRUE" {
     yylval->sv_bool = true;
-    return VALUE_BOOL; 
+    return VALUE_BOOL;
 }
 "FALSE" {
     yylval->sv_bool = false;

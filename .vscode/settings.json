@@ -68,7 +68,8 @@
         "variant": "cpp",
         "future": "cpp",
         "shared_mutex": "cpp",
-        "codecvt": "cpp"
+        "codecvt": "cpp",
+        "cfloat": "cpp"
     },
     "cmake.sourceDirectory": "/home/nero/db2024/rmdb/src/optimizer"
 }
