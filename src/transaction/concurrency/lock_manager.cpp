@@ -12,6 +12,9 @@ See the Mulan PSL v2 for more details. */
 
 void LockManager::lock_shared_on_gap(Transaction* txn, int tab_fd, const GapLock &gaplock)
 {
+    if(!gaplock.valid())
+        return lock_shared_on_table(txn, tab_fd);
+
     assert(tab_fd < MAX_TABLE_NUMBER);
     if(txn->get_state() == TransactionState::SHRINKING){
         throw TransactionAbortException(txn->get_transaction_id(),AbortReason::LOCK_ON_SHIRINKING);
@@ -40,6 +43,9 @@ void LockManager::lock_shared_on_gap(Transaction* txn, int tab_fd, const GapLock
 
 void LockManager::lock_exclusive_on_gap(Transaction* txn, int tab_fd, const GapLock &gaplock)
 {
+    if(!gaplock.valid())
+        return lock_exclusive_on_table(txn, tab_fd);
+
     assert(tab_fd < MAX_TABLE_NUMBER);
     if(txn->get_state() == TransactionState::SHRINKING){
         throw TransactionAbortException(txn->get_transaction_id(),AbortReason::LOCK_ON_SHIRINKING);

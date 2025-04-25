@@ -42,6 +42,16 @@ public:
     {
         GapLock gaplock;
         gaplock.init(values_);
+
+        std::vector<IxIndexHandle *> ihs;
+        ihs.reserve(tab_.indexes.size());
+        for (auto &index : tab_.indexes)
+        {
+            GapLock ix_gaplock(gaplock);
+            ihs.emplace_back(sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get());
+            auto ih = ihs.back();
+            context_->lock_mgr_->lock_exclusive_on_gap(context_->txn_, ih->get_fd(), ix_gaplock);
+        }
         context_->lock_mgr_->lock_exclusive_on_gap(context_->txn_, fh_->GetFd(), gaplock);
 
         // Make record buffer
@@ -63,9 +73,9 @@ public:
             tab_name_, rid_, rec));
 
         // Insert into index
-        for (auto &index : tab_.indexes)
+        for (size_t id = 0; id < tab_.indexes.size(); id++)
         {
-            auto ih = sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get();
+            auto &index = tab_.indexes[id];
             char *key = new char[index.col_tot_len];
             int offset = 0;
             for (int i = 0; i < index.col_num; ++i)
@@ -73,7 +83,7 @@ public:
                 memcpy(key + offset, rec.data + index.cols[i].offset, index.cols[i].len);
                 offset += index.cols[i].len;
             }
-            ih->insert_entry(key, rid_, context_->txn_);
+            ihs[id]->insert_entry(key, rid_, context_->txn_);
             delete[] key;
         }
 

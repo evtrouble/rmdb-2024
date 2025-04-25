@@ -96,6 +96,4 @@ private:
     std::shared_ptr<std::unordered_set<int>> lock_set_;          // 事务申请的所有锁
     std::shared_ptr<std::deque<Page *>> index_latch_page_set_;   // 维护事务执行过程中加锁的索引页面
     std::shared_ptr<std::deque<Page *>> index_deleted_page_set_; // 维护事务执行过程中删除的索引页面
-
-    static std::vector<ColMeta> fields_; // 存储事务数据需要用到的字段元数据，所有表结构都需要带的
 };

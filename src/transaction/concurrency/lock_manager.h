@@ -96,6 +96,8 @@ class GapLock
 
         bool init(const std::vector<Condition> &conds, const TabMeta &tab)
         {
+            if(conds.empty())
+                return true;
             intervals.resize(tab.cols.size());
             for (auto &cond : conds)
             {
@@ -139,11 +141,14 @@ class GapLock
                     pos.init = true;
                 }
                 else if(!pos.intersect(interval)){
+                    intervals.clear();
                     return false;
                 }
             }
             return true;
         }
+
+        inline bool valid() const { return intervals.size(); }
 
         bool init(const std::vector<Value> &values)
         {
@@ -171,7 +176,7 @@ class LockManager {
         bool shared_gap_compatible(const GapLock &other) {
             if(mode == LockMode::EXLUCSIVE)
                 return false;
-            return std::all_of(shared_gaps.begin(), shared_gaps.end(), [&](GapLock &gaplock)
+            return std::all_of(exclusive_gaps.begin(), exclusive_gaps.end(), [&](GapLock &gaplock)
                                { return gaplock.compatible(other); });
         }
         bool exclusive_gap_compatible(const GapLock &other) {

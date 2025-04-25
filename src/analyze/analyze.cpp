@@ -389,10 +389,6 @@ void Analyze::get_clause(const std::vector<std::shared_ptr<ast::BinaryExpr>> &sv
 
             cond.subQuery = std::move(subQuery_);
         }
-        else
-        {
-            throw InternalError("Unexpected sv value type");
-        }
         conds.emplace_back(std::move(cond));
     }
 }

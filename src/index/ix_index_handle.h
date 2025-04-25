@@ -172,6 +172,8 @@ public:
     IxIndexHandle(DiskManager *disk_manager, BufferPoolManager *buffer_pool_manager, int fd);
     ~IxIndexHandle() { delete file_hdr_; }
 
+    inline int get_fd() { return fd_; }
+
     // for search
     bool get_value(const char *key, std::vector<Rid> *result, Transaction *transaction);
 

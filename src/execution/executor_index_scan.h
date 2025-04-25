@@ -33,9 +33,11 @@ private:
 
     Rid rid_;
     std::unique_ptr<RecScan> scan_;
+    GapLock gaplock_;
 
     SmManager *sm_manager_;
     bool effective = true;
+    bool first = true;
 
     // 获取指定列的值
     inline char *get_col_value(const RmRecord *rec, const ColMeta &col)
@@ -83,7 +85,7 @@ public:
                       const std::vector<Condition> &conds, const IndexMeta &index_meta,
                       Context *context)
         : AbstractExecutor(context), tab_name_(std::move(tab_name)), conds_(std::move(conds)),
-          index_meta_(std::move(index_meta)), sm_manager_(sm_manager)
+          index_meta_(std::move(index_meta)), sm_manager_(sm_manager), first(true)
     {
         tab_ = sm_manager_->db_.get_table(tab_name_);
         // index_no_ = index_no;
@@ -103,24 +105,7 @@ public:
                                              sm_manager_->get_ix_manager()->get_index_name(tab_name_, index_meta_.cols))
                             .get();
 
-        if (gap_conds_.empty())
-        {
-            context_->lock_mgr_->lock_shared_on_table(context_->txn_, fh_->GetFd());
-            lower_position_ = index_handle_->leaf_begin();
-            upper_position_ = index_handle_->leaf_end();
-        }
-        else
-        {
-            GapLock gaplock;
-            if ((effective = gaplock.init(gap_conds_, tab_)))
-            {
-                set_index_scan(gaplock);
-                context_->lock_mgr_->lock_shared_on_gap(context_->txn_, fh_->GetFd(), gaplock);
-            }
-        }
-
-        if (effective)
-            std::sort(conds_.begin(), conds_.end());
+        effective = gaplock_.init(gap_conds_, tab_);
 
 #ifdef DEBUG
         std::cout << lower_position_.page_no << ' ' << lower_position_.slot_no << "\n"
@@ -134,6 +119,13 @@ public:
         {
             rid_.page_no = RM_NO_PAGE; // 设置 rid_ 以指示结束
             return;
+        }
+        if(first)
+        {
+            first = false;
+            set_index_scan(gaplock_);
+            std::sort(conds_.begin(), conds_.end());
+            context_->lock_mgr_->lock_shared_on_gap(context_->txn_, fh_->GetFd(), gaplock_);
         }
         scan_ = std::make_unique<IxScan>(index_handle_, lower_position_, upper_position_, sm_manager_->get_bpm());
         find_next_valid_tuple();
@@ -161,6 +153,8 @@ public:
 
     Rid &rid() override { return rid_; }
 
+    inline GapLock &get_gaplock() { return gaplock_; }
+
     const std::vector<ColMeta> &cols() const override
     {
         return tab_.cols;
@@ -186,6 +180,12 @@ private:
 
     void set_index_scan(GapLock &gaplock)
     {
+        if(!gaplock.valid())
+        {
+            lower_position_ = index_handle_->leaf_begin();
+            upper_position_ = index_handle_->leaf_end();
+            return;
+        }
         char low_key[index_meta_.col_tot_len];
         char up_key[index_meta_.col_tot_len];
         std::memcpy(low_key, index_meta_.min_val.get(), index_meta_.col_tot_len);

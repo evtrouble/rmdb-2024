@@ -55,8 +55,14 @@ struct RmRecord
 
     RmRecord &operator=(const RmRecord &other)
     {
-        size = other.size;
-        data = new char[size];
+        if(size != other.size)
+        {
+            size = other.size;
+            if(data != nullptr)
+                delete[] data;
+            data = new char[size];
+        }
+        
         memcpy(data, other.data, size);
         allocated_ = true;
         return *this;

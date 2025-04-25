@@ -89,12 +89,17 @@ public:
             auto x = std::static_pointer_cast<DMLPlan>(plan);
             std::unique_ptr<AbstractExecutor> scan = convert_plan_executor(x->subplan_, context);
             std::vector<Rid> rids;
+            GapLock gaplock;
+            if(scan->type()==ExecutionType::IndexScan)
+                gaplock = static_cast<IndexScanExecutor &>(*scan).get_gaplock();
+            else if(scan->type()==ExecutionType::SeqScan)
+                gaplock = static_cast<SeqScanExecutor &>(*scan).get_gaplock();
             for (scan->beginTuple(); !scan->is_end(); scan->nextTuple())
             {
                 rids.emplace_back(scan->rid());
             }
             std::unique_ptr<AbstractExecutor> root = std::make_unique<UpdateExecutor>(sm_manager_,
-                                                                                      x->tab_name_, x->set_clauses_, rids, context);
+                                                                                      x->tab_name_, x->set_clauses_, rids, context, gaplock);
             return std::make_shared<PortalStmt>(PORTAL_DML_WITHOUT_SELECT, std::vector<TabCol>(), std::move(root), plan);
         }
         case T_Delete:
@@ -102,13 +107,18 @@ public:
             auto x = std::static_pointer_cast<DMLPlan>(plan);
             std::unique_ptr<AbstractExecutor> scan = convert_plan_executor(x->subplan_, context);
             std::vector<Rid> rids;
+            GapLock gaplock;
+            if(scan->type()==ExecutionType::IndexScan)
+                gaplock = static_cast<IndexScanExecutor &>(*scan).get_gaplock();
+            else if(scan->type()==ExecutionType::SeqScan)
+                gaplock = static_cast<SeqScanExecutor &>(*scan).get_gaplock();
             for (scan->beginTuple(); !scan->is_end(); scan->nextTuple())
             {
                 rids.emplace_back(scan->rid());
             }
 
             std::unique_ptr<AbstractExecutor> root =
-                std::make_unique<DeleteExecutor>(sm_manager_, x->tab_name_, rids, context);
+                std::make_unique<DeleteExecutor>(sm_manager_, x->tab_name_, rids, context, gaplock);
 
             return std::make_shared<PortalStmt>(PORTAL_DML_WITHOUT_SELECT, std::vector<TabCol>(), std::move(root), plan);
         }

@@ -28,9 +28,11 @@ private:
 
     Rid rid_;
     std::unique_ptr<RmScan> scan_; // table_iterator
+    GapLock gaplock_;
 
     SmManager *sm_manager_;
     bool effective = true;
+    bool first = true;
 
 private:
     // 获取指定列的值
@@ -176,7 +178,7 @@ private:
 public:
     SeqScanExecutor(SmManager *sm_manager, const std::string &tab_name, const std::vector<Condition> &conds,
                     Context *context) : AbstractExecutor(context), tab_name_(std::move(tab_name)),
-                                        conds_(std::move(conds)), sm_manager_(sm_manager)
+                                        conds_(std::move(conds)), sm_manager_(sm_manager), first(true)
     {
         // 检查文件句柄是否存在
         auto fh_iter = sm_manager_->fhs_.find(tab_name_);
@@ -198,16 +200,10 @@ public:
             }
         }
         // 初始化扫描表
-        if (gap_conds_.empty())
-            context_->lock_mgr_->lock_shared_on_table(context_->txn_, fh_->GetFd());
-        else
+        if ((effective = gaplock_.init(gap_conds_, tab_)))
         {
-            GapLock gaplock;
-            if ((effective = gaplock.init(gap_conds_, tab_)))
-                context_->lock_mgr_->lock_shared_on_gap(context_->txn_, fh_->GetFd(), gaplock);
-        }
-        if (effective)
             std::sort(conds_.begin(), conds_.end());
+        }  
     }
 
     void beginTuple() override
@@ -216,6 +212,11 @@ public:
         {
             rid_.page_no = RM_NO_PAGE; // 设置 rid_ 以指示结束
             return;
+        }
+        if(first)
+        {
+            first = false;
+            context_->lock_mgr_->lock_shared_on_gap(context_->txn_, fh_->GetFd(), gaplock_);
         }
         scan_ = std::make_unique<RmScan>(fh_);
         find_next_valid_tuple();
@@ -248,6 +249,8 @@ public:
     Rid &rid() override { return rid_; }
 
     ExecutionType type() const override { return ExecutionType::SeqScan; }
+
+    inline GapLock &get_gaplock() { return gaplock_; }
 
 private:
     void find_next_valid_tuple()
