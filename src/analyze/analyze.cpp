@@ -359,7 +359,10 @@ void Analyze::get_clause(const std::vector<std::shared_ptr<ast::BinaryExpr>> &sv
         Condition cond;
         cond.lhs_col = TabCol(expr->lhs->tab_name, expr->lhs->col_name, expr->lhs->agg_type);
         cond.op = convert_sv_comp_op(expr->op);
-        if (expr->rhs != nullptr && expr->rhs->Nodetype() == ast::TreeNodeType::Value)
+        if (expr->rhs != nullptr && (expr->rhs->Nodetype() == ast::TreeNodeType::IntLit ||
+                                    expr->rhs->Nodetype() == ast::TreeNodeType::FloatLit ||
+                                    expr->rhs->Nodetype() == ast::TreeNodeType::BoolLit ||
+                                    expr->rhs->Nodetype() == ast::TreeNodeType::StringLit))
         {
             auto rhs_val = std::static_pointer_cast<ast::Value>(expr->rhs);
             cond.is_rhs_val = true;
