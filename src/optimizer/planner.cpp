@@ -263,6 +263,29 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
         if (!conds.empty())
         {
             std::shared_ptr<Plan> left, right;
+            // 为按顺序输出，调整条件顺序
+            int left_cond_num = -1;
+            int right_cond_num = -1;
+            int tables_size = tables.size();
+            for (int i = 0; i < tables_size; ++i) {
+                if (left_cond_num == -1 && it->lhs_col.tab_name == tables[i]) {
+                    left_cond_num = i;
+                }
+                if (right_cond_num == -1 && it->rhs_col.tab_name == tables[i]) {
+                    right_cond_num = i;
+                }
+            }
+
+            // 条件左边的表在前面，要交换条件顺序
+            if (left_cond_num > right_cond_num) {
+                static const std::map<CompOp, CompOp> swap_op = {
+                    {OP_EQ, OP_EQ}, {OP_NE, OP_NE}, 
+                    {OP_LT, OP_GT}, {OP_GT, OP_LT}, 
+                    {OP_LE, OP_GE}, {OP_GE, OP_LE},
+                };
+                std::swap(it->lhs_col, it->rhs_col);
+                it->op = swap_op.at(it->op);
+            }
             left = pop_scan(scantbl, it->lhs_col.tab_name, joined_tables_set, table_scan_executors);
             right = pop_scan(scantbl, it->rhs_col.tab_name, joined_tables_set, table_scan_executors);
             std::vector<Condition> join_conds{std::move(*it)};
