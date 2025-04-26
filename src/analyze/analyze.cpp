@@ -360,9 +360,9 @@ void Analyze::get_clause(const std::vector<std::shared_ptr<ast::BinaryExpr>> &sv
         cond.lhs_col = TabCol(expr->lhs->tab_name, expr->lhs->col_name, expr->lhs->agg_type);
         cond.op = convert_sv_comp_op(expr->op);
         if (expr->rhs != nullptr && (expr->rhs->Nodetype() == ast::TreeNodeType::IntLit ||
-                                    expr->rhs->Nodetype() == ast::TreeNodeType::FloatLit ||
-                                    expr->rhs->Nodetype() == ast::TreeNodeType::BoolLit ||
-                                    expr->rhs->Nodetype() == ast::TreeNodeType::StringLit))
+                                     expr->rhs->Nodetype() == ast::TreeNodeType::FloatLit ||
+                                     expr->rhs->Nodetype() == ast::TreeNodeType::BoolLit ||
+                                     expr->rhs->Nodetype() == ast::TreeNodeType::StringLit))
         {
             auto rhs_val = std::static_pointer_cast<ast::Value>(expr->rhs);
             cond.is_rhs_val = true;
@@ -374,8 +374,14 @@ void Analyze::get_clause(const std::vector<std::shared_ptr<ast::BinaryExpr>> &sv
             cond.is_rhs_val = false;
             cond.rhs_col = TabCol(rhs_col->tab_name, rhs_col->col_name, expr->lhs->agg_type);
         }
-        else if (auto sub_query = std::dynamic_pointer_cast<ast::SubQueryExpr>(expr))
+        else if (expr->rhs == nullptr)
         {
+            auto sub_query = std::static_pointer_cast<ast::SubQueryExpr>(expr);
+            if (!sub_query)
+            {
+                throw RMDBError("Invalid expression with null right-hand side");
+            }
+
             auto subQuery_ = std::make_shared<SubQuery>();
             subQuery_->stmt = sub_query->subquery;
             cond.is_rhs_val = false;
