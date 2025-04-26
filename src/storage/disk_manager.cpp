@@ -16,6 +16,7 @@ See the Mulan PSL v2 for more details. */
 #include <unistd.h>    // for lseek
 
 #include "defs.h"
+#include "disk_manager.h"
 
 DiskManager::DiskManager() : fd2pageno_{0} {}
 
@@ -242,6 +243,32 @@ void DiskManager::write_log(char *log_data, int size) {
     lseek(log_fd_, 0, SEEK_END);
     ssize_t bytes_write = ::write(log_fd_, log_data, size);
     if (bytes_write != size) {
+        throw UnixError();
+    }
+}
+
+int DiskManager::read_checkpoint() {
+    if (checkpoint_fd_ == -1) {
+        checkpoint_fd_ = open_file(CHECKPOINT_FILE_NAME);
+    }
+    lseek(checkpoint_fd_, 0, SEEK_SET);
+    int pos;
+    ssize_t bytes_read = read(checkpoint_fd_, &pos, 4);
+    assert(bytes_read == 0 || bytes_read == 4);
+    if (bytes_read == 0) {
+        pos = 0;
+    }
+    return pos;
+}
+
+void DiskManager::write_checkpoint() {
+    if (checkpoint_fd_ == -1) {
+        checkpoint_fd_ = open_file(CHECKPOINT_FILE_NAME);
+    }
+    lseek(checkpoint_fd_, 0, SEEK_SET);
+    int file_size = get_file_size(LOG_FILE_NAME);
+    ssize_t bytes_write = write(checkpoint_fd_, &file_size, 4);
+    if (bytes_write != 4) {
         throw UnixError();
     }
 }

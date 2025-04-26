@@ -69,6 +69,10 @@ class DiskManager {
 
     void write_log(char *log_data, int size);
 
+    int read_checkpoint();
+
+    void write_checkpoint();
+
     void SetLogFd(int log_fd) { log_fd_ = log_fd; }
 
     int GetLogFd() { return log_fd_; }
@@ -95,5 +99,6 @@ class DiskManager {
     std::unordered_map<int, std::string> fd2path_;  //<Page fd,Page文件磁盘路径>哈希表
 
     int log_fd_ = -1;                             // WAL日志文件的文件句柄，默认为-1，代表未打开日志文件
+    int checkpoint_fd_ = -1;
     std::atomic<page_id_t> fd2pageno_[MAX_FD]{};  // 文件中已经分配的页面个数，初始值为0
 };
