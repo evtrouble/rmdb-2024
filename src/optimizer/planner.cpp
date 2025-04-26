@@ -379,10 +379,20 @@ std::shared_ptr<Plan> Planner::generate_sort_plan(std::shared_ptr<Query> query, 
 {
     auto x = std::static_pointer_cast<ast::SelectStmt>(query->parse);
     std::vector<std::string> &tables = query->tables;
-    if (!x->has_sort || tables.size() > 1)
+    if (!x->has_sort)
     {
         return plan;
     }
+    // 检查是否已经使用了 Sort-Merge Join
+    if (plan->tag == PlanTag::T_SortMerge) {
+        auto join_plan = std::static_pointer_cast<JoinPlan>(plan);
+        // 如果 ORDER BY 的列和 JOIN KEY 相同，则无需额外排序
+        if (x->order->cols->col_name == join_plan->conds_[0].lhs_col.col_name ||
+            x->order->cols->col_name == join_plan->conds_[0].rhs_col.col_name) {
+            return plan;  // 直接返回，不额外排序
+        }
+    }
+    // 否则，正常生成 SortPlan
     std::vector<ColMeta> all_cols;
     for (auto &sel_tab_name : tables)
     {
