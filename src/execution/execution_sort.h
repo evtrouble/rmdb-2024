@@ -22,6 +22,7 @@ private:
     bool is_desc_;
     std::string temp_dir_;                      // 临时文件目录
     size_t block_size_;                         // 每个块的大小（以字节为单位）
+    Context* context_;
     std::vector<std::string> sorted_blocks_;    // 已排序的块文件路径
     std::unique_ptr<RmRecord> current_tuple;
     std::vector<std::unique_ptr<RmRecord>> sorted_tuples_; // 用于内部排序的缓冲区
@@ -183,9 +184,9 @@ private:
 
 public:
     SortExecutor(std::unique_ptr<AbstractExecutor> prev, const TabCol &sel_cols, 
-    bool is_desc, size_t block_size = 55) 
-        : prev_(std::move(prev)), is_desc_(is_desc),block_size_(block_size) {
-        txn_id_t txn_id = prev_->context_->txn_->get_transaction_id();
+    bool is_desc, Context* context, size_t block_size = 55) 
+        : prev_(std::move(prev)), is_desc_(is_desc),block_size_(block_size), context_(context) {
+        txn_id_t txn_id = context_->txn_->get_transaction_id();
         temp_dir_ = "/tmp/rmdb_sort_" + std::to_string(txn_id);
         cols_ = *get_col(prev_->cols(), sel_cols);
         record_size = prev_->tupleLen();
