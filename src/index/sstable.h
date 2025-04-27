@@ -11,7 +11,7 @@
 #include "disk_manager.h"
 #include "ix_defs.h"
 #include "block.h"
-// #include "block_cache.h"
+#include "block_cache.h"
 #include "blockmeta.h"
 #include "bloom_filter.h"
 
@@ -60,6 +60,7 @@ private:
   DiskManager* disk_manager_;
   LsmFileHdr *file_hdr_;
   size_t file_size;
+  bool is_delete;
 
   inline int compare_key(const std::string &key1, const std::string &key2) {
     return ix_compare(key1.c_str(), key2.c_str(), file_hdr_->col_types_, file_hdr_->col_lens_);
@@ -71,10 +72,12 @@ public:
   SSTable() = default;
   ~SSTable()
   {
-    disk_manager->close_file(fd);
+    disk_manager_->close_file(fd);
+    if(is_delete)
+      disk_manager_->destroy_file(file_path_);
   }
   // 删除sst文件
-  void delete_file();
+  void mark_delete() { is_delete = true; }
   // 创建一个sst, 只包含首尾key的元数据
 
   // 根据索引读取block
@@ -84,7 +87,7 @@ public:
   int find_block_idx(const std::string &key);
 
   // 根据key返回迭代器
-  bool get(const std::string &key, Rid& value,);
+  bool get(const std::string &key, Rid& value);
 
   // 返回sst中block的数量
   size_t num_blocks() const;
@@ -129,7 +132,7 @@ public:
   void finish_block();
   // 构建sst, 将sst写入文件并返回SST描述类
   std::shared_ptr<SSTable> build(size_t sst_id, const std::string &path,
-                             std::shared_ptr<BlockCache> block_cache);
+                             std::shared_ptr<BlockCache> block_cache, std::shared_ptr<BloomFilter> bloom_filter);
 };
 
 class SstIterator : public BaseIterator {

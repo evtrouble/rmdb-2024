@@ -35,7 +35,7 @@ void DiskManager::write_page(int fd, page_id_t page_no, const char *offset, int 
         throw InternalError("DiskManager::write_page Error");
 }
 
-void DiskManager::write_page_bytes(int fd, int offset, const char *buf, int num_bytes)
+void DiskManager::write_page_bytes(int fd, int offset, const void *buf, int num_bytes)
 {
     // 1.lseek()定位到文件头，通过(fd,page_no)可以定位指定页面及其在磁盘文件中的偏移量
     // 2.调用write()函数
@@ -61,7 +61,7 @@ void DiskManager::read_page(int fd, page_id_t page_no, char *offset, int num_byt
         throw InternalError("DiskManager::read_page Error");
 }
 
-void DiskManager::read_page_bytes(int fd, int offset, char *buf, int num_bytes)
+void DiskManager::read_page_bytes(int fd, int offset, void *buf, int num_bytes)
 {
     // 1.lseek()定位到文件头，通过(fd,page_no)可以定位指定页面及其在磁盘文件中的偏移量
     // 2.调用read()函数
@@ -71,7 +71,7 @@ void DiskManager::read_page_bytes(int fd, int offset, char *buf, int num_bytes)
         throw InternalError("DiskManager::read_page Error");
 }
 
-void DiskManager::append_page_bytes(int fd, char *buf, int num_bytes)
+void DiskManager::append_page_bytes(int fd, void *buf, int num_bytes)
 {
     ::lseek(fd, 0, SEEK_END); // 定位到文件末尾
     if(::write(fd, buf, num_bytes) != num_bytes)

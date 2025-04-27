@@ -14,6 +14,7 @@ See the Mulan PSL v2 for more details. */
 
 #include "defs.h"
 #include "storage/buffer_pool_manager.h"
+#include "sstable.h"
 
 constexpr int IX_NO_PAGE = -1;
 constexpr int IX_FILE_HDR_PAGE = 0;
@@ -200,3 +201,71 @@ class LsmFileHdr {
 #define LSM_BLOCK_SIZE (32 * 1024)               // BLOCK的大小, 32KB
 
 #define LSM_SST_LEVEL_RATIO 4 // 不同层级的sst的大小比例
+
+struct FlushThread
+{
+    struct ToFlush
+    {
+        std::shared_ptr<SkipList> skiplist;
+        std::shared_ptr<LsmTree> lsm;
+        ToFlush(std::shared_ptr<SkipList> &skiplist, std::shared_ptr<LsmTree> &lsm)
+            : skiplist(std::move(skiplist)), lsm(std::move(lsm))
+        {}
+    };
+    std::queue<ToFlush> flush_queue_;
+    std::mutex queue_mutex_;
+    std::thread flush_thread_;
+    std::condition_variable flush_cond_;
+    std::atomic<bool> terminate_{false};
+
+    ~FlushThread(){
+        terminate_ = true;
+        flush_cond_.notify_all();
+        if (flush_thread_.joinable()) {
+            flush_thread_.join();
+        }
+    }
+
+    void add(std::shared_ptr<SkipList> &to_flush, std::shared_ptr<LsmTree> lsm)
+    {
+        std::lock_guard lock(queue_mutex_);
+        flush_queue_.emplace(to_flush, lsm);
+    }
+
+    void background_flush()
+    {
+        while (!terminate_.load()) {
+            std::vector<ToFlush> batch;
+            {
+                std::unique_lock lock(queue_mutex_);
+                flush_cond_.wait_for(lock, std::chrono::seconds(1),
+                    [this] { return !flush_queue_.empty() || terminate_; });
+
+                batch.reserve(flush_queue_.size());
+                while (!flush_queue_.empty())
+                {
+                    batch.emplace_back(std::move(flush_queue_.front()));
+                    flush_queue_.pop();
+                }
+            }
+    
+            if(batch.empty())continue;
+            for (auto& [table, lsm] : batch) {
+                size_t new_sst_id = lsm->next_sst_id++;
+
+                // 3. 准备 SSTBuilder
+                SSTBuilder builder(lsm->disk_manager_, lsm->file_hdr_, LSM_BLOCK_SIZE); // 4KB block size
+              
+                // 4. 将 memtable 中最旧的表写入 SST
+                auto sst_path = lsm->get_sst_path(new_sst_id, 0);
+                std::vector<std::pair<std::string, Rid>> flush_data = table->flush();
+                for (auto &[k, v] : flush_data) {
+                    builder.add(k, v);
+                }
+
+                auto sst = builder.build(new_sst_id, sst_path, lsm->block_cache, table->bloom_filter());
+                lsm->set_new_sst_id(new_sst_id, sst);
+            }
+        }
+    }
+};

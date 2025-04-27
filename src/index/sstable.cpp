@@ -11,20 +11,20 @@
 SSTable::SSTable(LsmFileHdr *file_hdr, DiskManager *disk_manager, size_t sst_id, const std::string &file_path,
     std::shared_ptr<BlockCache> block_cache)
     : file_path_(file_path), disk_manager_(disk_manager), sst_id(sst_id), 
-    block_cache(block_cache), file_hdr_(file_hdr), fd(-1){
+    block_cache(block_cache), file_hdr_(file_hdr), fd(-1), is_delete(false) {
     
-    file_size = disk_manager->get_file_size(file_path);
+    file_size = disk_manager_->get_file_size(file_path);
     // 读取文件末尾的元数据块
     if (file_size < tail_size) {
         throw std::runtime_error("Invalid SST file: too small");
     }
-    fd = disk_manager.open_file(file_path);
+    fd = disk_manager_->open_file(file_path);
 
     int offset = 0;
     // 0. 读取元数据块的偏移量, 最后8字节: 2个 uint32_t,
     // 分别是 meta 和 bloom 的 offset
-    vector<uint8_t> data(tail_size);
-    disk_manager.read_page_bytes(fd, file_size - tail_size, data.data(),
+    std::vector<uint8_t> data(tail_size);
+    disk_manager_->read_page_bytes(fd, file_size - tail_size, data.data(),
                                  tail_size);
     memcpy(&meta_block_offset, data.data() + offset, sizeof(uint32_t));
     offset += sizeof(uint32_t);
@@ -43,10 +43,10 @@ SSTable::SSTable(LsmFileHdr *file_hdr, DiskManager *disk_manager, size_t sst_id,
         // 表示存在布隆过滤器
         uint32_t bloom_size = file_size - tail_size - bloom_offset;
         data.resize(bloom_size);
-        disk_manager.read_page_bytes(fd, bloom_offset, data.data(), data);
+        disk_manager->read_page_bytes(fd, bloom_offset, data.data(), bloom_size);
 
         auto bloom = BloomFilter::decode(data);
-        sst->bloom_filter = std::make_shared<BloomFilter>(std::move(bloom));
+        bloom_filter = std::make_shared<BloomFilter>(std::move(bloom));
     }
 
     // 3. 读取并解码元数据块
@@ -60,12 +60,6 @@ SSTable::SSTable(LsmFileHdr *file_hdr, DiskManager *disk_manager, size_t sst_id,
         sst->first_key = sst->meta_entries.front().first_key;
         sst->last_key = sst->meta_entries.back().last_key;
     }
-}
-
-void SSTable::delete_file() 
-{ 
-    disk_manager->close_file(fd);
-    disk_manager->delete_file(file.get_path()); 
 }
 
 std::shared_ptr<Block> SSTable::read_block(size_t block_idx) {
@@ -94,8 +88,8 @@ std::shared_ptr<Block> SSTable::read_block(size_t block_idx) {
   }
 
   // 读取block数据
-  vector<uint8_t> data(block_size);
-  disk_manager.read_page_bytes(fd, meta.offset, data.data(), block_size);
+  std::vector<uint8_t> block_data(block_size);
+  disk_manager.read_page_bytes(fd, meta.offset, block_data.data(), block_size);
   auto block_res = Block::decode(block_data, true);
 
   // 更新缓存

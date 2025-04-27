@@ -2,35 +2,40 @@
 #include <algorithm>
 
 BaseIterator &SkipListIterator::operator++() {
-  if (current_) {
-      current_ = current_->next_[0];
-      cached_value.reset();
-  }
-  return *this;
+    if (current_) {
+        current_ = current_->next_[0];
+        cached_value.reset();
+    }
+    return *this;
 }
 
 bool SkipListIterator::operator==(const BaseIterator &other) const {
-  if (other.get_type() != IteratorType::SkipListIterator)
-    return false;
-  auto other2 = static_cast<const SkipListIterator &>(other);
-  return current_ == other2.current_;
+    if (other.get_type() != IteratorType::SkipListIterator)
+        return false;
+    auto other2 = static_cast<const SkipListIterator &>(other);
+    if(other2.current_ == nullptr && current_ == nullptr)
+        return true;
+    if((other2.current_ != nullptr && current_ == nullptr) || 
+        (current_ != nullptr && other2.current_ == nullptr))
+        return false;
+    return current_ == other2.current_;
 }
 
 bool SkipListIterator::operator!=(const BaseIterator &other) const {
-  return !(*this == other);
+    return !(*this == other);
 }
 
 SkipListIterator::T& SkipListIterator::operator*() const {
-  if (!current_)
-    throw std::runtime_error("Dereferencing invalid iterator");
-  if(!cached_value.has_value()) {
-    cached_value = std::make_pair(current_->key_, current_->value_);
-  }
-  return cached_value.value();
+    if (!current_)
+        throw std::runtime_error("Dereferencing invalid iterator");
+    if(!cached_value.has_value()) {
+        cached_value = std::make_pair(current_->key_, current_->value_);
+    }
+    return cached_value.value();
 }
 
 IteratorType SkipListIterator::get_type() const {
-  return IteratorType::SkipListIterator;
+    return IteratorType::SkipListIterator;
 }
 
 SkipListIterator::T *SkipListIterator::operator->() const
@@ -173,7 +178,7 @@ std::vector<std::pair<std::string, Rid>> SkipList::flush() {
     data.reserve(size_bytes / entry_size);
     while (node)
     {
-        data.emplace_back(std::move(node->key_), node->value_);
+        data.emplace_back(node->key_, node->value_);
         node = node->next_[0];
     }
     return data;

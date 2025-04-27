@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "defs.h"
-#include "storage/buffer_pool_manager.h"
+// #include "storage/buffer_pool_manager.h"
 #include "transaction/transaction.h"
 #include "memtable.h"
 #include "sstable.h"
@@ -17,6 +17,8 @@
 #include "transaction.h"
 // #include "two_merge_iterator.h"
 
+// 参考RocksDB的实现，至少拥有3个后台线程分别负责垃圾回收，Compaction，flush
+// 对于每个sst都需要维护引用计数，增加待删除队列，删除前需要检查引用计数是否为0
 
 class LSMEngine {
 public:
@@ -81,11 +83,16 @@ private:
                                                       size_t target_level);
 };
 
-class LsmTree
+class LsmTree : public std::enable_shared_from_this<LsmTree>
 {
-    LsmFileHdr* file_hdr_;
+    friend struct FlushThread;
+    
+    LsmFileHdr *file_hdr_;
     MemTable memtable;
     DiskManager* disk_manager_;
+    std::string data_dir;
+    size_t next_sst_id = 0;
+    std::shared_ptr<BlockCache> block_cache;
 
     LsmTree(LsmFileHdr* file_hdr) : file_hdr_(file_hdr), 
         memtable(file_hdr) {
@@ -116,13 +123,22 @@ class LsmTree
     void remove(const std::string &key, Transaction *transaction);
     void remove_batch(const std::vector<std::string> &keys, Transaction *transaction);
 
-    using LSMIterator = TwoMergeIterator;
-    LSMIterator begin(uint64_t tranc_id);
-    LSMIterator end();
-    std::optional<std::pair<TwoMergeIterator, TwoMergeIterator>>
-    lsm_iters_monotony_predicate(
-        uint64_t tranc_id, std::function<int(const std::string &)> predicate);
+    // using LSMIterator = TwoMergeIterator;
+    // LSMIterator begin(uint64_t tranc_id);
+    // LSMIterator end();
+    // std::optional<std::pair<TwoMergeIterator, TwoMergeIterator>>
+    // lsm_iters_monotony_predicate(
+    //     uint64_t tranc_id, std::function<int(const std::string &)> predicate);
     void clear();
     void flush();
     void flush_all();
+    std::string get_sst_path(size_t sst_id, size_t target_level) {
+        // sst的文件路径格式为: data_dir/sst_<sst_id>，sst_id格式化为32位数字
+        std::stringstream ss;
+        ss << data_dir << "/sst_" << std::setfill('0') << std::setw(32) << sst_id
+           << '.' << target_level;
+        return ss.str();
+    }
+
+    void set_new_sst_id(size_t new_sst_id, std::shared_ptr<SSTable>& new_sst);
 };

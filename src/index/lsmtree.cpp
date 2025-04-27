@@ -288,11 +288,15 @@ void LsmTree::flush()
   auto sst_path = get_sst_path(new_sst_id, 0);
   auto new_sst =
       memtable.flush_last(builder, sst_path, new_sst_id, block_cache);
+}
 
-  // 5. 更新内存索引
-  ssts[new_sst_id] = new_sst;
+void LSMTree::set_new_sst_id(size_t new_sst_id, std::shared_ptr<SSTable>& new_sst)
+{
+  std::unique_lock lock(ssts_mtx); // 写锁
+  // 更新内存索引
+  ssts[new_sst_id] = std::move(new_sst);
 
-  // 6. 更新 sst_ids
+  // 更新 sst_ids
   level_sst_ids[0].push_front(new_sst_id);
 }
 
