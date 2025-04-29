@@ -29,21 +29,42 @@ key和value的存储格式（长度固定）
 -------------------------------
 */
 
+class BlockIterator : public BaseIterator {
+  public:
+    // 构造函数
+    BlockIterator(const std::shared_ptr<Block>& b, size_t index);
+    BlockIterator(const std::shared_ptr<Block>& b, size_t index, 
+      const std::string &right_key, bool is_closed);
+    BlockIterator()
+        : block(nullptr), current_index(0) {} // end iterator
+  
+    // 迭代器操作
+    virtual BaseIterator &operator++() override;
+    virtual T& operator*() const override;
+    virtual T* operator->() const override;
+    virtual IteratorType get_type() const override;
+    virtual bool is_end() const override;
+    void set_high_key(const std::string &high_key, bool is_closed);
+
+  private:
+    std::shared_ptr<Block> block;                   // 指向所属的 Block
+    size_t current_index;                           // 当前位置的索引
+    size_t upper_id;
+    mutable std::optional<T> cached_value; // 缓存当前值
+};
+
+class LsmFileHdr;
+
 class Block : public std::enable_shared_from_this<Block> {
   friend class BlockIterator;
-  
-  private:
-    std::vector<uint8_t> data;
-    LsmFileHdr *file_hdr_;
-    uint16_t num_elements = 0; // 元素个数
-    size_t capacity;
-    size_t entry_size = 0; // 每个entry的大小
+  friend class SSTable;
 
-    struct Entry {
-      std::string key;
-      Rid value;
-    };
-    Entry get_entry_at(size_t offset) const;
+private:
+  std::vector<uint8_t> data;
+  LsmFileHdr *file_hdr_;
+  uint16_t num_elements = 0; // 元素个数
+  size_t capacity;
+  size_t entry_size = 0; // 每个entry的大小
     std::string get_key_at(size_t offset) const;
     Rid get_value_at(size_t offset) const;
     int compare_key_at(size_t offset, const std::string &target) const;
@@ -70,41 +91,9 @@ class Block : public std::enable_shared_from_this<Block> {
     inline size_t cur_size() const;
     inline bool is_empty() const;
     int get_idx_binary(const std::string &key);
-  
-    // 按照谓词返回迭代器, 左闭右开
-    // std::optional<
-    //     std::pair<std::shared_ptr<BlockIterator>, std::shared_ptr<BlockIterator>>>
-    // get_monotony_predicate_iters(uint64_t tranc_id,
-    //                              std::function<int(const std::string &)> func);
-  
-    BlockIterator begin();
-  
-    // std::optional<
-    //     std::pair<std::shared_ptr<BlockIterator>, std::shared_ptr<BlockIterator>>>
-    // iters_preffix(uint64_t tranc_id,const std::string &preffix);
-  
-    BlockIterator end();
-  };
-
-class BlockIterator : public BaseIterator {
-  public:
-    // 构造函数
-    BlockIterator(std::shared_ptr<Block> b, size_t index);
-    BlockIterator(std::shared_ptr<Block> b, const std::string &key);
-    BlockIterator()
-        : block(nullptr), current_index(0) {} // end iterator
-  
-    // 迭代器操作
-    virtual BaseIterator &operator++() override;
-    virtual bool operator==(const BaseIterator &other) const override;
-    virtual bool operator!=(const BaseIterator &other) const override;
-    virtual T& operator*() const override;
-    virtual T* operator->() const override;
-    virtual IteratorType get_type() const override;
-    virtual bool is_end() const override;
-  
-  private:
-    std::shared_ptr<Block> block;                   // 指向所属的 Block
-    size_t current_index;                           // 当前位置的索引
-    mutable std::optional<T> cached_value; // 缓存当前值
+    int lower_bound(const std::string &key);
+    BlockIterator find(const std::string &key, bool is_closed);
+    BlockIterator find(const std::string &lower, bool is_lower_closed, 
+        const std::string &upper, bool is_upper_closed);
+    inline BlockIterator begin() { return BlockIterator(shared_from_this(), 0); }
 };

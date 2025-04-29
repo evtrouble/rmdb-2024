@@ -9,90 +9,64 @@
 #include <vector>
 
 #include "defs.h"
-// #include "storage/buffer_pool_manager.h"
+#include "storage/block_cache.h"
 #include "transaction/transaction.h"
 #include "memtable.h"
 #include "sstable.h"
-// #include "compact.h"
 #include "transaction.h"
-// #include "two_merge_iterator.h"
 
 // 参考RocksDB的实现，至少拥有3个后台线程分别负责垃圾回收，Compaction，flush
 // 对于每个sst都需要维护引用计数，增加待删除队列，删除前需要检查引用计数是否为0
 
-class LSMEngine {
-public:
-  std::string data_dir;
-  MemTable memtable;
-  std::unordered_map<size_t, std::deque<size_t>> level_sst_ids;
-  std::unordered_map<size_t, std::shared_ptr<SST>> ssts;
-  std::shared_mutex ssts_mtx;
-  std::shared_ptr<BlockCache> block_cache;
-  size_t next_sst_id = 0;
-  size_t cur_max_level = 0;
+class LevelIterator : public BaseIterator
+{
+  friend class SSTable;
 
-public:
-  LSMEngine(std::string path);
-  ~LSMEngine();
-
-  std::optional<std::pair<std::string, uint64_t>> get(const std::string &key,
-                                                      uint64_t tranc_id);
-  std::vector<
-      std::pair<std::string, std::optional<std::pair<std::string, uint64_t>>>>
-  get_batch(const std::vector<std::string> &keys, uint64_t tranc_id);
-
-  std::optional<std::pair<std::string, uint64_t>>
-  sst_get_(const std::string &key, uint64_t tranc_id);
-
-  // 如果触发了刷盘, 返回当前刷入sst的最大事务id
-  uint64_t put(const std::string &key, const std::string &value,
-               uint64_t tranc_id);
-
-  uint64_t
-  put_batch(const std::vector<std::pair<std::string, std::string>> &kvs,
-            uint64_t tranc_id);
-
-  uint64_t remove(const std::string &key, uint64_t tranc_id);
-  uint64_t remove_batch(const std::vector<std::string> &keys,
-                        uint64_t tranc_id);
-  void clear();
-  uint64_t flush();
-
-  std::string get_sst_path(size_t sst_id, size_t target_level);
-
-  std::optional<std::pair<TwoMergeIterator, TwoMergeIterator>>
-  lsm_iters_monotony_predicate(
-      uint64_t tranc_id, std::function<int(const std::string &)> predicate);
-
-  TwoMergeIterator begin(uint64_t tranc_id);
-  TwoMergeIterator end();
-
-  static size_t get_sst_size(size_t level);
-
-private:
-  void full_compact(size_t src_level);
-  std::vector<std::shared_ptr<SST>>
-  full_l0_l1_compact(std::vector<size_t> &l0_ids, std::vector<size_t> &l1_ids);
-
-  std::vector<std::shared_ptr<SST>>
-  full_common_compact(std::vector<size_t> &lx_ids, std::vector<size_t> &ly_ids,
-                      size_t level_y);
-
-  std::vector<std::shared_ptr<SST>> gen_sst_from_iter(BaseIterator &iter,
-                                                      size_t target_sst_size,
-                                                      size_t target_level);
+  private:
+    std::shared_ptr<SSTable> m_sst;
+    size_t m_block_idx;
+    std::shared_ptr<BlockIterator> m_block_it;
+    size_t upper_block_idx;
+    std::string right_key;
+    bool is_closed;
+  
+  public:
+  LevelIterator(const std::vector<std::shared_ptr<SSTable>> &ssts, 
+      const std::string &lower, bool is_lower_closed, 
+      const std::string &upper, bool is_upper_closed);
+    // 创建迭代器, 并移动到第指定key
+    LevelIterator(const std::shared_ptr<SSTable> &sst, const std::string& key, bool is_closed);
+    LevelIterator(const std::vector<std::shared_ptr<SSTable>>) : m_sst(std::move(sst)), m_block_idx(0)
+    {
+      upper_block_idx = m_sst->num_blocks();
+      if (m_block_idx < upper_block_idx)
+      {
+        auto next_block = m_sst->read_block(m_block_idx);
+        (*m_block_it) = next_block->begin();
+      }
+    }
+  
+    void seek(const std::string &key, bool is_closed);
+    void set_upper_id(const std::string &key, bool is_closed);
+  
+    virtual BaseIterator &operator++() override;
+    virtual T& operator*() const override;
+    virtual T* operator->() const override;
+    virtual IteratorType get_type() const override;
+    virtual bool is_end() const override;
 };
 
 class LsmTree : public std::enable_shared_from_this<LsmTree>
 {
     friend struct FlushThread;
-    
+    friend struct CompactionThread;
+
     LsmFileHdr *file_hdr_;
     MemTable memtable;
     DiskManager* disk_manager_;
     std::string data_dir;
     size_t next_sst_id = 0;
-    std::shared_ptr<BlockCache> block_cache;
+    static std::shared_ptr<BlockCache> block_cache;
 
     LsmTree(LsmFileHdr* file_hdr) : file_hdr_(file_hdr), 
         memtable(file_hdr) {
@@ -139,6 +113,26 @@ class LsmTree : public std::enable_shared_from_this<LsmTree>
            << '.' << target_level;
         return ss.str();
     }
+
+  //   std::string get_sst_path(size_t sst_id, size_t target_level);
+
+  //   TwoMergeIterator begin(uint64_t tranc_id);
+  //   TwoMergeIterator end();
+  
+  //   static size_t get_sst_size(size_t level);
+  
+  // private:
+  //   void full_compact(size_t src_level);
+  //   std::vector<std::shared_ptr<SSTable>>
+  //   full_l0_l1_compact(std::vector<size_t> &l0_ids, std::vector<size_t> &l1_ids);
+  
+  //   std::vector<std::shared_ptr<SSTable>>
+  //   full_common_compact(std::vector<size_t> &lx_ids, std::vector<size_t> &ly_ids,
+  //                       size_t level_y);
+  
+  //   std::vector<std::shared_ptr<SSTable>> gen_sst_from_iter(BaseIterator &iter,
+  //                                                       size_t target_sst_size,
+  //                                                       size_t target_level);
 
     void set_new_sst_id(size_t new_sst_id, std::shared_ptr<SSTable>& new_sst);
 };

@@ -4,5 +4,7 @@ set(SOURCES
         ../replacer/replacer.h 
         ../replacer/lru_replacer.cpp 
         ../replacer/clock_replacer.cpp 
+        blockmeta.cpp
+        bloom_filter.cpp
 )
 add_library(storage STATIC ${SOURCES})

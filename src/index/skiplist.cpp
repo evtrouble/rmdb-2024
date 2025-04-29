@@ -9,22 +9,6 @@ BaseIterator &SkipListIterator::operator++() {
     return *this;
 }
 
-bool SkipListIterator::operator==(const BaseIterator &other) const {
-    if (other.get_type() != IteratorType::SkipListIterator)
-        return false;
-    auto other2 = static_cast<const SkipListIterator &>(other);
-    if(other2.current_ == nullptr && current_ == nullptr)
-        return true;
-    if((other2.current_ != nullptr && current_ == nullptr) || 
-        (current_ != nullptr && other2.current_ == nullptr))
-        return false;
-    return current_ == other2.current_;
-}
-
-bool SkipListIterator::operator!=(const BaseIterator &other) const {
-    return !(*this == other);
-}
-
 SkipListIterator::T& SkipListIterator::operator*() const {
     if (!current_)
         throw std::runtime_error("Dereferencing invalid iterator");
@@ -40,10 +24,18 @@ IteratorType SkipListIterator::get_type() const {
 
 SkipListIterator::T *SkipListIterator::operator->() const
 {
-	return &this->operator*();//通过调用operator*来实现operator->
+	return &operator*();//通过调用operator*来实现operator->
 }
 
-bool SkipListIterator::is_end() const { return current_ == nullptr; }
+bool SkipListIterator::is_end() const 
+{ 
+    if(current_ == nullptr)
+        return true;
+    if(right_key.empty())
+        return false;
+    int cmp = lock_->compare_key(current_->key_, right_key);
+    return (is_closed && cmp > 0) || (!is_closed && cmp >= 0);
+}
 
 SkipList::SkipList(LsmFileHdr *file_hdr, int max_height, size_t expected_num_items)
     : max_height_(max_height),
@@ -145,28 +137,19 @@ void SkipList::remove(const std::string& key) {
     put(key, Rid());  // 使用空值标记删除
 }
 
-SkipListIterator SkipList::find(const std::string& key) const {
+SkipListIterator SkipList::find(const std::string& key, bool is_closed) {
     auto node = FindGreaterOrEqual(key, nullptr);
-    return SkipListIterator(node);
+    if(!is_closed && node != nullptr && compare_key(node->key_, key) == 0)
+        node = node->next_[0];
+    return SkipListIterator(node, shared_from_this());
 }
 
-// 找到前缀的起始位置
-// 返回第一个前缀匹配或者大于前缀的迭代器
-SkipListIterator SkipList::lower_bound(const std::string &key)
-{
-    auto node = FindGreaterOrEqual(key, nullptr);
-    return SkipListIterator(node);
-}
-  
-  // 找到前缀的终结位置
-SkipListIterator SkipList::upper_bound(const std::string &key) 
-{
-    auto node = FindGreaterOrEqual(key, nullptr);
-    
-    while (node && compare_key(node->key_, key) == 0) {
+SkipListIterator SkipList::find(const std::string &lower, bool is_lower_closed, 
+    const std::string &upper, bool is_upper_closed) {
+    auto node = FindGreaterOrEqual(lower, nullptr);
+    if(!is_lower_closed && node != nullptr && compare_key(node->key_, lower) == 0)
         node = node->next_[0];
-    }
-    return SkipListIterator(node);
+    return SkipListIterator(node, shared_from_this(), upper, is_upper_closed);
 }
 
 // 刷盘时可以直接遍历最底层链表

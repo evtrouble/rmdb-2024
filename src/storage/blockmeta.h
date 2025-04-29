@@ -5,8 +5,6 @@
 #include <string>
 #include <vector>
 
-#include "lsmtree.h"
-
 /**
  * SST文件的结构, 参考自 https://skyzh.github.io/mini-lsm/week1-04-sst.html
  * -------------------------------------------------------------------------------------------

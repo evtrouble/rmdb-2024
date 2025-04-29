@@ -8,14 +8,12 @@
 #include <vector>
 #include <optional>
 
-#include "disk_manager.h"
+#include "storage/disk_manager.h"
 #include "ix_defs.h"
 #include "block.h"
 #include "block_cache.h"
-#include "blockmeta.h"
-#include "bloom_filter.h"
-
-class SstIterator;
+#include "storage/blockmeta.h"
+#include "storage/bloom_filter.h"
 
 /**
  * SST文件的结构
@@ -38,13 +36,46 @@ class SstIterator;
  数组的哈希值(只包括数组部分, 不包括 num_entries ), 用于校验 metadata 的完整性
  */
 
+class SstIterator : public BaseIterator {
+  friend class SSTable;
+
+private:
+  std::shared_ptr<SSTable> m_sst;
+  size_t m_block_idx;
+  std::shared_ptr<BlockIterator> m_block_it;
+  size_t upper_block_idx;
+  std::string right_key;
+  bool is_closed;
+
+public:
+  SstIterator(const std::shared_ptr<SSTable> &sst, 
+    const std::string &lower, bool is_lower_closed, 
+    const std::string &upper, bool is_upper_closed);
+  // 创建迭代器, 并移动到第指定key
+  SstIterator(const std::shared_ptr<SSTable> &sst, const std::string& key, bool is_closed);
+  SstIterator(const std::shared_ptr<SSTable> &sst) : m_sst(std::move(sst)), m_block_idx(0)
+  {
+    upper_block_idx = m_sst->num_blocks();
+    if (m_block_idx < upper_block_idx)
+    {
+      auto next_block = m_sst->read_block(m_block_idx);
+      (*m_block_it) = next_block->begin();
+    }
+  }
+
+  void seek(const std::string &key, bool is_closed);
+  void set_upper_id(const std::string &key, bool is_closed);
+
+  virtual BaseIterator &operator++() override;
+  virtual T& operator*() const override;
+  virtual T* operator->() const override;
+  virtual IteratorType get_type() const override;
+  virtual bool is_end() const override;
+};
+
 class SSTable : public std::enable_shared_from_this<SSTable> {
   friend class SSTBuilder;
   static constexpr size_t tail_size = sizeof(uint32_t) * 2;
-  // friend std::optional<std::pair<SstIterator, SstIterator>>
-  // sst_iters_monotony_predicate(
-  //     std::shared_ptr<SST> sst, uint64_t tranc_id,
-  //     std::function<int(const std::string &)> predicate);
 
 private:
   std::string file_path_;
@@ -86,11 +117,13 @@ public:
   // 找到key所在的block的idx
   int find_block_idx(const std::string &key);
 
+  int lower_bound(const std::string &key, bool is_closed);
+
   // 根据key返回迭代器
   bool get(const std::string &key, Rid& value);
 
   // 返回sst中block的数量
-  size_t num_blocks() const;
+  inline size_t num_blocks() const;
 
   // 返回sst的首key
   inline std::string get_first_key() const;
@@ -104,11 +137,11 @@ public:
   // 返回sst的id
   inline size_t get_sst_id() const;
 
-  // std::optional<std::pair<SstIterator, SstIterator>>
-  // iters_monotony_predicate(std::function<bool(const std::string &)> predicate);
+  inline SstIterator find(const std::string& key, bool is_closed);
+  inline SstIterator find(const std::string &lower, bool is_lower_closed, 
+      const std::string &upper, bool is_upper_closed);
 
-  SstIterator begin();
-  SstIterator end();
+  SstIterator SSTable::begin();
 };
 
 class SSTBuilder {
@@ -132,42 +165,5 @@ public:
   void finish_block();
   // 构建sst, 将sst写入文件并返回SST描述类
   std::shared_ptr<SSTable> build(size_t sst_id, const std::string &path,
-                             std::shared_ptr<BlockCache> block_cache, std::shared_ptr<BloomFilter> bloom_filter);
-};
-
-class SstIterator : public BaseIterator {
-  // friend std::optional<std::pair<SstIterator, SstIterator>>
-  // sst_iters_monotony_predicate(
-  //     std::shared_ptr<SST> sst, uint64_t tranc_id,
-  //     std::function<int(const std::string &)> predicate);
-
-  friend class SSTable;
-
-private:
-  std::shared_ptr<SSTable> m_sst;
-  size_t m_block_idx;
-  std::shared_ptr<BlockIterator> m_block_it;
-
-public:
-  // 创建迭代器, 并移动到第一个key
-  SstIterator(std::shared_ptr<SSTable> sst);
-  // 创建迭代器, 并移动到第指定key
-  SstIterator(std::shared_ptr<SSTable> sst, const std::string &key);
-
-  // 创建迭代器, 并移动到第指定前缀的首端或者尾端
-  // static std::optional<std::pair<SstIterator, SstIterator>>
-  // iters_monotony_predicate(std::shared_ptr<SST> sst, uint64_t tranc_id,
-  //                          std::function<bool(const std::string &)> predicate);
-
-  void seek(const std::string &key);
-
-  virtual BaseIterator &operator++() override;
-  virtual bool operator==(const BaseIterator &other) const override;
-  virtual bool operator!=(const BaseIterator &other) const override;
-  virtual T& operator*() const override;
-  virtual IteratorType get_type() const override;
-  virtual bool is_end() const override;
-
-  // static std::pair<HeapIterator, HeapIterator>
-  // merge_sst_iterator(std::vector<SstIterator> iter_vec, uint64_t tranc_id);
+    const std::shared_ptr<BlockCache> &block_cache, std::shared_ptr<BloomFilter> bloom_filter);
 };

@@ -1,5 +1,6 @@
 #include "blockmeta.h"
 #include <cstring>
+#include <stdexcept>
 
 BlockMeta::BlockMeta() : offset(0), first_key(""), last_key("") {}
 

@@ -6,7 +6,7 @@
 #include <optional>
 
 #include "transaction.h"
-#include "bloom_filter.h"
+#include "storage/bloom_filter.h"
 #include "comparator.h"
 #include "ix_defs.h"
 #include "iterator.h"
@@ -20,36 +20,26 @@ struct SkipListNode {
         : key_(std::move(key)), 
           value_(value), 
           next_(height, nullptr) {}
-
-    bool operator==(const SkipListNode &other) const {
-        return key_ == other.key_ && value_ == other.value_;
-    }
-    
-    bool operator!=(const SkipListNode &other) const { return !(*this == other); }
-    
-    bool operator<(const SkipListNode &other) const {
-        return key_ < other.key_;
-    }
-    bool operator>(const SkipListNode &other) const {
-        return key_ > other.key_;
-    }
 };
 
 class SkipListIterator : public BaseIterator {
 public:
-    explicit SkipListIterator(std::shared_ptr<SkipListNode> node) 
-        : current_(node) {}
+    SkipListIterator(const std::shared_ptr<SkipListNode>& node, const std::shared_ptr<SkipList>& skiplist) 
+        : current_(node), lock_(std::move(skiplist)) {}
+    SkipListIterator(const std::shared_ptr<SkipListNode>& node, 
+        const std::shared_ptr<SkipList>& skiplist, const std::string& upper, bool is_closed) 
+        : current_(node), right_key(upper), is_closed(is_closed), lock_(std::move(skiplist)) {}
     SkipListIterator() : current_(nullptr) {}
     virtual BaseIterator &operator++() override;
-    virtual bool operator==(const BaseIterator &other) const override;
-    virtual bool operator!=(const BaseIterator &other) const override;
     virtual T& operator*() const override;
     virtual T* operator->() const override;
     virtual IteratorType get_type() const override;
     virtual bool is_end() const override;
-    
 private:
     std::shared_ptr<SkipListNode> current_;
+    std::string right_key;// 右键
+    bool is_closed;
+    std::shared_ptr<SkipList> lock_;       // 引用计数
     mutable std::optional<T> cached_value; // 缓存当前值
 };
 
@@ -58,7 +48,10 @@ private:
 // 任何大于当前时间戳的操作都不会影响当前操作需要访问的节点，任何小于当前时间戳的操作都已提交
 // 故不需要储存时间戳来区分版本数据
 // 当前上层读取和写入时都锁住了整个跳表，TODO:需要采用无锁实现
-class SkipList {
+class SkipList : public std::enable_shared_from_this<SkipList>
+{
+    friend class SkipListIterator;
+
 public:
     static constexpr int kMaxHeight = 12;
     
@@ -68,11 +61,11 @@ public:
     bool get(const std::string& key, Rid& value) const;
     void remove(const std::string& key);
     
-    SkipListIterator find(const std::string& key) const;
+    SkipListIterator find(const std::string& key, bool is_closed);
+    SkipListIterator find(const std::string &lower, bool is_lower_closed, 
+        const std::string &upper, bool is_upper_closed);
     size_t SkipList::get_size() { return size_bytes; }
     std::vector<std::pair<std::string, Rid>> flush();
-    SkipListIterator lower_bound(const std::string &key);
-    SkipListIterator upper_bound(const std::string &key);
 
     std::shared_ptr<BloomFilter> bloom_filter() const {
         return bloom_filter_;

@@ -180,76 +180,23 @@ int Block::get_idx_binary(const std::string &key)
   return -1;
 }
 
-// 返回第一个满足谓词的位置和最后一个满足谓词的位置
-// 如果不存在, 范围nullptr
-// 谓词作用于key, 且保证满足谓词的结果只在一段连续的区间内, 例如前缀匹配的谓词
-// 返回的区间是闭区间, 开区间需要手动对返回值自增
-// predicate返回值:
-//   0: 满足谓词
-//   >0: 不满足谓词, 需要向右移动
-//   <0: 不满足谓词, 需要向左移动
-// std::optional<
-//     std::pair<std::shared_ptr<BlockIterator>, std::shared_ptr<BlockIterator>>>
-// Block::get_monotony_predicate_iters(
-//     uint64_t tranc_id, std::function<int(const std::string &)> predicate) {
-//   if (offsets.empty()) {
-//     return std::nullopt;
-//   }
+int Block::lower_bound(const std::string &key) 
+{
+  int left = 0;
+  int right = num_elements - 1;
 
-//   // 第一次二分查找，找到第一个满足谓词的位置
-//   int left = 0;
-//   int right = offsets.size() - 1;
-//   int first = -1;
-
-//   while (left <= right) {
-//     int mid = left + (right - left) / 2;
-//     size_t mid_offset = offsets[mid];
-//     auto mid_key = get_key_at(mid_offset);
-//     int direction = predicate(mid_key);
-//     if (direction <= 0) { // 目标在 mid 左侧
-//       right = mid - 1;
-//     } else // 目标在mid右侧
-//       left = mid + 1;
-//   }
-
-//   if (left == -1) {
-//     return std::nullopt; // 没有找到满足谓词的元素
-//   }
-
-//   first = left; // 保留下找到的第一个的位置
-
-//   // 第二次二分查找，找到最后一个满足谓词的位置
-//   int last = -1;
-//   right = offsets.size() - 1;
-//   while (left <= right) {
-//     int mid = left + (right - left) / 2;
-//     size_t mid_offset = offsets[mid];
-//     auto mid_key = get_key_at(mid_offset);
-//     int direction = predicate(mid_key);
-//     if (direction < 0) {
-//       right = mid - 1;
-//     } else
-//       left = mid + 1;
-//   }
-//   last = left - 1;
-//   // 最后进行组合
-//   auto it_begin =
-//       std::make_shared<BlockIterator>(shared_from_this(), first, tranc_id);
-//   auto it_end =
-//       std::make_shared<BlockIterator>(shared_from_this(), last + 1, tranc_id);
-
-//   return std::make_optional<std::pair<std::shared_ptr<BlockIterator>,
-//                                       std::shared_ptr<BlockIterator>>>(it_begin,
-//                                                                        it_end);
-// }
-
-// Block::Entry Block::get_entry_at(size_t offset) const {
-//   Entry entry;
-//   entry.key = get_key_at(offset);
-//   entry.value = get_value_at(offset);
-//   entry.tranc_id = get_tranc_id_at(offset);
-//   return entry;
-// }
+  while (left <= right) {
+    int mid = left + (right - left) / 2;
+    size_t mid_offset = get_offset_at(mid);
+    auto mid_key = get_key_at(mid_offset);
+    int direction = compare_key(key, mid_key);
+    if (direction <= 0) { // 目标在 mid 左侧
+      right = mid - 1;
+    } else // 目标在mid右侧
+      left = mid + 1;
+  }
+  return left;
+}
 
 size_t Block::size() const { return num_elements; }
 
@@ -259,36 +206,45 @@ size_t Block::cur_size() const {
 
 bool Block::is_empty() const { return num_elements == 0; }
 
-BlockIterator Block::begin() {
-  return BlockIterator(shared_from_this(), 0);
+BlockIterator Block::find(const std::string& key, bool is_closed)
+{
+  int id = lower_bound(key);
+  if(!is_closed && id < num_elements && 
+    compare_key(key, get_key_at(get_offset_at(id))) == 0)
+    id++;
+  return BlockIterator(shared_from_this(), id);
 }
 
-// std::optional<
-//     std::pair<std::shared_ptr<BlockIterator>, std::shared_ptr<BlockIterator>>>
-// Block::iters_preffix(uint64_t tranc_id, const std::string &preffix) {
-//   auto func = [&preffix](const std::string &key) {
-//     return -key.compare(0, preffix.size(), preffix);
-//   };
-//   return get_monotony_predicate_iters(tranc_id, func);
-// }
-
-BlockIterator Block::end() {
-  return BlockIterator(shared_from_this(), num_elements);
+BlockIterator Block::find(const std::string &lower, bool is_lower_closed, 
+    const std::string &upper, bool is_upper_closed)
+{
+  int lower_id = lower_bound(lower);
+  if(!is_lower_closed && lower_id < num_elements && 
+    compare_key(lower, get_key_at(get_offset_at(lower_id))) == 0)
+    lower_id++;
+  
+  return BlockIterator(shared_from_this(), lower_id, upper, is_upper_closed);
 }
 
-BlockIterator::BlockIterator(std::shared_ptr<Block> b, size_t index)
-  : block(b), current_index(index){}
+BlockIterator::BlockIterator(const std::shared_ptr<Block>& b, size_t index)
+  : block(std::move(b)), current_index(index) {
+  upper_id = block->num_elements;
+}
 
-BlockIterator::BlockIterator(std::shared_ptr<Block> b, const std::string &key)
-: block(b), cached_value(std::nullopt) {
-  auto key_idx = block->get_idx_binary(key);
-  if (key_idx == -1 || key_idx >= block->num_elements) {
-    current_index = block->num_elements;
-  }
-  else
-  {
-    current_index = key_idx;
-  }
+BlockIterator::BlockIterator(const std::shared_ptr<Block>& b, size_t index, 
+  const std::string &right_key, bool is_closed) 
+  : block(std::move(b)), current_index(index)
+{
+  upper_id = block->lower_bound(right_key);
+  set_high_key(right_key, is_closed);
+}
+
+void BlockIterator::set_high_key(const std::string &high_key, bool is_closed)
+{
+  upper_id = block->lower_bound(high_key);
+  if(is_closed && upper_id < block->num_elements && 
+    block->compare_key(high_key, block->get_key_at(block->get_offset_at(upper_id))) == 0)
+    upper_id++;
 }
 
 BaseIterator& BlockIterator::operator++()
@@ -298,26 +254,6 @@ BaseIterator& BlockIterator::operator++()
     cached_value.reset(); // 清除缓存
   }
   return *this;
-}
-
-bool BlockIterator::operator==(const BaseIterator &other) const
-{
-  if (other.get_type() != IteratorType::BlockIterator)
-    return false;
-  auto other2 = static_cast<const BlockIterator &>(other);
-  if (block == nullptr && other2.block == nullptr) {
-    return true;
-  }
-  if (block == nullptr || other2.block == nullptr) {
-    return false;
-  }
-  auto cmp = block == other2.block && current_index == other2.current_index;
-  return cmp;
-}
-
-bool BlockIterator::operator!=(const BaseIterator &other) const
-{
-  return !(*this == other);
 }
 
 BlockIterator::T& BlockIterator::operator*() const
@@ -337,7 +273,7 @@ BlockIterator::T& BlockIterator::operator*() const
 
 BlockIterator::T* BlockIterator::operator->() const
 {
-	return &this->operator*();//通过调用operator*来实现operator->
+	return &operator*();//通过调用operator*来实现operator->
 }
 
 IteratorType BlockIterator::get_type() const
@@ -345,4 +281,7 @@ IteratorType BlockIterator::get_type() const
   return IteratorType::BlockIterator;
 }
 
-bool BlockIterator::is_end() const { return current_index == block->num_elements; }
+bool BlockIterator::is_end() const 
+{ 
+  return current_index >= upper_id; 
+}
