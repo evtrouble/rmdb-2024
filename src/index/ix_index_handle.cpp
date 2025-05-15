@@ -794,8 +794,13 @@ void IxIndexHandle::release_all_xlock(std::shared_ptr<std::deque<Page*>> page_se
     {
         auto node = page_set->front();
         page_set->pop_front();
-        node->latch_.unlock();
-        buffer_pool_manager_->unpin_page(node->get_page_id(), dirty);
+        if(node == nullptr)
+        {
+            root_lacth_.unlock();
+        } else {
+            node->latch_.unlock();
+            buffer_pool_manager_->unpin_page(node->get_page_id(), dirty);
+        }
     }
 }
 
