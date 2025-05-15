@@ -235,7 +235,7 @@ IxNodeHandle IxIndexHandle::find_leaf_page(const char *key, Operation operation,
     Transaction *transaction, bool find_first) {
     if(operation != Operation::FIND)
         assert(transaction != nullptr);
-        // 1. 获取根节点
+    // 1. 获取根节点
     if(!find_first) {
         root_lacth_.lock();
         transaction->append_index_latch_page_set(nullptr);
@@ -247,7 +247,6 @@ IxNodeHandle IxIndexHandle::find_leaf_page(const char *key, Operation operation,
     while (true)
     {
         auto node = fetch_node(next_page_id);
-        
         if(find_first){
             if(node.is_leaf_page() && operation != Operation::FIND) {
                 node.page->latch_.lock();

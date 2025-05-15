@@ -63,8 +63,12 @@ Page* BufferPoolManager::fetch_page(PageId page_id) {
     // 更新元数据
     auto& old_bucket = get_bucket(old_page.id_);
     {
-        std::unique_lock lock(old_bucket.latch);
-        old_bucket.page_table.erase(old_page.id_);
+        if(&old_bucket != &bucket)
+        {
+            std::unique_lock lock(old_bucket.latch);
+            old_bucket.page_table.erase(old_page.id_);
+        }
+        else old_bucket.page_table.erase(old_page.id_);
     }
     update_page(&old_page, page_id, frame_id);
 

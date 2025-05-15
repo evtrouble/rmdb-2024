@@ -106,11 +106,6 @@ public:
                             .get();
 
         effective = gaplock_.init(gap_conds_, tab_);
-
-#ifdef DEBUG
-        std::cout << lower_position_.page_no << ' ' << lower_position_.slot_no << "\n"
-                  << upper_position_.page_no << ' ' << upper_position_.slot_no << "\n";
-#endif
     }
 
     void beginTuple() override
@@ -123,9 +118,15 @@ public:
         if(first)
         {
             first = false;
-            set_index_scan(gaplock_);
-            std::sort(conds_.begin(), conds_.end());
+            GapLock gaplock(gaplock_);
             context_->lock_mgr_->lock_shared_on_gap(context_->txn_, fh_->GetFd(), gaplock_);
+            set_index_scan(gaplock);
+            std::sort(conds_.begin(), conds_.end());
+            
+#ifdef DEBUG
+        std::cout << lower_position_.page_no << ' ' << lower_position_.slot_no << "\n"
+                  << upper_position_.page_no << ' ' << upper_position_.slot_no << "\n";
+#endif
         }
         scan_ = std::make_unique<IxScan>(index_handle_, lower_position_, upper_position_, sm_manager_->get_bpm());
         find_next_valid_tuple();

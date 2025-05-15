@@ -17,7 +17,7 @@ void LockManager::lock_shared_on_gap(Transaction* txn, int tab_fd, const GapLock
 
     assert(tab_fd < MAX_TABLE_NUMBER);
     if(txn->get_state() == TransactionState::SHRINKING){
-        throw TransactionAbortException(txn->get_transaction_id(),AbortReason::LOCK_ON_SHIRINKING);
+        throw TransactionAbortException(txn->get_transaction_id(), AbortReason::LOCK_ON_SHIRINKING);
     }
     auto &lock_queue = lock_table_[tab_fd];
 
