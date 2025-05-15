@@ -40,6 +40,7 @@ value_int {sign}?{digit}+
 value_float {sign}?{digit}+\.({digit}+)?
 value_string '[^']*'
 single_op ";"|"("|")"|","|"*"|"="|">"|"<"|"."
+value_path [\.|\/][^ \t]+\.csv
 
 %x STATE_COMMENT
 
@@ -77,6 +78,7 @@ single_op ";"|"("|")"|","|"*"|"="|">"|"<"|"."
 "INT" { return INT; }
 "CHAR" { return CHAR; }
 "FLOAT" { return FLOAT; }
+"DATETIME" {return DATETIME; }
 "INDEX" { return INDEX; }
 "AND" { return AND; }
 "JOIN" {return JOIN;}
@@ -127,6 +129,11 @@ single_op ";"|"("|")"|","|"*"|"="|">"|"<"|"."
     yylval->sv_str = std::string(yytext + 1, strlen(yytext) - 2);
     return VALUE_STRING;
 }
+{value_path} {
+    yylval->sv_str = yytext;
+    return VALUE_PATH;
+}
+
     /* EOF */
 <<EOF>> { return T_EOF; }
     /* unexpected char */

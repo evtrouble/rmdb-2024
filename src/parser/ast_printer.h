@@ -53,7 +53,8 @@ namespace ast
             static std::map<SvType, std::string> m{
                 {SV_TYPE_INT, "INT"},
                 {SV_TYPE_FLOAT, "FLOAT"},
-                {SV_TYPE_STRING, "STRING"},
+                {SV_TYPE_STRING, "STRING"}, 
+                {SV_TYPE_DATETIME, "DATETIME"}
             };
             return m.at(type);
         }
