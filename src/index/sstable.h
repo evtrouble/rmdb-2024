@@ -59,12 +59,13 @@ public:
     if (m_block_idx < upper_block_idx)
     {
       auto next_block = m_sst->read_block(m_block_idx);
-      (*m_block_it) = next_block->begin();
+      m_block_it = next_block->begin();
     }
   }
 
   void seek(const std::string &key, bool is_closed);
   void set_upper_id(const std::string &key, bool is_closed);
+  void set_high_key(const std::string &high_key, bool is_closed);
 
   virtual BaseIterator &operator++() override;
   virtual T& operator*() const override;
@@ -75,6 +76,7 @@ public:
 
 class SSTable : public std::enable_shared_from_this<SSTable> {
   friend class SSTBuilder;
+  friend class LevelIterator;
   static constexpr size_t tail_size = sizeof(uint32_t) * 2;
 
 private:
@@ -137,11 +139,11 @@ public:
   // 返回sst的id
   inline size_t get_sst_id() const;
 
-  inline SstIterator find(const std::string& key, bool is_closed);
-  inline SstIterator find(const std::string &lower, bool is_lower_closed, 
+  inline std::shared_ptr<SstIterator> find(const std::string& key, bool is_closed);
+  inline std::shared_ptr<SstIterator> find(const std::string &lower, bool is_lower_closed, 
       const std::string &upper, bool is_upper_closed);
 
-  SstIterator SSTable::begin();
+  std::shared_ptr<SstIterator> begin();
 };
 
 class SSTBuilder {

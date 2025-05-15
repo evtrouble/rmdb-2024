@@ -145,3 +145,46 @@ void MemTable::remove_last()
   if(immutable_memtables_.size())
     immutable_memtables_.pop_back();
 }
+
+std::shared_ptr<MergeIterator> MemTable::find(const std::string &key, bool is_closed)
+{
+  std::shared_ptr<SkipList> active_memtable;
+  {
+    std::shared_lock lock(cur_mtx);
+    active_memtable = active_memtable_;
+  }
+  std::vector<std::shared_ptr<SkipListIterator>> merge_its;
+  merge_its.emplace_back(active_memtable->find(key, is_closed));
+  std::vector<std::shared_ptr<SkipList>> immutable_memtables;
+  {
+    std::shared_lock lock(frozen_mtx);
+    immutable_memtables.reserve(immutable_memtables_.size());
+    for (auto &immutable_memtable : immutable_memtables_)
+      immutable_memtables.emplace_back(immutable_memtable);
+  }
+  for (auto &immutable_memtable : immutable_memtables)
+    merge_its.emplace_back(immutable_memtable->find(key, is_closed));
+  return std::make_shared<MergeIterator>(merge_its, file_hdr_, false);
+}
+
+std::shared_ptr<MergeIterator> MemTable::find(const std::string &lower, bool is_lower_closed,
+                   const std::string &upper, bool is_upper_closed)
+{
+  std::shared_ptr<SkipList> active_memtable;
+  {
+    std::shared_lock lock(cur_mtx);
+    active_memtable = active_memtable_;
+  }
+  std::vector<std::shared_ptr<SkipListIterator>> merge_its;
+  merge_its.emplace_back(active_memtable->find(lower, is_lower_closed, upper, is_upper_closed));
+  std::vector<std::shared_ptr<SkipList>> immutable_memtables;
+  {
+    std::shared_lock lock(frozen_mtx);
+    immutable_memtables.reserve(immutable_memtables_.size());
+    for (auto &immutable_memtable : immutable_memtables_)
+      immutable_memtables.emplace_back(immutable_memtable);
+  }
+  for (auto &immutable_memtable : immutable_memtables)
+    merge_its.emplace_back(immutable_memtable->find(lower, is_lower_closed, upper, is_upper_closed));
+  return std::make_shared<MergeIterator>(merge_its, file_hdr_, false);
+}

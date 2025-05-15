@@ -29,16 +29,13 @@ class MemTable {
     // void clear();
     std::shared_ptr<SkipList> get_last();
     void remove_last();
+    //TODO 无锁
+    size_t get_total_size() { return frozen_bytes + active_memtable_->get_size(); }
 
-    // HeapIterator begin(uint64_t tranc_id);
-    // HeapIterator iters_preffix(const std::string &preffix, uint64_t tranc_id);
-  
-    // std::optional<std::pair<HeapIterator, HeapIterator>>
-    // iters_monotony_predicate(uint64_t tranc_id,
-    //                          std::function<int(const std::string &)> predicate);
-  
-    // HeapIterator end();
-  
+    std::shared_ptr<MergeIterator> find(const std::string &key, bool is_closed);
+    std::shared_ptr<MergeIterator> find(const std::string &lower, bool is_lower_closed,
+                       const std::string &upper, bool is_upper_closed);
+
   private:
     std::shared_ptr<SkipList> active_memtable_; // 活跃 SkipList
     std::list<std::shared_ptr<SkipList>> immutable_memtables_; // 冻结 SkipList

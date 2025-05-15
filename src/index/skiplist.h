@@ -61,8 +61,8 @@ public:
     bool get(const std::string& key, Rid& value) const;
     void remove(const std::string& key);
     
-    SkipListIterator find(const std::string& key, bool is_closed);
-    SkipListIterator find(const std::string &lower, bool is_lower_closed, 
+    std::shared_ptr<SkipListIterator> find(const std::string& key, bool is_closed);
+    std::shared_ptr<SkipListIterator> find(const std::string &lower, bool is_lower_closed, 
         const std::string &upper, bool is_upper_closed);
     size_t SkipList::get_size() { return size_bytes; }
     std::vector<std::pair<std::string, Rid>> flush();

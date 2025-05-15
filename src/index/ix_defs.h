@@ -280,6 +280,36 @@ struct CompactionThread
             : skiplist(std::move(skiplist)), lsm(std::move(lsm))
         {}
     };
+
+//     std::vector<std::shared_ptr<SST>>
+// LSMEngine::gen_sst_from_iter(BaseIterator &iter, size_t target_sst_size,
+//                              size_t target_level) {
+//   // TODO: 这里需要补全的是对已经完成事务的删除
+
+//   std::vector<std::shared_ptr<SST>> new_ssts;
+//   auto new_sst_builder = SSTBuilder(LSM_BLOCK_SIZE, true);
+//   while (iter.is_valid() && !iter.is_end()) {
+
+//     new_sst_builder.add((*iter).first, (*iter).second, 0);
+//     ++iter;
+
+//     if (new_sst_builder.estimated_size() >= target_sst_size) {
+//       size_t sst_id = next_sst_id++; // TODO: 后续优化并发性
+//       std::string sst_path = get_sst_path(sst_id, target_level);
+//       auto new_sst = new_sst_builder.build(sst_id, sst_path, this->block_cache);
+//       new_ssts.push_back(new_sst);
+//       new_sst_builder = SSTBuilder(LSM_BLOCK_SIZE, true); // 重置builder
+//     }
+//   }
+//   if (new_sst_builder.estimated_size() > 0) {
+//     size_t sst_id = next_sst_id++; // TODO: 后续优化并发性
+//     std::string sst_path = get_sst_path(sst_id, target_level);
+//     auto new_sst = new_sst_builder.build(sst_id, sst_path, this->block_cache);
+//     new_ssts.push_back(new_sst);
+//   }
+
+//   return new_ssts;
+// }
     std::queue<ToFlush> flush_queue_;
     std::mutex queue_mutex_;
     std::thread flush_thread_;

@@ -13,12 +13,8 @@
 
 enum class IteratorType {
   SkipListIterator,
-  // MemTableIterator,
   SstIterator,
   BlockIterator,
-  // HeapIterator,
-  // TwoMergeIterator,
-  // ConcactIterator,
   LevelIterator,
   MergeIterator
 };

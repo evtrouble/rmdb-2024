@@ -206,16 +206,16 @@ size_t Block::cur_size() const {
 
 bool Block::is_empty() const { return num_elements == 0; }
 
-BlockIterator Block::find(const std::string& key, bool is_closed)
+std::shared_ptr<BlockIterator> Block::find(const std::string& key, bool is_closed)
 {
   int id = lower_bound(key);
   if(!is_closed && id < num_elements && 
     compare_key(key, get_key_at(get_offset_at(id))) == 0)
     id++;
-  return BlockIterator(shared_from_this(), id);
+  return std::make_shared<BlockIterator>(shared_from_this(), id);
 }
 
-BlockIterator Block::find(const std::string &lower, bool is_lower_closed, 
+std::shared_ptr<BlockIterator> Block::find(const std::string &lower, bool is_lower_closed, 
     const std::string &upper, bool is_upper_closed)
 {
   int lower_id = lower_bound(lower);
@@ -223,7 +223,7 @@ BlockIterator Block::find(const std::string &lower, bool is_lower_closed,
     compare_key(lower, get_key_at(get_offset_at(lower_id))) == 0)
     lower_id++;
   
-  return BlockIterator(shared_from_this(), lower_id, upper, is_upper_closed);
+  return std::make_shared<BlockIterator>(shared_from_this(), lower_id, upper, is_upper_closed);
 }
 
 BlockIterator::BlockIterator(const std::shared_ptr<Block>& b, size_t index)

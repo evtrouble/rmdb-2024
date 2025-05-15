@@ -71,8 +71,9 @@ void SstIterator::set_upper_id(const std::string &key, bool is_closed)
     upper_block_idx = m_sst->lower_bound(key, !is_closed);
     if (upper_block_idx == -1 || upper_block_idx >= m_sst->num_blocks()) {
       upper_block_idx = m_sst->num_blocks();
-      return;
     }
+    if(m_block_idx == upper_block_idx && upper_block_idx != m_sst->num_blocks())
+      m_block_it->set_high_key(key, is_closed);
   } catch (const std::exception &) {
     return;
   }
@@ -84,23 +85,39 @@ BaseIterator& SstIterator::operator++()
     return *this;
   }
   ++(*m_block_it);
-
+  
   if (m_block_it->is_end()) {
     m_block_idx++;
-    if (m_block_idx < m_sst->num_blocks()) {
-      // 读取下一个block
-      auto next_block = m_sst->read_block(m_block_idx);
-      (*m_block_it) = next_block->begin();
-      if(m_block_idx == upper_block_idx)
-        m_block_it->set_high_key(right_key, is_closed);
-    }
-    else
+    if(m_block_idx < upper_block_idx)
     {
+      auto next_block = m_sst->read_block(m_block_idx);
+      m_block_it = next_block->begin();
+    } 
+    else if(m_block_idx == upper_block_idx)
+    {
+      if(upper_block_idx == m_sst->num_blocks())
+        m_block_it = nullptr;
+      else {
+        auto next_block = m_sst->read_block(m_block_idx);
+        m_block_it = next_block->begin();
+        m_block_it->set_high_key(right_key, is_closed);
+      }
+    } else {
       // 没有下一个block
       m_block_it = nullptr;
     }
   }
-  return *this;;
+  return *this;
+}
+
+void SstIterator::set_high_key(const std::string &high_key, bool is_closed)
+{
+  right_key = high_key;
+  this->is_closed = is_closed;
+  if (m_sst)
+  {
+    set_upper_id(high_key, is_closed);
+  }
 }
 
 SstIterator::T& SstIterator::operator*() const
@@ -296,19 +313,19 @@ size_t SSTable::sst_size() const { return file_size; }
 
 size_t SSTable::get_sst_id() const { return sst_id; }
 
-SstIterator SSTable::begin() {
-  return SstIterator(shared_from_this());
+std::shared_ptr<SstIterator> SSTable::begin() {
+  return std::make_shared<SstIterator>(shared_from_this());
 }
 
-SstIterator SSTable::find(const std::string& key, bool is_closed)
+std::shared_ptr<SstIterator> SSTable::find(const std::string& key, bool is_closed)
 {
-  return SstIterator(shared_from_this(), key, is_closed);
+  return std::make_shared<SstIterator>(shared_from_this(), key, is_closed);
 }
 
-SstIterator SSTable::find(const std::string &lower, bool is_lower_closed, 
+std::shared_ptr<SstIterator> SSTable::find(const std::string &lower, bool is_lower_closed, 
     const std::string &upper, bool is_upper_closed)
 {
-  return SstIterator(shared_from_this(), lower, is_lower_closed, upper, is_upper_closed);
+  return std::make_shared<SstIterator>(shared_from_this(), lower, is_lower_closed, upper, is_upper_closed);
 }
 
 // **************************************************

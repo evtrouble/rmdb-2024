@@ -137,19 +137,19 @@ void SkipList::remove(const std::string& key) {
     put(key, Rid());  // 使用空值标记删除
 }
 
-SkipListIterator SkipList::find(const std::string& key, bool is_closed) {
+std::shared_ptr<SkipListIterator> SkipList::find(const std::string& key, bool is_closed) {
     auto node = FindGreaterOrEqual(key, nullptr);
     if(!is_closed && node != nullptr && compare_key(node->key_, key) == 0)
         node = node->next_[0];
-    return SkipListIterator(node, shared_from_this());
+    return std::make_shared<SkipListIterator>(node, shared_from_this());
 }
 
-SkipListIterator SkipList::find(const std::string &lower, bool is_lower_closed, 
+std::shared_ptr<SkipListIterator> SkipList::find(const std::string &lower, bool is_lower_closed, 
     const std::string &upper, bool is_upper_closed) {
     auto node = FindGreaterOrEqual(lower, nullptr);
     if(!is_lower_closed && node != nullptr && compare_key(node->key_, lower) == 0)
         node = node->next_[0];
-    return SkipListIterator(node, shared_from_this(), upper, is_upper_closed);
+    return std::make_shared<SkipListIterator>(node, shared_from_this(), upper, is_upper_closed);
 }
 
 // 刷盘时可以直接遍历最底层链表

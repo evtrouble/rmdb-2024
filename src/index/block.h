@@ -92,8 +92,8 @@ private:
     inline bool is_empty() const;
     int get_idx_binary(const std::string &key);
     int lower_bound(const std::string &key);
-    BlockIterator find(const std::string &key, bool is_closed);
-    BlockIterator find(const std::string &lower, bool is_lower_closed, 
+    std::shared_ptr<BlockIterator> find(const std::string &key, bool is_closed);
+    std::shared_ptr<BlockIterator> find(const std::string &lower, bool is_lower_closed, 
         const std::string &upper, bool is_upper_closed);
-    inline BlockIterator begin() { return BlockIterator(shared_from_this(), 0); }
+    inline std::shared_ptr<BlockIterator> begin() { return std::make_shared<BlockIterator>(shared_from_this(), 0); }
 };

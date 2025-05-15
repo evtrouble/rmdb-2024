@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "defs.h"
-#include "storage/block_cache.h"
+#include "block_cache.h"
 #include "transaction/transaction.h"
 #include "memtable.h"
 #include "sstable.h"
@@ -23,10 +23,10 @@ class LevelIterator : public BaseIterator
   friend class SSTable;
 
   private:
-    std::shared_ptr<SSTable> m_sst;
-    size_t m_block_idx;
-    std::shared_ptr<BlockIterator> m_block_it;
-    size_t upper_block_idx;
+    std::vector<std::shared_ptr<SSTable>> ssts_;
+    size_t m_sst_idx;
+    std::shared_ptr<SstIterator> m_sst_it;
+    size_t upper_sst_idx;
     std::string right_key;
     bool is_closed;
   
@@ -35,20 +35,18 @@ class LevelIterator : public BaseIterator
       const std::string &lower, bool is_lower_closed, 
       const std::string &upper, bool is_upper_closed);
     // 创建迭代器, 并移动到第指定key
-    LevelIterator(const std::shared_ptr<SSTable> &sst, const std::string& key, bool is_closed);
-    LevelIterator(const std::vector<std::shared_ptr<SSTable>>) : m_sst(std::move(sst)), m_block_idx(0)
+    LevelIterator(const std::vector<std::shared_ptr<SSTable>> &ssts, const std::string& key, bool is_closed);
+    LevelIterator(const std::vector<std::shared_ptr<SSTable>> &ssts) : ssts_(std::move(ssts)), m_sst_idx(0)
     {
-      upper_block_idx = m_sst->num_blocks();
-      if (m_block_idx < upper_block_idx)
+      upper_sst_idx = ssts_.size();
+      if (m_sst_idx < upper_sst_idx)
       {
-        auto next_block = m_sst->read_block(m_block_idx);
-        (*m_block_it) = next_block->begin();
+        m_sst_it = ssts_[m_sst_idx]->begin();
       }
     }
   
-    void seek(const std::string &key, bool is_closed);
-    void set_upper_id(const std::string &key, bool is_closed);
-  
+    int lower_bound(const std::string &key, bool is_closed);
+
     virtual BaseIterator &operator++() override;
     virtual T& operator*() const override;
     virtual T* operator->() const override;
@@ -67,20 +65,22 @@ class LsmTree : public std::enable_shared_from_this<LsmTree>
     std::string data_dir;
     size_t next_sst_id = 0;
     static std::shared_ptr<BlockCache> block_cache;
+    std::shared_mutex ssts_mtx;
+    std::map<size_t, std::deque<size_t>> level_sst_ids;
+    std::unordered_map<size_t, std::shared_ptr<SSTable>> ssts;
+    size_t cur_max_level = 0;
 
-    LsmTree(LsmFileHdr* file_hdr) : file_hdr_(file_hdr), 
-        memtable(file_hdr) {
+    LsmTree(LsmFileHdr *file_hdr, const std::string &path);
 
-    }
-
-    private:
+  private:
     void full_compact(size_t src_level);
-    std::vector<std::shared_ptr<SSTable>>
-    full_l0_l1_compact(std::vector<size_t> &l0_ids, std::vector<size_t> &l1_ids);
+    void full_l0_l1_compact(std::vector<std::shared_ptr<SSTable>> &l0_ssts, 
+      std::vector<std::shared_ptr<SSTable>> &l1_ssts);
 
-    std::vector<std::shared_ptr<SSTable>>
-    full_common_compact(std::vector<size_t> &lx_ids, std::vector<size_t> &ly_ids,
-                      size_t level_y);
+    void full_common_compact(std::vector<std::shared_ptr<SSTable>> &lx_ssts, 
+      std::vector<std::shared_ptr<SSTable>> &ly_ssts, size_t level_y);
+
+    std::vector<std::vector<std::shared_ptr<SSTable>>> get_all_sstables();
 
     inline int compare_key(const std::string &key1, const std::string &key2) {
         return ix_compare(key1.c_str(), key2.c_str(), file_hdr_->col_types_, file_hdr_->col_lens_);
@@ -114,25 +114,24 @@ class LsmTree : public std::enable_shared_from_this<LsmTree>
         return ss.str();
     }
 
-  //   std::string get_sst_path(size_t sst_id, size_t target_level);
+    MergeIterator find(const std::string &key, bool is_closed);
+    MergeIterator find(const std::string &lower, bool is_lower_closed,
+                       const std::string &upper, bool is_upper_closed);
 
-  //   TwoMergeIterator begin(uint64_t tranc_id);
-  //   TwoMergeIterator end();
-  
-  //   static size_t get_sst_size(size_t level);
-  
-  // private:
-  //   void full_compact(size_t src_level);
-  //   std::vector<std::shared_ptr<SSTable>>
-  //   full_l0_l1_compact(std::vector<size_t> &l0_ids, std::vector<size_t> &l1_ids);
-  
-  //   std::vector<std::shared_ptr<SSTable>>
-  //   full_common_compact(std::vector<size_t> &lx_ids, std::vector<size_t> &ly_ids,
-  //                       size_t level_y);
-  
-  //   std::vector<std::shared_ptr<SSTable>> gen_sst_from_iter(BaseIterator &iter,
-  //                                                       size_t target_sst_size,
-  //                                                       size_t target_level);
+    //   static size_t get_sst_size(size_t level);
 
-    void set_new_sst_id(size_t new_sst_id, std::shared_ptr<SSTable>& new_sst);
+    // private:
+    //   void full_compact(size_t src_level);
+    //   std::vector<std::shared_ptr<SSTable>>
+    //   full_l0_l1_compact(std::vector<size_t> &l0_ids, std::vector<size_t> &l1_ids);
+
+    //   std::vector<std::shared_ptr<SSTable>>
+    //   full_common_compact(std::vector<size_t> &lx_ids, std::vector<size_t> &ly_ids,
+    //                       size_t level_y);
+
+    //   std::vector<std::shared_ptr<SSTable>> gen_sst_from_iter(BaseIterator &iter,
+    //                                                       size_t target_sst_size,
+    //                                                       size_t target_level);
+
+    void set_new_sst(size_t new_sst_id, std::shared_ptr<SSTable> &new_sst);
 };
