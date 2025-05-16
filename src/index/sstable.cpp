@@ -15,7 +15,7 @@ SstIterator::SstIterator(const std::shared_ptr<SSTable> &sst,
   : right_key(upper), is_closed(is_upper_closed)
 {
   if (m_sst) {
-    seek(lower, is_closed);
+    seek(lower, is_lower_closed);
     set_upper_id(upper, is_closed);
   }
 }

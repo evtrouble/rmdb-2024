@@ -25,13 +25,14 @@ private:
     std::vector<SetClause> set_clauses_;
     SmManager *sm_manager_;
     std::unordered_set<int> changes;
+    GapLock gaplock_;
 
 public:
     UpdateExecutor(SmManager *sm_manager, const std::string &tab_name, const std::vector<SetClause> &set_clauses,
-        const std::vector<Rid> &rids, Context *context) 
+        const std::vector<Rid> &rids, Context *context, const GapLock& gaplock) 
         : AbstractExecutor(context), rids_(std::move(rids)), 
-        tab_name_(std::move(tab_name)), set_clauses_(std::move(set_clauses)),
-        sm_manager_(sm_manager)
+        tab_name_(std::move(tab_name)), set_clauses_(std::move(set_clauses)), 
+        sm_manager_(sm_manager), gaplock_(std::move(gaplock))
     {
         tab_ = sm_manager_->db_.get_table(tab_name_);
         fh_ = sm_manager_->fhs_.at(tab_name_).get();
@@ -50,12 +51,38 @@ public:
 
     std::unique_ptr<RmRecord> Next() override
     {
+        if(rids_.empty())
+            return nullptr;
+        std::vector<std::pair<IxIndexHandle *, IndexMeta &>> ihs;
+        ihs.reserve(tab_.indexes.size());
+        std::vector<std::unique_ptr<char[]>> datas;
+        datas.reserve(tab_.indexes.size());
+        
+        for (auto &index : tab_.indexes)
+        {
+            for (int i = 0; i < index.col_num; ++i)
+            {
+                if(changes.count(index.cols[i].offset)) 
+                {
+                    GapLock ix_gaplock(gaplock_);
+                    ihs.emplace_back(sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get(), 
+                        index);
+                    auto ih = ihs.back().first;
+                    context_->lock_mgr_->lock_exclusive_on_gap(context_->txn_, ih->get_fd(), ix_gaplock);
+                    datas.emplace_back(new char[index.col_tot_len]);
+                    break;
+                }
+            }
+        }
+        context_->lock_mgr_->lock_exclusive_on_gap(context_->txn_, fh_->GetFd(), gaplock_);
+        
         // 遍历所有需要更新的记录
+        RmRecord old_rec;
         for (auto &rid : rids_)
         {
             // 获取原记录
             RmRecord rec = *fh_->get_record(rid);
-            RmRecord old_rec = rec;
+            old_rec = rec;
             // 根据set_clauses_更新记录值
             for (auto &set_clause : set_clauses_)
             {
@@ -65,34 +92,27 @@ public:
             }
 
             // 更新索引
-            for (auto &index : tab_.indexes)
+            for (size_t id = 0; id < ihs.size(); id++)
             {
-                auto ih = sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get();
-
+                auto &[ih, index] = ihs[id];
+                char *key = datas[id].get();
                 // 删除旧索引
-                char *key = new char[index.col_tot_len];
                 int offset = 0;
-                bool exist = false;
+                for (int i = 0; i < index.col_num; ++i)
+                {
+                    memcpy(key + offset, old_rec.data + index.cols[i].offset, index.cols[i].len);
+                    offset += index.cols[i].len;
+                }
+                ih->delete_entry(key, rid, context_->txn_);
+                // 插入新索引
+                offset = 0;
                 for (int i = 0; i < index.col_num; ++i)
                 {
                     if(changes.count(index.cols[i].offset)) 
-                        exist = true;
-                    memcpy(key + offset, rec.data + index.cols[i].offset, index.cols[i].len);
+                        memcpy(key + offset, rec.data + index.cols[i].offset, index.cols[i].len);
                     offset += index.cols[i].len;
                 }
-                if(exist) {
-                    ih->delete_entry(key, rid, context_->txn_);
-                    // 插入新索引
-                    offset = 0;
-                    for (int i = 0; i < index.col_num; ++i)
-                    {
-                        if(changes.count(index.cols[i].offset)) 
-                            memcpy(key + offset, rec.data + index.cols[i].offset, index.cols[i].len);
-                        offset += index.cols[i].len;
-                    }
-                    ih->insert_entry(key, rid, context_->txn_);
-                }
-                delete[] key;
+                ih->insert_entry(key, rid, context_->txn_);
             }
 
             // 更新记录

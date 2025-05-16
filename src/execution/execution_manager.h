@@ -45,7 +45,8 @@ public:
     void run_mutli_query(std::shared_ptr<Plan> plan, Context *context);
     void run_cmd_utility(std::shared_ptr<Plan> plan, txn_id_t *txn_id, Context *context);
     void select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, const std::vector<TabCol> &sel_cols,
-                        Context *context);
+                     Context *context);
 
     void run_dml(std::unique_ptr<AbstractExecutor> exec);
+    static std::unordered_set<Value> sub_select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, bool converse_to_float = false);
 };

@@ -20,17 +20,19 @@ See the Mulan PSL v2 for more details. */
 class SeqScanExecutor : public AbstractExecutor
 {
 private:
-    std::string tab_name_;             // 表的名称
-    std::vector<Condition> conds_;     // scan的条件
-    RmFileHandle *fh_;                 // 表的数据文件句柄
-    size_t len_;                       // scan后生成的每条记录的长度
-    TabMeta tab_;                      // 表的元数据
+    std::string tab_name_;         // 表的名称
+    std::vector<Condition> conds_; // scan的条件
+    RmFileHandle *fh_;             // 表的数据文件句柄
+    size_t len_;                   // scan后生成的每条记录的长度
+    TabMeta tab_;                  // 表的元数据
 
     Rid rid_;
     std::unique_ptr<RmScan> scan_; // table_iterator
+    GapLock gaplock_;
 
     SmManager *sm_manager_;
     bool effective = true;
+    bool first = true;
 
 private:
     // 获取指定列的值
@@ -43,7 +45,7 @@ private:
     ColMeta &get_col_meta(const std::string &col_name)
     {
         auto iter = tab_.cols_map.find(col_name);
-        if(iter != tab_.cols_map.end())
+        if (iter != tab_.cols_map.end())
             return tab_.cols.at(iter->second);
         throw ColumnNotFoundError(col_name);
     }
@@ -51,33 +53,132 @@ private:
     // 检查记录是否满足所有条件
     bool satisfy_conditions(const RmRecord *rec)
     {
-        return std::all_of(conds_.begin(), conds_.end(), [&](auto &cond) {
-            ColMeta &left_col = get_col_meta(cond.lhs_col.col_name);
-            char *lhs_value = get_col_value(rec, left_col);
-            char *rhs_value;
-            ColType rhs_type;
+        return std::all_of(conds_.begin(), conds_.end(), [&](auto &cond)
+                           {
+            if (!cond.is_subquery) {
+                // 处理普通条件
+                ColMeta &left_col = get_col_meta(cond.lhs_col.col_name);
+                char *lhs_value = get_col_value(rec, left_col);
+                char *rhs_value;
+                ColType rhs_type;
 
-            if (cond.is_rhs_val)
-            {
-                // 如果右侧是值
-                rhs_value = const_cast<char *>(cond.rhs_val.raw->data);
-                rhs_type = cond.rhs_val.type;
-            }
-            else
-            {
-                // 如果右侧是列
-                ColMeta &right_col = get_col_meta(cond.rhs_col.col_name);
-                rhs_value = get_col_value(rec, right_col);
-                rhs_type = right_col.type;
-            }
-            return check_condition(lhs_value, left_col.type, rhs_value, rhs_type, cond.op);
-        });
+                if (cond.is_rhs_val)
+                {
+                    // 如果右侧是值
+                    rhs_value = const_cast<char *>(cond.rhs_val.raw->data);
+                    rhs_type = cond.rhs_val.type;
+                }
+                else
+                {
+                    // 如果右侧是列
+                    ColMeta &right_col = get_col_meta(cond.rhs_col.col_name);
+                    rhs_value = get_col_value(rec, right_col);
+                    rhs_type = right_col.type;
+                }
+                return check_condition(lhs_value, left_col.type, rhs_value, rhs_type, cond.op);
+            } else {
+                // 处理子查询条件
+                ColMeta &left_col = get_col_meta(cond.lhs_col.col_name);
+                char *lhs_buf = get_col_value(rec, left_col);
+                Value lhs;
+
+                switch (left_col.type)
+                {
+                case TYPE_INT:
+                {
+                    int lhs_value = *reinterpret_cast<int *>(lhs_buf);
+                    lhs.set_int(lhs_value);
+                    break;
+                }
+                case TYPE_FLOAT:
+                {
+                    float lhs_value = *reinterpret_cast<float *>(lhs_buf);
+                    lhs.set_float(lhs_value);
+                    break;
+                }
+                case TYPE_STRING:
+                {
+                    std::string lhs_value(lhs_buf, strnlen(lhs_buf, left_col.len));
+                    lhs.set_str(lhs_value);
+                    break;
+                }
+                }
+
+                if (cond.subQuery->is_scalar)
+                {
+                    if (cond.subQuery->result.size() != 1)
+                    {
+                        throw RMDBError("Scalar subquery result size is not 1");
+                    }
+
+                    const auto &subQueryResult = *cond.subQuery->result.begin();
+                    // 比较左值和子查询结果
+                    return compare_values(lhs, subQueryResult, cond.op);
+                }
+
+                // 对于 IN/NOT IN 类型的子查询
+                if (lhs.type == TYPE_INT && cond.subQuery->subquery_type == TYPE_FLOAT)
+                {
+                    lhs.set_float((float)lhs.int_val);
+                }
+
+                bool found = (cond.subQuery->result.find(lhs) != cond.subQuery->result.end());
+                return (cond.op == OP_IN) == found;
+            } });
+    }
+
+    // 比较两个 Value 值
+    bool compare_values(const Value &lhs, const Value &rhs, CompOp op)
+    {
+        int cmp;
+        if (lhs.type == TYPE_INT && rhs.type == TYPE_INT)
+        {
+            cmp = lhs.int_val - rhs.int_val;
+        }
+        else if (lhs.type == TYPE_FLOAT && rhs.type == TYPE_FLOAT)
+        {
+            cmp = lhs.float_val < rhs.float_val ? -1 : (lhs.float_val > rhs.float_val ? 1 : 0);
+        }
+        else if (lhs.type == TYPE_INT && rhs.type == TYPE_FLOAT)
+        {
+            cmp = lhs.int_val < rhs.float_val ? -1 : (lhs.int_val > rhs.float_val ? 1 : 0);
+        }
+        else if (lhs.type == TYPE_FLOAT && rhs.type == TYPE_INT)
+        {
+            cmp = lhs.float_val < rhs.int_val ? -1 : (lhs.float_val > rhs.int_val ? 1 : 0);
+        }
+        else if (lhs.type == TYPE_STRING && rhs.type == TYPE_STRING)
+        {
+            cmp = lhs.str_val.compare(rhs.str_val);
+        }
+        else
+        {
+            throw RMDBError("Cannot compare values of different types");
+        }
+
+        switch (op)
+        {
+        case OP_EQ:
+            return cmp == 0;
+        case OP_NE:
+            return cmp != 0;
+        case OP_LT:
+            return cmp < 0;
+        case OP_GT:
+            return cmp > 0;
+        case OP_LE:
+            return cmp <= 0;
+        case OP_GE:
+            return cmp >= 0;
+        default:
+            throw RMDBError("Unsupported comparison operator for scalar subquery");
+        }
     }
 
 public:
-    SeqScanExecutor(SmManager *sm_manager, const std::string &tab_name, const std::vector<Condition> &conds, 
-        Context *context) : AbstractExecutor(context), tab_name_(std::move(tab_name)), 
-        conds_(std::move(conds)), sm_manager_(sm_manager)
+    SeqScanExecutor(SmManager *sm_manager, const std::string &tab_name, const std::vector<Condition> &conds,
+                    Context *context) : AbstractExecutor(context), tab_name_(std::move(tab_name)),
+                                        conds_(std::move(conds)), sm_manager_(sm_manager), first(true)
     {
         // 检查文件句柄是否存在
         auto fh_iter = sm_manager_->fhs_.find(tab_name_);
@@ -91,28 +192,31 @@ public:
         len_ = tab_.cols.back().offset + tab_.cols.back().len;
 
         std::vector<Condition> gap_conds_; // 用于加间隙锁的条件
-        for(auto &cond : conds_){
-            if(cond.op != CompOp::OP_NE && cond.is_rhs_val){
+        for (auto &cond : conds_)
+        {
+            if (cond.op != CompOp::OP_NE && cond.is_rhs_val)
+            {
                 gap_conds_.emplace_back(cond);
             }
         }
         // 初始化扫描表
-        if(gap_conds_.empty())
-            context_->lock_mgr_->lock_shared_on_table(context_->txn_, fh_->GetFd());
-        else {
-            GapLock gaplock;
-            if((effective = gaplock.init(gap_conds_, tab_))) 
-                context_->lock_mgr_->lock_shared_on_gap(context_->txn_, fh_->GetFd(), gaplock);             
-        }
-        if(effective)
+        if ((effective = gaplock_.init(gap_conds_, tab_)))
+        {
             std::sort(conds_.begin(), conds_.end());
+        }  
     }
 
     void beginTuple() override
     {
-        if(!effective) {
+        if (!effective)
+        {
             rid_.page_no = RM_NO_PAGE; // 设置 rid_ 以指示结束
             return;
+        }
+        if(first)
+        {
+            first = false;
+            context_->lock_mgr_->lock_shared_on_gap(context_->txn_, fh_->GetFd(), gaplock_);
         }
         scan_ = std::make_unique<RmScan>(fh_);
         find_next_valid_tuple();
@@ -144,7 +248,9 @@ public:
 
     Rid &rid() override { return rid_; }
 
-    ExecutionType type() const override { return ExecutionType::SeqScan;  }
+    ExecutionType type() const override { return ExecutionType::SeqScan; }
+
+    inline GapLock &get_gaplock() { return gaplock_; }
 
 private:
     void find_next_valid_tuple()

@@ -235,7 +235,7 @@ IxNodeHandle IxIndexHandle::find_leaf_page(const char *key, Operation operation,
     Transaction *transaction, bool find_first) {
     if(operation != Operation::FIND)
         assert(transaction != nullptr);
-        // 1. 获取根节点
+    // 1. 获取根节点
     if(!find_first) {
         root_lacth_.lock();
         transaction->append_index_latch_page_set(nullptr);
@@ -247,7 +247,6 @@ IxNodeHandle IxIndexHandle::find_leaf_page(const char *key, Operation operation,
     while (true)
     {
         auto node = fetch_node(next_page_id);
-        
         if(find_first){
             if(node.is_leaf_page() && operation != Operation::FIND) {
                 node.page->latch_.lock();
@@ -388,7 +387,7 @@ void IxIndexHandle::insert_into_parent(IxNodeHandle &old_node, const char *key, 
  * @param transaction 事务指针
  * @return page_id_t 插入到的叶结点的page_no
  */
-page_id_t IxIndexHandle::insert_entry(const char *key, const Rid &value, Transaction *transaction) {
+page_id_t IxIndexHandle::insert_entry(const char *key, const Rid &value, Transaction *transaction, bool abort) {
     // 1. 查找key值应该插入到哪个叶子节点
     root_lacth_.lock_shared();
     auto leaf_node = find_leaf_page(key, Operation::INSERT, transaction);
@@ -402,9 +401,9 @@ page_id_t IxIndexHandle::insert_entry(const char *key, const Rid &value, Transac
         release_all_xlock(transaction->get_index_latch_page_set(), false);
         throw;
     }
-    
-    transaction->append_write_record(WriteRecord(WType::IX_INSERT_TUPLE, 
-        disk_manager_->get_file_name(fd_), value, RmRecord(key, file_hdr_->col_tot_len_)));
+    if(!abort)
+        transaction->append_write_record(WriteRecord(WType::IX_INSERT_TUPLE, 
+            disk_manager_->get_file_name(fd_), value, RmRecord(key, file_hdr_->col_tot_len_)));
     // 3. 如果结点已满，分裂结点，并把新结点的相关信息插入父节点
     // 提示：记得unpin page；若当前叶子节点是最右叶子节点，则需要更新file_hdr_.last_leaf；记得处理并发的上锁
     if (leaf_node.page_hdr->num_key == leaf_node.get_max_size())
@@ -423,7 +422,7 @@ page_id_t IxIndexHandle::insert_entry(const char *key, const Rid &value, Transac
  * @param key 要删除的key值
  * @param transaction 事务指针
  */
-bool IxIndexHandle::delete_entry(const char *key, const Rid &value, Transaction *transaction) {
+bool IxIndexHandle::delete_entry(const char *key, const Rid &value, Transaction *transaction, bool abort) {
     // 1. 获取该键值对所在的叶子结点
     root_lacth_.lock_shared();
     auto leaf_node = find_leaf_page(key, Operation::DELETE, transaction);
@@ -441,8 +440,9 @@ bool IxIndexHandle::delete_entry(const char *key, const Rid &value, Transaction 
         if(coalesce_or_redistribute(leaf_node, transaction))
             transaction->append_index_deleted_page(leaf_node.page);
         // 4. 如果需要并发，并且需要删除叶子结点，则需要在事务的delete_page_set中添加删除结点的对应页面；记得处理并发的上锁
-        transaction->append_write_record(WriteRecord(WType::IX_DELETE_TUPLE, 
-            disk_manager_->get_file_name(fd_), value, RmRecord(key, file_hdr_->col_tot_len_)));
+        if(!abort)
+            transaction->append_write_record(WriteRecord(WType::IX_DELETE_TUPLE, 
+                disk_manager_->get_file_name(fd_), value, RmRecord(key, file_hdr_->col_tot_len_)));
     }
 
     release_all_xlock(transaction->get_index_latch_page_set(), true);
@@ -794,8 +794,13 @@ void IxIndexHandle::release_all_xlock(std::shared_ptr<std::deque<Page*>> page_se
     {
         auto node = page_set->front();
         page_set->pop_front();
-        node->latch_.unlock();
-        buffer_pool_manager_->unpin_page(node->get_page_id(), dirty);
+        if(node == nullptr)
+        {
+            root_lacth_.unlock();
+        } else {
+            node->latch_.unlock();
+            buffer_pool_manager_->unpin_page(node->get_page_id(), dirty);
+        }
     }
 }
 

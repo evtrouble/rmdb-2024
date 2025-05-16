@@ -144,6 +144,8 @@ public:
     IxIndexHandle(DiskManager *disk_manager, BufferPoolManager *buffer_pool_manager, int fd);
     ~IxIndexHandle() { delete file_hdr_; }
 
+    inline int get_fd() { return fd_; }
+
     // for search
     bool get_value(const char *key, std::vector<Rid> *result, Transaction *transaction);
 
@@ -151,14 +153,14 @@ public:
                                                  bool find_first = true);
 
     // for insert
-    page_id_t insert_entry(const char *key, const Rid &value, Transaction *transaction);
+    page_id_t insert_entry(const char *key, const Rid &value, Transaction *transaction, bool abort = false);
 
     IxNodeHandle split(IxNodeHandle &node);
 
     void insert_into_parent(IxNodeHandle &old_node, const char *key, IxNodeHandle &new_node);
 
     // for delete
-    bool delete_entry(const char *key, const Rid &value, Transaction *transaction);
+    bool delete_entry(const char *key, const Rid &value, Transaction *transaction, bool abort = false);
 
     bool coalesce_or_redistribute(IxNodeHandle &node, Transaction *transaction);
     bool adjust_root(IxNodeHandle &old_root_node);

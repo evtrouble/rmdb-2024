@@ -23,12 +23,13 @@ private:
     std::vector<Rid> rids_;        // 需要删除的记录的位置
     std::string tab_name_;         // 表名称
     SmManager *sm_manager_;
+    GapLock gaplock_;
 
    public:
     DeleteExecutor(SmManager *sm_manager, const std::string &tab_name, 
-                   const std::vector<Rid> &rids, Context *context) 
+                   const std::vector<Rid> &rids, Context *context, const GapLock& gaplock) 
         : AbstractExecutor(context), rids_(std::move(rids)), 
-        tab_name_(std::move(tab_name)), sm_manager_(sm_manager)
+        tab_name_(std::move(tab_name)), sm_manager_(sm_manager), gaplock_(std::move(gaplock))
     {
         tab_ = sm_manager_->db_.get_table(tab_name_);
         fh_ = sm_manager_->fhs_.at(tab_name_).get();
@@ -36,7 +37,23 @@ private:
 
     std::unique_ptr<RmRecord> Next() override
     {
-        
+        if(rids_.empty())
+            return nullptr;
+
+        std::vector<IxIndexHandle*> ihs;
+        ihs.reserve(tab_.indexes.size());
+        for (auto &index : tab_.indexes)
+        {
+            for (int i = 0; i < index.col_num; ++i)
+            {
+                GapLock ix_gaplock(gaplock_);
+                ihs.emplace_back(sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get());
+                auto ih = ihs.back();
+                context_->lock_mgr_->lock_exclusive_on_gap(context_->txn_, ih->get_fd(), ix_gaplock);
+            }
+        }
+        context_->lock_mgr_->lock_exclusive_on_gap(context_->txn_, fh_->GetFd(), gaplock_);
+
         // 遍历所有需要删除的记录
         for (auto &rid : rids_)
         {

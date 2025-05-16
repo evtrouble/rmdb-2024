@@ -24,7 +24,8 @@ class Transaction
 {
 public:
     explicit Transaction(txn_id_t txn_id, IsolationLevel isolation_level = IsolationLevel::SERIALIZABLE)
-        : state_(TransactionState::DEFAULT), isolation_level_(isolation_level), txn_id_(txn_id) {
+        : state_(TransactionState::DEFAULT), isolation_level_(isolation_level), txn_id_(txn_id)
+    {
         write_set_ = std::make_shared<std::deque<WriteRecord>>();
         lock_set_ = std::make_shared<std::unordered_set<int>>();
         index_latch_page_set_ = std::make_shared<std::deque<Page *>>();
@@ -55,14 +56,14 @@ public:
     inline lsn_t get_prev_lsn() { return prev_lsn_; }
     inline void set_prev_lsn(lsn_t prev_lsn) { prev_lsn_ = prev_lsn; }
 
-    inline std::shared_ptr<std::deque<WriteRecord>> get_write_set() { return write_set_; }  
+    inline std::shared_ptr<std::deque<WriteRecord>> get_write_set() { return write_set_; }
     inline void append_write_record(const WriteRecord &write_record) { write_set_->emplace_back(std::move(write_record)); }
 
-    inline std::shared_ptr<std::deque<Page*>> get_index_deleted_page_set() { return index_deleted_page_set_; }
-    inline void append_index_deleted_page(Page* page) { index_deleted_page_set_->emplace_back(page); }
+    inline std::shared_ptr<std::deque<Page *>> get_index_deleted_page_set() { return index_deleted_page_set_; }
+    inline void append_index_deleted_page(Page *page) { index_deleted_page_set_->emplace_back(page); }
 
-    inline std::shared_ptr<std::deque<Page*>> get_index_latch_page_set() { return index_latch_page_set_; }
-    inline void append_index_latch_page_set(Page* page) { index_latch_page_set_->emplace_back(page); }
+    inline std::shared_ptr<std::deque<Page *>> get_index_latch_page_set() { return index_latch_page_set_; }
+    inline void append_index_latch_page_set(Page *page) { index_latch_page_set_->emplace_back(page); }
 
     inline std::shared_ptr<std::unordered_set<int>> get_lock_set() { return lock_set_; }
     inline void append_lock_set(int fd) { lock_set_->emplace(fd); }

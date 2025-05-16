@@ -96,6 +96,8 @@ class GapLock
 
         bool init(const std::vector<Condition> &conds, const TabMeta &tab)
         {
+            if(conds.empty())
+                return true;
             intervals.resize(tab.cols.size());
             for (auto &cond : conds)
             {
@@ -139,11 +141,14 @@ class GapLock
                     pos.init = true;
                 }
                 else if(!pos.intersect(interval)){
+                    intervals.clear();
                     return false;
                 }
             }
             return true;
         }
+
+        inline bool valid() const { return intervals.size(); }
 
         bool init(const std::vector<Value> &values)
         {
@@ -171,7 +176,7 @@ class LockManager {
         bool shared_gap_compatible(const GapLock &other) {
             if(mode == LockMode::EXLUCSIVE)
                 return false;
-            return std::all_of(shared_gaps.begin(), shared_gaps.end(), [&](GapLock &gaplock)
+            return std::all_of(exclusive_gaps.begin(), exclusive_gaps.end(), [&](GapLock &gaplock)
                                { return gaplock.compatible(other); });
         }
         bool exclusive_gap_compatible(const GapLock &other) {
@@ -203,10 +208,19 @@ class LockManager {
         std::unordered_map<Transaction*, LockRequest> request_queue_;
         std::condition_variable cv_;            // 条件变量，用于唤醒正在等待加锁的申请，在no-wait策略下无需使用
         std::mutex latch_;
+        // 自定义移动构造函数
+        LockRequestQueue() = default;
+        LockRequestQueue(LockRequestQueue &&other) noexcept 
+            : request_queue_(std::move(other.request_queue_)) {}
+        LockRequestQueue &operator=(LockRequestQueue &&other) noexcept
+        {
+            request_queue_ = std::move(other.request_queue_);
+            return *this;
+        }
     };
 
 public:
-    LockManager() {}
+    LockManager() : table_num_(MAX_TABLE_NUMBER), lock_table_(MAX_TABLE_NUMBER) {}
 
     ~LockManager() {}
 
@@ -221,5 +235,8 @@ public:
     void unlock(Transaction* txn, int tab_fd);
 
 private:
-    LockRequestQueue lock_table_[MAX_TABLE_NUMBER];   // 全局锁表
+    // std::unordered_map<int, int>
+    std::shared_mutex lock_;
+    std::atomic_int32_t table_num_;
+    std::vector<LockRequestQueue> lock_table_; // 全局锁表
 };

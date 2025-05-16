@@ -31,13 +31,13 @@ using namespace ast;
 
 // keywords
 %token SHOW TABLES CREATE TABLE DROP DESC INSERT INTO VALUES DELETE FROM ASC ORDER GROUP BY HAVING
-WHERE UPDATE SET SELECT INT CHAR FLOAT INDEX AND JOIN EXIT HELP TXN_BEGIN TXN_COMMIT TXN_ABORT TXN_ROLLBACK ORDER_BY ENABLE_NESTLOOP ENABLE_SORTMERGE
-SUM COUNT MAX MIN AS 
+WHERE UPDATE SET SELECT INT CHAR FLOAT DATETIME INDEX AND JOIN IN NOT EXIT HELP TXN_BEGIN TXN_COMMIT TXN_ABORT TXN_ROLLBACK ORDER_BY ENABLE_NESTLOOP ENABLE_SORTMERGE
+SUM COUNT MAX MIN AS
 // non-keywords
 %token LEQ NEQ GEQ T_EOF
 
 // type-specific tokens
-%token <sv_str> IDENTIFIER VALUE_STRING
+%token <sv_str> IDENTIFIER VALUE_STRING VALUE_PATH
 %token <sv_int> VALUE_INT
 %token <sv_float> VALUE_FLOAT
 %token <sv_bool> VALUE_BOOL
@@ -216,6 +216,10 @@ type:
     {
         $$ = std::make_shared<TypeLen>(SV_TYPE_FLOAT, sizeof(float));
     }
+    |   DATETIME
+    {
+        $$ = std::make_shared<TypeLen>(SV_TYPE_DATETIME, 19);
+    }
     ;
 
 valueList:
@@ -253,7 +257,16 @@ condition:
     {
         $$ = std::make_shared<BinaryExpr>($1, $2, $3);
     }
+    |   col op '(' dml ')'
+    {
+	$$ = std::make_shared<SubQueryExpr>($1, $2, $4);
+    }
+    |   col op '(' valueList ')'
+    {
+	$$ = std::make_shared<SubQueryExpr>($1, $2, $4);
+    }
     ;
+
 
 optWhereClause:
         /* epsilon */ { /* ignore*/ }
@@ -368,6 +381,14 @@ op:
     {
         $$ = SV_OP_GE;
     }
+    |   IN
+    {
+	    $$ = SV_OP_IN;
+    }
+    |   NOT IN
+    {
+    	$$ = SV_OP_NOT_IN;
+    }
     ;
 
 expr:
@@ -431,9 +452,9 @@ opt_order_clause:
     ;
 
 opt_groupby_clause:
-    GROUP BY colList      
-    { 
-        $$ = $3; 
+    GROUP BY colList
+    {
+        $$ = $3;
     }
     |   /* epsilon */ { /* ignore*/ }
     ;
@@ -461,4 +482,7 @@ tbName: IDENTIFIER;
 colName: IDENTIFIER;
 
 ALIAS: IDENTIFIER;
+
+
+
 %%

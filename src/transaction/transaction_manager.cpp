@@ -119,11 +119,11 @@ void TransactionManager::abort(Transaction *txn, LogManager *log_manager)
                 break;
             case WType::IX_INSERT_TUPLE:
                 sm_manager_->ihs_.at(write_record.GetTableName())            
-                    ->delete_entry(write_record.GetRecord().data, write_record.GetRid(), txn);
+                    ->delete_entry(write_record.GetRecord().data, write_record.GetRid(), txn, true);
                 break;
             case WType::IX_DELETE_TUPLE:
                 sm_manager_->ihs_.at(write_record.GetTableName())            
-                    ->insert_entry(write_record.GetRecord().data, write_record.GetRid(), txn);
+                    ->insert_entry(write_record.GetRecord().data, write_record.GetRid(), txn, true);
                 break;
         }
     }
