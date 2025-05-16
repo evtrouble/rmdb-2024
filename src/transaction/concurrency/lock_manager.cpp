@@ -15,7 +15,6 @@ void LockManager::lock_shared_on_gap(Transaction* txn, int tab_fd, const GapLock
     if(!gaplock.valid())
         return lock_shared_on_table(txn, tab_fd);
 
-    assert(tab_fd < MAX_TABLE_NUMBER);
     if(txn->get_state() == TransactionState::SHRINKING){
         throw TransactionAbortException(txn->get_transaction_id(), AbortReason::LOCK_ON_SHIRINKING);
     }
@@ -55,9 +54,17 @@ void LockManager::lock_exclusive_on_gap(Transaction* txn, int tab_fd, const GapL
     if(!gaplock.valid())
         return lock_exclusive_on_table(txn, tab_fd);
 
-    assert(tab_fd < MAX_TABLE_NUMBER);
     if(txn->get_state() == TransactionState::SHRINKING){
         throw TransactionAbortException(txn->get_transaction_id(),AbortReason::LOCK_ON_SHIRINKING);
+    }
+    if(tab_fd > table_num_.load())
+    {
+        std::lock_guard lock(lock_);
+        if(tab_fd > table_num_.load())
+        {
+            table_num_ += 10;
+            lock_table_.resize(table_num_.load());
+        }
     }
     auto &lock_queue = lock_table_[tab_fd];
 
@@ -83,7 +90,6 @@ void LockManager::lock_exclusive_on_gap(Transaction* txn, int tab_fd, const GapL
 
 void LockManager::unlock(Transaction* txn, int tab_fd)
 {
-    assert(tab_fd < MAX_TABLE_NUMBER);
     txn->set_state(TransactionState::SHRINKING);
     auto &lock_queue = lock_table_[tab_fd];
     std::unique_lock lock(lock_queue.latch_);
@@ -93,11 +99,18 @@ void LockManager::unlock(Transaction* txn, int tab_fd)
 
 void LockManager::lock_shared_on_table(Transaction* txn, int tab_fd)
 {
-    assert(tab_fd < MAX_TABLE_NUMBER);
     if(txn->get_state() == TransactionState::SHRINKING){
         throw TransactionAbortException(txn->get_transaction_id(),AbortReason::LOCK_ON_SHIRINKING);
     }
-
+    if(tab_fd > table_num_.load())
+    {
+        std::lock_guard lock(lock_);
+        if(tab_fd > table_num_.load())
+        {
+            table_num_ += 10;
+            lock_table_.resize(table_num_.load());
+        }
+    }
     auto &lock_queue = lock_table_[tab_fd];
 
     std::unique_lock lock(lock_queue.latch_);
@@ -122,9 +135,17 @@ void LockManager::lock_shared_on_table(Transaction* txn, int tab_fd)
 
 void LockManager::lock_exclusive_on_table(Transaction* txn, int tab_fd)
 {
-    assert(tab_fd < MAX_TABLE_NUMBER);
     if(txn->get_state() == TransactionState::SHRINKING){
         throw TransactionAbortException(txn->get_transaction_id(),AbortReason::LOCK_ON_SHIRINKING);
+    }
+    if(tab_fd > table_num_.load())
+    {
+        std::lock_guard lock(lock_);
+        if(tab_fd > table_num_.load())
+        {
+            table_num_ += 10;
+            lock_table_.resize(table_num_.load());
+        }
     }
 
     auto &lock_queue = lock_table_[tab_fd];

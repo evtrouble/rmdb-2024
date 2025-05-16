@@ -5,7 +5,7 @@
             "name": "调试单元测试",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/bin/unit_test",
+            "program": "${workspaceFolder}/bin/unit_test",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
@@ -41,12 +41,12 @@
             "name": "RMDB Debug",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/bin/rmdb",
+            "program": "${workspaceFolder}/bin/rmdb",
             "args": [
                 "test"
             ],
             "stopAtEntry": false,
-            "cwd": "${workspaceFolder}/build",
+            "cwd": "${workspaceFolder}",
             "environment": [],
             "externalConsole": false,
             "MIMode": "gdb",

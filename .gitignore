@@ -69,3 +69,8 @@ install_manifest.txt
 compile_commands.json
 test/
 *.pdf
+
+FlameGraph/*
+flamegraph.svg
+perf.data
+perf.data.old

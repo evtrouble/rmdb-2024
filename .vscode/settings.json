@@ -71,5 +71,5 @@
         "codecvt": "cpp",
         "cfloat": "cpp"
     },
-    "cmake.sourceDirectory": "/home/nero/db2024/rmdb/src/optimizer"
+    "cmake.sourceDirectory": "/home/gyl/cpp/rmdb/"
 }

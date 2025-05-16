@@ -6,9 +6,9 @@ BufferPoolManager::BufferPoolManager(size_t pool_size, DiskManager* disk_manager
       disk_manager_(disk_manager)
 {
     // 可以被Replacer改变
-    if (REPLACER_TYPE.compare("LRU"))
+    if (REPLACER_TYPE.compare("LRU") == 0)
         replacer_ = new LRUReplacer(pool_size);
-    else if (REPLACER_TYPE.compare("CLOCK"))
+    else if (REPLACER_TYPE.compare("CLOCK") == 0)
         replacer_ = new ClockReplacer(pool_size);
     else {
         replacer_ = new LRUReplacer(pool_size);
@@ -144,7 +144,9 @@ bool BufferPoolManager::delete_page(PageId page_id) {
     auto& bucket = get_bucket(page_id);
     std::unique_lock lock(bucket.latch);
     auto it = bucket.page_table.find(page_id);
-    if (it == bucket.page_table.end()) return true;
+    std::cout << "ddd\n";
+    if (it == bucket.page_table.end())
+        return true;
 
     frame_id_t frame_id = it->second;
     Page& page = pages_[frame_id];
@@ -158,6 +160,7 @@ bool BufferPoolManager::delete_page(PageId page_id) {
     }
 
     bucket.page_table.erase(it);
+     std::cout << "fff\n";
     return true;
 }
 

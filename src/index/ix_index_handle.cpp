@@ -221,7 +221,7 @@ IxIndexHandle::IxIndexHandle(DiskManager *disk_manager, BufferPoolManager *buffe
     int now_page_no = disk_manager_->get_fd2pageno(fd);
     disk_manager_->set_fd2pageno(fd, now_page_no + 1);
 }
-
+static int i = 0;
 /**
  * @brief 用于查找指定键所在的叶子结点
  * @param key 要查找的目标key值
@@ -247,12 +247,20 @@ IxNodeHandle IxIndexHandle::find_leaf_page(const char *key, Operation operation,
     while (true)
     {
         auto node = fetch_node(next_page_id);
+        if(i==2)
+                 std::cout << node.page << "\n";
         if(find_first){
             if(node.is_leaf_page() && operation != Operation::FIND) {
+                if(i==2)
+                {
+                    std::cout << node.page->latch_.try_lock_shared() << "\n";
+                    std::cout << "zhenzdadja\n";
+                }
                 node.page->latch_.lock();
                 transaction->append_index_latch_page_set(node.page);
             } else
                 node.page->latch_.lock_shared();
+             
             if(prev_page != nullptr) {
                 prev_page->latch_.unlock_shared();
                 buffer_pool_manager_->unpin_page(prev_page->get_page_id(), false);
@@ -297,6 +305,23 @@ bool IxIndexHandle::get_value(const char *key, std::vector<Rid> *result, Transac
     // 提示：使用完buffer_pool提供的page之后，记得unpin page；记得处理并发的上锁
     if (exist)
         result->emplace_back(* rid);
+    return exist;
+}
+
+bool IxIndexHandle::get_value(const char *key, Rid& result, Transaction *transaction)
+{
+    // 1. 获取目标key值所在的叶子结点
+    root_lacth_.lock_shared();
+    auto leaf = find_leaf_page(key, Operation::FIND, transaction);
+    // 2. 在叶子节点中查找目标key值的位置，并读取key对应的rid
+    Rid *rid = nullptr;
+    bool exist = leaf.leaf_lookup(key, &rid);
+    unlock_shared(leaf);
+
+    // 3. 把rid存入result参数中
+    // 提示：使用完buffer_pool提供的page之后，记得unpin page；记得处理并发的上锁
+    if (exist)
+        result = *rid;
     return exist;
 }
 
@@ -424,7 +449,10 @@ page_id_t IxIndexHandle::insert_entry(const char *key, const Rid &value, Transac
  */
 bool IxIndexHandle::delete_entry(const char *key, const Rid &value, Transaction *transaction, bool abort) {
     // 1. 获取该键值对所在的叶子结点
+    std::cout << i << "\n";
+    i++;
     root_lacth_.lock_shared();
+    //0x7fffe72594c0
     auto leaf_node = find_leaf_page(key, Operation::DELETE, transaction);
 
     int index = leaf_node.lower_bound(key);
@@ -444,7 +472,6 @@ bool IxIndexHandle::delete_entry(const char *key, const Rid &value, Transaction 
             transaction->append_write_record(WriteRecord(WType::IX_DELETE_TUPLE, 
                 disk_manager_->get_file_name(fd_), value, RmRecord(key, file_hdr_->col_tot_len_)));
     }
-
     release_all_xlock(transaction->get_index_latch_page_set(), true);
     auto page_set = transaction->get_index_deleted_page_set();
     while (page_set->size())
@@ -503,6 +530,7 @@ bool IxIndexHandle::coalesce_or_redistribute(IxNodeHandle &node, Transaction *tr
     coalesce(neighbor_node, node, parent_node, idx, transaction);
 
     neighbor_node.page->latch_.unlock();
+    buffer_pool_manager_->unpin_page(parent_node.get_page_id(), true);
     buffer_pool_manager_->unpin_page(neighbor_node.get_page_id(), true);
     return true;
 }
@@ -549,7 +577,17 @@ bool IxIndexHandle::adjust_root(IxNodeHandle &old_root_node) {
  * 注意更新parent结点的相关kv对
  */
 void IxIndexHandle::redistribute(IxNodeHandle &neighbor_node, IxNodeHandle &node, IxNodeHandle &parent, int index) {
-    // Todo:
+
+    auto erase_pos_ = index ? neighbor_node.page_hdr->num_key - 1 : 0;
+    auto insert_pos_ = index ? 0 : node.page_hdr->num_key;
+
+    node.insert_pair(insert_pos_, neighbor_node.get_key(erase_pos_), *(neighbor_node.get_rid(erase_pos_)));
+
+    neighbor_node.erase_pair(erase_pos_);
+
+    maintain_child(node, insert_pos_);
+
+    maintain_parent(index ? node : neighbor_node);
     // 1. 通过index判断neighbor_node是否为node的前驱结点
     // 2. 从neighbor_node中移动一个键值对到node结点中
     // 3. 更新父节点中的相关信息，并且修改移动键值对对应孩字结点的父结点信息（maintain_child函数）
@@ -794,7 +832,7 @@ void IxIndexHandle::release_all_xlock(std::shared_ptr<std::deque<Page*>> page_se
     {
         auto node = page_set->front();
         page_set->pop_front();
-        if(node == nullptr)
+        if (node == nullptr)
         {
             root_lacth_.unlock();
         } else {

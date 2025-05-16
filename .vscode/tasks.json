@@ -4,7 +4,7 @@
         {
             "label": "build",
             "type": "shell",
-            "command": "mkdir -p build && cd build && cmake .. && make",
+            "command": "cmake . && make",
             "group": {
                 "kind": "build",
                 "isDefault": true
@@ -13,7 +13,7 @@
         {
             "label": "build-server",
             "type": "shell",
-            "command": "mkdir -p build && cd build && cmake -DCMAKE_CXX_COMPILER=/usr/bin/g++ -DCMAKE_BUILD_TYPE=Debug .. && make -j8",
+            "command": "cmake -DCMAKE_CXX_COMPILER=/usr/bin/g++ -DCMAKE_BUILD_TYPE=Debug . && make -j8",
             "group": {
                 "kind": "build",
                 "isDefault": true

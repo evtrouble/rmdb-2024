@@ -44,13 +44,10 @@ private:
         ihs.reserve(tab_.indexes.size());
         for (auto &index : tab_.indexes)
         {
-            for (int i = 0; i < index.col_num; ++i)
-            {
-                GapLock ix_gaplock(gaplock_);
-                ihs.emplace_back(sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get());
-                auto ih = ihs.back();
-                context_->lock_mgr_->lock_exclusive_on_gap(context_->txn_, ih->get_fd(), ix_gaplock);
-            }
+            GapLock ix_gaplock(gaplock_);
+            ihs.emplace_back(sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get());
+            auto ih = ihs.back();
+            context_->lock_mgr_->lock_exclusive_on_gap(context_->txn_, ih->get_fd(), ix_gaplock);
         }
         context_->lock_mgr_->lock_exclusive_on_gap(context_->txn_, fh_->GetFd(), gaplock_);
 

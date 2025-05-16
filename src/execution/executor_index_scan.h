@@ -38,6 +38,7 @@ private:
     SmManager *sm_manager_;
     bool effective = true;
     bool first = true;
+    bool is_point = false; //点查
 
     // 获取指定列的值
     inline char *get_col_value(const RmRecord *rec, const ColMeta &col)
@@ -115,12 +116,14 @@ public:
             rid_.page_no = RM_NO_PAGE; // 设置 rid_ 以指示结束
             return;
         }
-        if(first)
+        if (first)
         {
-            first = false;
             GapLock gaplock(gaplock_);
             context_->lock_mgr_->lock_shared_on_gap(context_->txn_, fh_->GetFd(), gaplock_);
             set_index_scan(gaplock);
+            
+            if(is_point)
+                return;
             std::sort(conds_.begin(), conds_.end());
             
 #ifdef DEBUG
@@ -134,6 +137,11 @@ public:
 
     void nextTuple() override
     {
+        if(is_point) {
+            rid_.page_no = RM_NO_PAGE; // 设置 rid_ 以指示结束
+            return;
+        }
+
         scan_->next();
         find_next_valid_tuple();
     }
@@ -209,8 +217,11 @@ private:
                 break;
             }
         }
-        if (!init)
-            set_position(low_key, true, up_key, true);
+        is_point = !init;
+        if(is_point && !index_handle_->get_value(low_key, rid_, nullptr))
+        {
+            rid_.page_no = RM_NO_PAGE; // 设置 rid_ 以指示结束
+        }
 
         auto left = conds_.begin();
         auto right = conds_.end();

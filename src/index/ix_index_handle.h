@@ -176,6 +176,7 @@ public:
 
     // for search
     bool get_value(const char *key, std::vector<Rid> *result, Transaction *transaction);
+    bool get_value(const char *key, Rid& result, Transaction *transaction);
 
     IxNodeHandle find_leaf_page(const char *key, Operation operation, Transaction *transaction,
                                                  bool find_first = true);

@@ -1,6 +1,6 @@
-#line 2 "lex.yy.cpp"
+#line 2 "/home/gyl/cpp/rmdb/src/parser/lex.yy.cpp"
 
-#line 4 "lex.yy.cpp"
+#line 4 "/home/gyl/cpp/rmdb/src/parser/lex.yy.cpp"
 
 #define  YY_INT_ALIGNED short int
 
@@ -676,9 +676,9 @@ char *yytext;
         } \
     }
 
-#line 680 "lex.yy.cpp"
+#line 680 "/home/gyl/cpp/rmdb/src/parser/lex.yy.cpp"
 
-#line 682 "lex.yy.cpp"
+#line 682 "/home/gyl/cpp/rmdb/src/parser/lex.yy.cpp"
 
 #define INITIAL 0
 #define STATE_COMMENT 1
@@ -916,7 +916,7 @@ YY_DECL
 
 #line 49 "lex.l"
     /* block comment */
-#line 920 "lex.yy.cpp"
+#line 920 "/home/gyl/cpp/rmdb/src/parser/lex.yy.cpp"
 
 	while ( /*CONSTCOND*/1 )		/* loops until end-of-file is reached */
 		{
@@ -1321,7 +1321,7 @@ YY_RULE_SETUP
 #line 142 "lex.l"
 ECHO;
 	YY_BREAK
-#line 1325 "lex.yy.cpp"
+#line 1325 "/home/gyl/cpp/rmdb/src/parser/lex.yy.cpp"
 
 	case YY_END_OF_BUFFER:
 		{
