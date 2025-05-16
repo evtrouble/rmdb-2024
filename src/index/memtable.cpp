@@ -153,7 +153,7 @@ std::shared_ptr<MergeIterator> MemTable::find(const std::string &key, bool is_cl
     std::shared_lock lock(cur_mtx);
     active_memtable = active_memtable_;
   }
-  std::vector<std::shared_ptr<SkipListIterator>> merge_its;
+  std::vector<std::shared_ptr<BaseIterator>> merge_its;
   merge_its.emplace_back(active_memtable->find(key, is_closed));
   std::vector<std::shared_ptr<SkipList>> immutable_memtables;
   {
@@ -175,7 +175,7 @@ std::shared_ptr<MergeIterator> MemTable::find(const std::string &lower, bool is_
     std::shared_lock lock(cur_mtx);
     active_memtable = active_memtable_;
   }
-  std::vector<std::shared_ptr<SkipListIterator>> merge_its;
+  std::vector<std::shared_ptr<BaseIterator>> merge_its;
   merge_its.emplace_back(active_memtable->find(lower, is_lower_closed, upper, is_upper_closed));
   std::vector<std::shared_ptr<SkipList>> immutable_memtables;
   {

@@ -10,8 +10,9 @@
 #include "lsmtree.h"
 #include "memtable.h"
 #include "sstable.h"
-#include "transaction.h"
+#include "transaction/transaction.h"
 
+#ifndef BPLUS
 LevelIterator::LevelIterator(const std::vector<std::shared_ptr<SSTable>> &ssts, 
   const std::string &lower, bool is_lower_closed, 
   const std::string &upper, bool is_upper_closed)
@@ -125,9 +126,9 @@ LsmTree::LsmTree(LsmFileHdr* file_hdr, const std::string& path) : file_hdr_(file
   // tran_manager_->init_new_wal();
 }
 
-LsmTree::~LsmTree() {
-  flush_all();
-}
+// LsmTree::~LsmTree() {
+//   flush_all();
+// }
 
 bool LsmTree::get(const std::string &key, Rid& value, Transaction *transaction) {
     // auto txn_id = transaction->get_transaction_id();
@@ -282,47 +283,77 @@ void LsmTree::full_compact(size_t src_level)
 
   // 获取源level和目标level的 sst_id
   std::vector<std::shared_ptr<SSTable>> old_level_x, old_level_y;
-  auto &old_level_id_x = level_sst_ids[src_level];
-  old_level_x.reserve(old_level_id_x.size());
-  for (auto id : old_level_id_x)
-    old_level_x.emplace_back(ssts[id]);
+  {
+    std::shared_lock lock(ssts_mtx);
+    auto &old_level_id_x = level_sst_ids[src_level];
+    old_level_x.reserve(old_level_id_x.size());
+    for (auto id : old_level_id_x)
+    {
+      ssts[id]->mark_delete();
+      old_level_x.emplace_back(ssts[id]);
+    }
 
-  auto &old_level_id_y = level_sst_ids[src_level + 1];
-  old_level_y.reserve(old_level_id_y.size());
-  for(auto id : old_level_id_y)
-    old_level_y.emplace_back(ssts[id]);
+    auto &old_level_id_y = level_sst_ids[src_level + 1];
+    old_level_y.reserve(old_level_id_y.size());
+    for(auto id : old_level_id_y)
+    {
+      ssts[id]->mark_delete();
+      old_level_y.emplace_back(ssts[id]);
+    }
+  }
 
-  if (src_level == 0) {
+  std::vector<std::shared_ptr<SSTable>> new_ssts;
+  if (src_level == 0)
+  {
     // l0这一层不同sst的key有重叠, 需要额外处理
-    full_l0_l1_compact(old_level_x, old_level_y);
-  } else {
-    full_common_compact(old_level_x, old_level_y, src_level + 1);
+    new_ssts = full_l0_l1_compact(old_level_x, old_level_y);
+  }
+  else
+  {
+    new_ssts = full_common_compact(old_level_x, old_level_y, src_level + 1);
   }
   // 完成 compact 后移除旧的sst记录
-  for (auto &old_sst_id : old_level_id_x) {
-    ssts[old_sst_id]->del_sst();
-    ssts.erase(old_sst_id);
-  }
-  for (auto &old_sst_id : old_level_id_y) {
-    ssts[old_sst_id]->del_sst();
-    ssts.erase(old_sst_id);
-  }
-  level_sst_ids[src_level].clear();
-  level_sst_ids[src_level + 1].clear();
+  std::unique_lock lock(ssts_mtx);
+  auto comp = [this](size_t sst_id)
+  {
+    if (ssts[sst_id]->is_deleted())
+    {
+      ssts.erase(sst_id);
+      return true;
+    }
+    return false;
+  };
+  auto to_remove = std::remove_if(level_sst_ids[src_level].begin(), level_sst_ids[src_level].end(), comp);
+  level_sst_ids[src_level].erase(to_remove, level_sst_ids[src_level].end());
+  to_remove = std::remove_if(level_sst_ids[src_level + 1].begin(), level_sst_ids[src_level + 1].end(), comp);
+  level_sst_ids[src_level + 1].erase(to_remove, level_sst_ids[src_level + 1].end());
 
   cur_max_level = std::max(cur_max_level, src_level + 1);
 
   // 添加新的sst
   for (auto &new_sst : new_ssts) {
-    level_sst_ids[src_level + 1].push_back(new_sst->get_sst_id());
     ssts[new_sst->get_sst_id()] = new_sst;
+    level_sst_ids[src_level + 1].emplace_back(new_sst->get_sst_id());
   }
   // 此处没必要reverse了
   std::sort(level_sst_ids[src_level + 1].begin(),
             level_sst_ids[src_level + 1].end());
 }
 
-void LsmTree::full_l0_l1_compact(std::vector<std::shared_ptr<SSTable>> &l0_ssts, 
+std::vector<std::shared_ptr<SSTable>> LsmTree::full_common_compact(std::vector<std::shared_ptr<SSTable>> &lx_ssts, 
+      std::vector<std::shared_ptr<SSTable>> &ly_ssts, size_t level_y)
+{
+  std::vector<std::shared_ptr<BaseIterator>> merge_its;
+  merge_its.reserve(2);
+  merge_its.emplace_back(std::make_shared<LevelIterator>(lx_ssts));
+  merge_its.emplace_back(std::make_shared<LevelIterator>(ly_ssts));
+  auto compact = std::make_shared<MergeIterator>(merge_its, file_hdr_, true);
+
+  return gen_sst_from_iter(compact,
+                           LSM_PER_MEM_SIZE_LIMIT * LSM_SST_LEVEL_RATIO, 1);
+}
+
+std::vector<std::shared_ptr<SSTable>> LsmTree::full_l0_l1_compact(std::vector<std::shared_ptr<SSTable>> &l0_ssts, 
   std::vector<std::shared_ptr<SSTable>> &l1_ssts)
 {
   // TODO: 这里需要补全的是对已经完成事务的删除
@@ -330,7 +361,7 @@ void LsmTree::full_l0_l1_compact(std::vector<std::shared_ptr<SSTable>> &l0_ssts,
   // l0 的sst之间的key有重叠, 需要合并
   std::vector<std::shared_ptr<BaseIterator>> merge_its;
   merge_its.reserve(2);
-  std::vector<std::shared_ptr<SstIterator>> l_its;
+  std::vector<std::shared_ptr<BaseIterator>> l_its;
   l_its.reserve(l0_ssts.size());
   for (auto &sst : l0_ssts)
   {
@@ -338,18 +369,42 @@ void LsmTree::full_l0_l1_compact(std::vector<std::shared_ptr<SSTable>> &l0_ssts,
   }
   merge_its.emplace_back(std::make_shared<MergeIterator>(l_its, file_hdr_, false));
 
-  auto compact = std::make_shared<MergeIterator>(merge_its, file_hdr_, true);
-
   l_its.reserve(l1_ssts.size());
   merge_its.emplace_back(std::make_shared<LevelIterator>(l1_ssts));
+  auto compact = std::make_shared<MergeIterator>(merge_its, file_hdr_, true);
 
-  std::shared_ptr<ConcactIterator> old_l1_begin_ptr =
-      std::make_shared<ConcactIterator>(l1_ssts, 0);
-
-  TwoMergeIterator l0_l1_begin(l0_begin_ptr, old_l1_begin_ptr, 0);
-
-  return gen_sst_from_iter(l0_l1_begin,
+  return gen_sst_from_iter(compact,
                            LSM_PER_MEM_SIZE_LIMIT * LSM_SST_LEVEL_RATIO, 1);
+}
+
+std::vector<std::shared_ptr<SSTable>>
+LsmTree::gen_sst_from_iter(std::shared_ptr<MergeIterator> &iter, size_t target_sst_size,
+                             size_t target_level) {
+  // TODO: 这里需要补全的是对已经完成事务的删除
+
+  std::vector<std::shared_ptr<SSTable>> new_ssts;
+  auto new_sst_builder = SSTBuilder(disk_manager_, file_hdr_, LSM_BLOCK_SIZE, true);
+  while (!iter->is_end()) {
+
+    new_sst_builder.add((*iter)->first, (*iter)->second);
+    ++(*iter);
+
+    if (new_sst_builder.estimated_size() >= target_sst_size) {
+      size_t sst_id = next_sst_id++; // TODO: 后续优化并发性
+      std::string sst_path = get_sst_path(sst_id, target_level);
+      auto new_sst = new_sst_builder.build(sst_id, sst_path, block_cache);
+      new_ssts.push_back(new_sst);
+      new_sst_builder = SSTBuilder(disk_manager_, file_hdr_, LSM_BLOCK_SIZE, true); // 重置builder
+    }
+  }
+  if (new_sst_builder.estimated_size() > 0) {
+    size_t sst_id = next_sst_id++; // TODO: 后续优化并发性
+    std::string sst_path = get_sst_path(sst_id, target_level);
+    auto new_sst = new_sst_builder.build(sst_id, sst_path, this->block_cache);
+    new_ssts.push_back(new_sst);
+  }
+
+  return new_ssts;
 }
 
 void LsmTree::flush() 
@@ -363,26 +418,17 @@ void LsmTree::flush()
   // 1. 先判断 l0 sst 是否数量超限需要concat到 l1
   if (level_sst_ids.find(0) != level_sst_ids.end() &&
       level_sst_ids[0].size() >= LSM_SST_LEVEL_RATIO) {
-    full_compact(0);
+    compaction_thread.add(shared_from_this(), 0);
   }
 
-  // 2. 创建新的 SST ID
-  // 链表头部存储的是最新刷入的sst, 其sst_id最大
-  size_t new_sst_id = next_sst_id++;
-
-  // 3. 准备 SSTBuilder
-  SSTBuilder builder(disk_manager_, file_hdr_, LSM_BLOCK_SIZE); // 4KB block size
-
-  // 4. 将 memtable 中最旧的表写入 SST
-  auto sst_path = get_sst_path(new_sst_id, 0);
-  auto new_sst =
-      memtable.flush_last(builder, sst_path, new_sst_id, block_cache);
+  auto to_flush = memtable.get_last();
+  flush_thread.add(to_flush, shared_from_this());
 }
 
 std::vector<std::vector<std::shared_ptr<SSTable>>> LsmTree::get_all_sstables()
 {
-  std::vector<std::vector<std::shared_ptr<SSTable>>> ssts;
-  ssts.reserve(cur_max_level);
+  std::vector<std::vector<std::shared_ptr<SSTable>>> ssts_ret;
+  ssts_ret.reserve(cur_max_level);
   std::shared_lock<std::shared_mutex> rlock(ssts_mtx); // 加读锁
   for (auto it = level_sst_ids.begin(); it != level_sst_ids.end(); it++)
   {
@@ -392,9 +438,9 @@ std::vector<std::vector<std::shared_ptr<SSTable>>> LsmTree::get_all_sstables()
     {
       level.emplace_back(ssts[id]);
     }
-    ssts.emplace_back(std::move(level));
+    ssts_ret.emplace_back(std::move(level));
   }
-  return ssts;
+  return ssts_ret;
 }
 
 MergeIterator LsmTree::find(const std::string &key, bool is_closed)
@@ -407,18 +453,18 @@ MergeIterator LsmTree::find(const std::string &key, bool is_closed)
   merge_its.emplace_back(std::move(it));
 
   // 从 L0 层 SST 文件中查找
-  auto ssts = get_all_sstables();
+  auto ssts_ = get_all_sstables();
   merge_its.reserve(cur_max_level + 1);
-  std::vector<std::shared_ptr<SstIterator>> its;
-  its.reserve(ssts[0].size());
-  for(auto& sst : ssts[0])
+  std::vector<std::shared_ptr<BaseIterator>> its;
+  its.reserve(ssts_[0].size());
+  for(auto& sst : ssts_[0])
   {
     its.emplace_back(std::make_shared<SstIterator>(sst, key, is_closed));
   }
   merge_its.emplace_back(std::make_shared<MergeIterator>(its, file_hdr_, false));
-  for (size_t id = 1; id < ssts.size(); id++)
+  for (size_t id = 1; id < ssts_.size(); id++)
   {
-    merge_its.emplace_back(std::make_shared<LevelIterator>(ssts[id], key, is_closed));
+    merge_its.emplace_back(std::make_shared<LevelIterator>(ssts_[id], key, is_closed));
   }
   return MergeIterator(merge_its, file_hdr_, true);
 }
@@ -433,27 +479,12 @@ MergeIterator LsmTree::find(const std::string &lower, bool is_lower_closed,
   std::vector<std::shared_ptr<BaseIterator>> merge_its;
   merge_its.emplace_back(std::move(it));
 
-  std::vector<std::vector<std::shared_ptr<SSTable>>> ssts;
-  ssts.reserve(cur_max_level);
-  merge_its.reserve(cur_max_level + 1);
-  {
-    std::shared_lock<std::shared_mutex> rlock(ssts_mtx); // 加读锁
-    for (auto it = level_sst_ids.begin(); it != level_sst_ids.end(); it++)
-    {
-      std::vector<std::shared_ptr<SSTable>> level;
-      level.reserve(it->second.size());
-      for (auto id : it->second)
-      {
-        level.emplace_back(ssts[id]);
-      }
-      ssts.emplace_back(std::move(level));
-    }
-  }
+  auto ssts_ = get_all_sstables();
 
   // 从 L0 层 SST 文件中查找
-  std::vector<std::shared_ptr<SstIterator>> its;
-  its.reserve(ssts[0].size());
-  for(auto& sst : ssts[0])
+  std::vector<std::shared_ptr<BaseIterator>> its;
+  its.reserve(ssts_[0].size());
+  for(auto& sst : ssts_[0])
   {
     its.emplace_back(std::make_shared<SstIterator>(sst, lower, 
       is_lower_closed, upper, is_upper_closed));
@@ -461,9 +492,9 @@ MergeIterator LsmTree::find(const std::string &lower, bool is_lower_closed,
   merge_its.emplace_back(std::make_shared<MergeIterator>(its, file_hdr_, false));
 
   // 从 L1 层 SST 文件中查找
-  for (size_t id = 1; id < ssts.size(); id++)
+  for (size_t id = 1; id < ssts_.size(); id++)
   {
-    merge_its.emplace_back(std::make_shared<LevelIterator>(ssts[id], lower, 
+    merge_its.emplace_back(std::make_shared<LevelIterator>(ssts_[id], lower, 
       is_lower_closed, upper, is_upper_closed));
   }
   return MergeIterator(merge_its, file_hdr_, true);
@@ -479,9 +510,63 @@ void LsmTree::set_new_sst(size_t new_sst_id, std::shared_ptr<SSTable>& new_sst)
   level_sst_ids[0].push_front(new_sst_id);
 }
 
-void LSM::flush_all() {
-  while (engine->memtable.get_total_size() > 0) {
-    auto max_tranc_id = engine->flush();
-    tran_manager_->update_max_flushed_tranc_id(max_tranc_id);
+// void LSM::flush_all() {
+//   while (engine->memtable.get_total_size() > 0) {
+//     auto max_tranc_id = engine->flush();
+//     tran_manager_->update_max_flushed_tranc_id(max_tranc_id);
+//   }
+// }
+void FlushThread::background_flush()
+{
+  while (!terminate_.load()) {
+    std::vector<ToFlush> batch;
+    {
+      std::unique_lock lock(queue_mutex_);
+      flush_cond_.wait_for(lock, std::chrono::seconds(1),
+        [this] { return !flush_queue_.empty() || terminate_; });
+
+        batch.reserve(flush_queue_.size());
+        while (!flush_queue_.empty())
+        {
+          batch.emplace_back(std::move(flush_queue_.front()));
+          flush_queue_.pop();
+        }
+      }
+    
+      if(batch.empty())continue;
+      for (auto& [table, lsm] : batch) {
+        size_t new_sst_id = lsm->next_sst_id++;
+
+        // 3. 准备 SSTBuilder
+        SSTBuilder builder(lsm->disk_manager_, lsm->file_hdr_, LSM_BLOCK_SIZE); // 4KB block size
+              
+        // 4. 将 memtable 中最旧的表写入 SST
+        auto sst_path = lsm->get_sst_path(new_sst_id, 0);
+        std::vector<std::pair<std::string, Rid>> flush_data = table->flush();
+        for (auto &[k, v] : flush_data) {
+          builder.add(k, v);
+        }
+
+        auto sst = builder.build(new_sst_id, sst_path, lsm->block_cache, table->bloom_filter());
+        lsm->set_new_sst(new_sst_id, sst);
+      }
   }
 }
+
+void CompactionThread::background_compact() {
+  while (!terminate_.load()) {
+    ToCompact task(nullptr, 0);
+    {
+      std::unique_lock lock(queue_mutex_);
+      compact_cond_.wait(lock, [this] { return !compact_queue_.empty() || terminate_; });
+      if (compact_queue_.empty()) continue;
+      task = std::move(compact_queue_.front());
+      compact_queue_.pop();
+    }
+    if (task.lsm) {
+      task.lsm->full_compact(task.src_level);
+    }
+  }
+}
+
+#endif

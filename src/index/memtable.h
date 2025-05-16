@@ -1,11 +1,12 @@
+#pragma once
+
 #include <string>
 #include "ix_defs.h"
-#include "transaction.h"
+#include "transaction/transaction.h"
 #include "skiplist.h"
 #include "sstable.h"
 
 class MemTable {
-    friend class TranContext;
     friend class HeapIterator;
 
   private:

@@ -7,16 +7,84 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <iomanip>
 
 #include "defs.h"
 #include "block_cache.h"
 #include "transaction/transaction.h"
 #include "memtable.h"
 #include "sstable.h"
-#include "transaction.h"
+#include "transaction/transaction.h"
+#include "ix_defs.h"
 
 // 参考RocksDB的实现，至少拥有3个后台线程分别负责垃圾回收，Compaction，flush
 // 对于每个sst都需要维护引用计数，增加待删除队列，删除前需要检查引用计数是否为0
+#ifndef BPLUS
+class LsmTree;
+
+struct FlushThread
+{
+    struct ToFlush
+    {
+        std::shared_ptr<SkipList> skiplist;
+        std::shared_ptr<LsmTree> lsm;
+        ToFlush(std::shared_ptr<SkipList> &skiplist, std::shared_ptr<LsmTree> &lsm)
+            : skiplist(std::move(skiplist)), lsm(std::move(lsm))
+        {}
+    };
+    std::queue<ToFlush> flush_queue_;
+    std::mutex queue_mutex_;
+    std::thread flush_thread_;
+    std::condition_variable flush_cond_;
+    std::atomic<bool> terminate_{false};
+
+    ~FlushThread(){
+        terminate_ = true;
+        flush_cond_.notify_all();
+        if (flush_thread_.joinable()) {
+            flush_thread_.join();
+        }
+    }
+
+    void add(std::shared_ptr<SkipList> &to_flush, std::shared_ptr<LsmTree> lsm)
+    {
+        std::lock_guard lock(queue_mutex_);
+        flush_queue_.emplace(to_flush, lsm);
+    }
+
+    void background_flush();
+};
+
+struct CompactionThread {
+    struct ToCompact {
+        std::shared_ptr<LsmTree> lsm;
+        size_t src_level;
+        ToCompact(std::shared_ptr<LsmTree> lsm, size_t src_level)
+            : lsm(std::move(lsm)), src_level(src_level) {}
+    };
+
+    std::queue<ToCompact> compact_queue_;
+    std::mutex queue_mutex_;
+    std::thread compact_thread_;
+    std::condition_variable compact_cond_;
+    std::atomic<bool> terminate_{false};
+
+    ~CompactionThread() {
+        terminate_ = true;
+        compact_cond_.notify_all();
+        if (compact_thread_.joinable()) {
+            compact_thread_.join();
+        }
+    }
+
+    void add(std::shared_ptr<LsmTree> lsm, size_t src_level) {
+        std::lock_guard lock(queue_mutex_);
+        compact_queue_.emplace(lsm, src_level);
+        compact_cond_.notify_one();
+    }
+
+    void background_compact();
+};
 
 class LevelIterator : public BaseIterator
 {
@@ -59,12 +127,16 @@ class LsmTree : public std::enable_shared_from_this<LsmTree>
     friend struct FlushThread;
     friend struct CompactionThread;
 
+    bool is_delete;
+
     LsmFileHdr *file_hdr_;
     MemTable memtable;
     DiskManager* disk_manager_;
     std::string data_dir;
-    size_t next_sst_id = 0;
+    std::atomic<size_t> next_sst_id = 0;
     static std::shared_ptr<BlockCache> block_cache;
+    static FlushThread flush_thread;
+    static CompactionThread compaction_thread;
     std::shared_mutex ssts_mtx;
     std::map<size_t, std::deque<size_t>> level_sst_ids;
     std::unordered_map<size_t, std::shared_ptr<SSTable>> ssts;
@@ -74,10 +146,10 @@ class LsmTree : public std::enable_shared_from_this<LsmTree>
 
   private:
     void full_compact(size_t src_level);
-    void full_l0_l1_compact(std::vector<std::shared_ptr<SSTable>> &l0_ssts, 
+    std::vector<std::shared_ptr<SSTable>> full_l0_l1_compact(std::vector<std::shared_ptr<SSTable>> &l0_ssts, 
       std::vector<std::shared_ptr<SSTable>> &l1_ssts);
 
-    void full_common_compact(std::vector<std::shared_ptr<SSTable>> &lx_ssts, 
+    std::vector<std::shared_ptr<SSTable>> full_common_compact(std::vector<std::shared_ptr<SSTable>> &lx_ssts, 
       std::vector<std::shared_ptr<SSTable>> &ly_ssts, size_t level_y);
 
     std::vector<std::vector<std::shared_ptr<SSTable>>> get_all_sstables();
@@ -120,18 +192,10 @@ class LsmTree : public std::enable_shared_from_this<LsmTree>
 
     //   static size_t get_sst_size(size_t level);
 
-    // private:
-    //   void full_compact(size_t src_level);
-    //   std::vector<std::shared_ptr<SSTable>>
-    //   full_l0_l1_compact(std::vector<size_t> &l0_ids, std::vector<size_t> &l1_ids);
-
-    //   std::vector<std::shared_ptr<SSTable>>
-    //   full_common_compact(std::vector<size_t> &lx_ids, std::vector<size_t> &ly_ids,
-    //                       size_t level_y);
-
-    //   std::vector<std::shared_ptr<SSTable>> gen_sst_from_iter(BaseIterator &iter,
-    //                                                       size_t target_sst_size,
-    //                                                       size_t target_level);
+    std::vector<std::shared_ptr<SSTable>>
+    gen_sst_from_iter(std::shared_ptr<MergeIterator> &iter, size_t target_sst_size,
+                      size_t target_level);
 
     void set_new_sst(size_t new_sst_id, std::shared_ptr<SSTable> &new_sst);
 };
+#endif

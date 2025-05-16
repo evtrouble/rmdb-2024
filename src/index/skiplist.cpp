@@ -38,11 +38,11 @@ bool SkipListIterator::is_end() const
 }
 
 SkipList::SkipList(LsmFileHdr *file_hdr, int max_height, size_t expected_num_items)
-    : max_height_(max_height),
+    : head_(std::make_shared<SkipListNode>("", Rid(), max_height_)), 
+      max_height_(max_height),
       current_height_(1),
       bloom_filter_(std::make_shared<BloomFilter>(expected_num_items)),
       file_hdr_(file_hdr),
-      head_(std::make_shared<SkipListNode>("", Rid(), max_height_, 0)),
       entry_size(file_hdr->col_tot_len_ + sizeof(Rid)),
       gen_(std::random_device()()),
       dist_(0, 1) {}
@@ -79,7 +79,7 @@ std::shared_ptr<SkipListNode> SkipList::FindGreaterOrEqual(
 }
 
 void SkipList::put(const std::string& key, const Rid& value) {
-    assert(key.size() == file_hdr_->col_tot_len_);
+    assert((int)key.size() == file_hdr_->col_tot_len_);
     std::vector<std::shared_ptr<SkipListNode>> prev(max_height_);
     auto node = FindGreaterOrEqual(key, &prev);
     

@@ -31,10 +31,10 @@ std::vector<uint8_t> Block::encode() {
   return encoded;
 }
 
-std::shared_ptr<Block> Block::decode(std::vector<uint8_t> &encoded,
+std::shared_ptr<Block> Block::decode(std::vector<uint8_t> &encoded, LsmFileHdr *file_hdr, 
                                      bool with_hash) {
   // 使用 make_shared 创建对象
-  auto block = std::make_shared<Block>();
+  auto block = std::make_shared<Block>(file_hdr);
 
   // 1. 安全性检查
   if (encoded.size() < sizeof(uint16_t)) {
@@ -86,7 +86,7 @@ size_t Block::get_offset_at(size_t idx) const {
 
 bool Block::add_entry(const std::string &key, const Rid &value) 
 {
-  assert(key.size() == file_hdr_->col_tot_len_);
+  assert((int)key.size() == file_hdr_->col_tot_len_);
   if ((cur_size() + entry_size > capacity) && num_elements) {
     return false;
   }
@@ -198,13 +198,13 @@ int Block::lower_bound(const std::string &key)
   return left;
 }
 
-size_t Block::size() const { return num_elements; }
+inline size_t Block::size() const { return num_elements; }
 
-size_t Block::cur_size() const {
+inline size_t Block::cur_size() const {
   return data.size() + sizeof(uint16_t);
 }
 
-bool Block::is_empty() const { return num_elements == 0; }
+inline bool Block::is_empty() const { return num_elements == 0; }
 
 std::shared_ptr<BlockIterator> Block::find(const std::string& key, bool is_closed)
 {

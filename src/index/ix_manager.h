@@ -44,6 +44,14 @@ class IxManager {
         return index_name;
     }
 
+    std::string get_index_dir(const std::string &filename, const std::vector<ColMeta>& index_cols) {
+        std::string index_name = filename;
+        for(size_t i = 0; i < index_cols.size(); ++i) 
+            index_name += "_" + index_cols[i].name;
+
+        return index_name;
+    }
+
     bool exists(const std::string &filename, const std::vector<ColMeta>& index_cols) {
         auto ix_name = get_index_name(filename, index_cols);
         return disk_manager_->is_file(ix_name);
@@ -55,6 +63,7 @@ class IxManager {
     }
 
     void create_index(const std::string &filename, const std::vector<ColMeta>& index_cols) {
+#ifdef BPLUS
         std::string ix_name = get_index_name(filename, index_cols);
         // Create index file
         disk_manager_->create_file(ix_name);
@@ -130,6 +139,54 @@ class IxManager {
 
         // Close index file
         disk_manager_->close_file(fd);
+#else 
+        std::string ix_dir = get_index_dir(filename, index_cols);
+        // Create index file
+        disk_manager_->create_dir(ix_dir);
+        ix_dir += ".idx";
+        disk_manager_->create_file(ix_dir);
+        // Open index file
+        int fd = disk_manager_->open_file(ix_dir);
+
+        // Create file header and write to file
+        // Theoretically we have: |page_hdr| + (|attr| + |rid|) * n <= PAGE_SIZE
+        // but we reserve one slot for convenient inserting and deleting, i.e.
+        // |page_hdr| + (|attr| + |rid|) * (n + 1) <= PAGE_SIZE
+        int col_tot_len = 0;
+        int col_num = index_cols.size();
+        for(auto& col: index_cols) {
+            col_tot_len += col.len;
+        }
+        if (col_tot_len > IX_MAX_COL_LEN) {
+            throw InvalidColLengthError(col_tot_len);
+        }
+        // 根据 |page_hdr| + (|attr| + |rid|) * (n + 1) <= PAGE_SIZE 求得n的最大值btree_order
+        // 即 n <= btree_order，那么btree_order就是每个结点最多可插入的键值对数量（实际还多留了一个空位，但其不可插入）
+        int btree_order = static_cast<int>((PAGE_SIZE - sizeof(IxPageHdr)) / (col_tot_len + sizeof(Rid)) - 1);
+        assert(btree_order > 2);
+
+        // Create file header and write to file
+        LsmFileHdr* fhdr = new LsmFileHdr(col_num, col_tot_len);
+        fhdr->col_types_.reserve(col_num);
+        fhdr->col_lens_.reserve(col_num);
+        for (int i = 0; i < col_num; ++i)
+        {
+            fhdr->col_types_.emplace_back(index_cols[i].type);
+            fhdr->col_lens_.emplace_back(index_cols[i].len);
+        }
+        fhdr->update_tot_len();
+        
+        char* data = new char[fhdr->tot_len_];
+        fhdr->serialize(data);
+
+        disk_manager_->write_page(fd, IX_FILE_HDR_PAGE, data, fhdr->tot_len_);
+        delete[] data;
+        delete fhdr;
+        disk_manager_->set_fd2pageno(fd, IX_INIT_NUM_PAGES - 1);  // DEBUG
+
+        // Close index file
+        disk_manager_->close_file(fd);
+#endif
     }
 
     void destroy_index(const std::string &filename, const std::vector<ColMeta>& index_cols) {

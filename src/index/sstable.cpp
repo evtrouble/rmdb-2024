@@ -40,7 +40,7 @@ void SstIterator::seek(const std::string &key, bool is_closed) {
 
   try {
     m_block_idx = m_sst->lower_bound(key, is_closed);
-    if (m_block_idx == -1 || m_block_idx >= m_sst->num_blocks()) {
+    if ((int)m_block_idx == -1 || m_block_idx >= m_sst->num_blocks()) {
       // 置为 end
       // TODO: 这个边界情况需要添加单元测试
       m_block_it = nullptr;
@@ -52,7 +52,7 @@ void SstIterator::seek(const std::string &key, bool is_closed) {
       m_block_it = nullptr;
       return;
     }
-    m_block_it = std::make_shared<BlockIterator>(block->find(key, is_closed));
+    m_block_it = block->find(key, is_closed);
     if (m_block_it->is_end()) {
       // block 中找不到
       m_block_idx++;
@@ -69,7 +69,7 @@ void SstIterator::set_upper_id(const std::string &key, bool is_closed)
 {
   try {
     upper_block_idx = m_sst->lower_bound(key, !is_closed);
-    if (upper_block_idx == -1 || upper_block_idx >= m_sst->num_blocks()) {
+    if ((int)upper_block_idx == -1 || upper_block_idx >= m_sst->num_blocks()) {
       upper_block_idx = m_sst->num_blocks();
     }
     if(m_block_idx == upper_block_idx && upper_block_idx != m_sst->num_blocks())
@@ -140,8 +140,8 @@ bool SstIterator::is_end() const
 
 SSTable::SSTable(LsmFileHdr *file_hdr, DiskManager *disk_manager, size_t sst_id, const std::string &file_path,
     std::shared_ptr<BlockCache> block_cache)
-    : file_path_(file_path), disk_manager_(disk_manager), sst_id(sst_id), 
-    block_cache(block_cache), file_hdr_(file_hdr), fd(-1), is_delete(false) {
+    : file_path_(file_path), fd(-1), sst_id(sst_id), block_cache(block_cache), 
+    disk_manager_(disk_manager), file_hdr_(file_hdr), is_delete(false) {
     
     file_size = disk_manager_->get_file_size(file_path);
     // 读取文件末尾的元数据块
@@ -215,7 +215,7 @@ std::shared_ptr<Block> SSTable::read_block(size_t block_idx) {
   // 读取block数据
   std::vector<uint8_t> block_data(block_size);
   disk_manager_->read_page_bytes(fd, meta.offset, block_data.data(), block_size);
-  auto block_res = Block::decode(block_data, true);
+  auto block_res = Block::decode(block_data, file_hdr_, true);
 
   // 更新缓存
   if (block_cache != nullptr) {
@@ -285,7 +285,7 @@ bool SSTable::get(const std::string &key, Rid& value)
   }
   try {
     auto m_block_idx = find_block_idx(key);
-    if (m_block_idx == -1 || m_block_idx >= num_blocks()) {
+    if (m_block_idx == -1 || m_block_idx >= (int)num_blocks()) {
       return false;
     }
     auto block = read_block(m_block_idx);
@@ -293,7 +293,7 @@ bool SSTable::get(const std::string &key, Rid& value)
       return false;
     }
     auto key_idx_ops = block->get_idx_binary(key);
-    if (key_idx_ops == -1 || key_idx_ops >= block->size()) {
+    if (key_idx_ops == -1 || key_idx_ops >= (int)block->size()) {
       return false;
     }
     value = block->get_value_at(block->get_offset_at(key_idx_ops));
@@ -303,15 +303,15 @@ bool SSTable::get(const std::string &key, Rid& value)
   return true;
 }
 
-size_t SSTable::num_blocks() const { return meta_entries.size(); }
+inline size_t SSTable::num_blocks() const { return meta_entries.size(); }
 
-std::string SSTable::get_first_key() const { return first_key; }
+inline std::string SSTable::get_first_key() const { return first_key; }
 
-std::string SSTable::get_last_key() const { return last_key; }
+inline std::string SSTable::get_last_key() const { return last_key; }
 
 size_t SSTable::sst_size() const { return file_size; }
 
-size_t SSTable::get_sst_id() const { return sst_id; }
+inline size_t SSTable::get_sst_id() const { return sst_id; }
 
 std::shared_ptr<SstIterator> SSTable::begin() {
   return std::make_shared<SstIterator>(shared_from_this());
@@ -332,15 +332,23 @@ std::shared_ptr<SstIterator> SSTable::find(const std::string &lower, bool is_low
 // SSTBuilder
 // **************************************************
 
-SSTBuilder::SSTBuilder(DiskManager *disk_manager, LsmFileHdr *file_hdr, size_t block_size)
+SSTBuilder::SSTBuilder(DiskManager *disk_manager, LsmFileHdr *file_hdr, size_t block_size, bool need_bloom)
  : block(block_size, file_hdr), disk_manager_(disk_manager), 
-  file_hdr_(file_hdr){}
+  file_hdr_(file_hdr){
+    if (need_bloom) {
+      bloom_filter_ = std::make_shared<BloomFilter>(1000000);
+    }
+  }
 
 void SSTBuilder::add(const std::string &key, const Rid &value) 
 {
   // 记录第一个key
   if (first_key.empty()) {
     first_key = key;
+  }
+   // 在 布隆过滤器 中添加key
+  if (bloom_filter_ != nullptr) {
+    bloom_filter_->Add(key);
   }
 
   if (block.add_entry(key, value)) {
@@ -446,6 +454,81 @@ SSTBuilder::build(size_t sst_id, const std::string &path,
   res->last_key = meta_entries.back().last_key;
   res->meta_block_offset = meta_offset;
   res->bloom_filter = bloom_filter;
+  res->bloom_offset = bloom_offset;
+  res->meta_entries = std::move(meta_entries);
+  res->block_cache = block_cache;
+
+  return res;
+}
+
+std::shared_ptr<SSTable>
+SSTBuilder::build(size_t sst_id, const std::string &path, 
+  const std::shared_ptr<BlockCache> &block_cache) 
+{
+  // 完成最后一个block
+  if (!block.is_empty()) {
+    finish_block();
+  }
+
+  // 如果没有数据，抛出异常
+  if (meta_entries.empty()) {
+    throw std::runtime_error("Cannot build empty SST");
+  }
+
+  // 编码元数据块
+  std::vector<uint8_t> meta_block;
+  size_t meta_block_size = BlockMeta::size(meta_entries);
+  size_t bloom_filter_size = 0;
+  size_t total_size = meta_block_size + tail_size;
+  if (bloom_filter_ != nullptr)
+  {
+    bloom_filter_size = bloom_filter_->size();
+    total_size += bloom_filter_size;
+  }
+
+  // 计算元数据块的偏移量
+  uint32_t meta_offset = data.size();
+
+  // 构建完整的文件内容
+  // 1. 已有的数据块
+  std::vector<uint8_t> file_content(std::move(data));
+  file_content.resize(file_content.size() + total_size);
+  uint8_t *ptr = file_content.data() + meta_offset;
+
+  // 2. 添加元数据块
+  BlockMeta::encode_meta_to_slice(meta_entries, ptr);
+  ptr += meta_block_size;
+
+  // 3. 编码布隆过滤器
+  uint32_t bloom_offset = meta_offset + meta_block_size;
+  if (bloom_filter_ != nullptr) {
+    bloom_filter_->encode(ptr);
+    ptr += bloom_filter_size;
+  }
+
+  // sizeof(uint32_t) * 2  表示: 元数据块的偏移量, 布隆过滤器偏移量,
+
+  // 4. 添加元数据块偏移量
+  memcpy(ptr, &meta_offset, sizeof(uint32_t));
+  ptr += sizeof(uint32_t);
+
+  // 5. 添加布隆过滤器偏移量
+  memcpy(ptr, &bloom_offset, sizeof(uint32_t));
+
+  // 创建文件
+  disk_manager_->create_file(path);
+  int fd = disk_manager_->open_file(path);
+  disk_manager_->write_page_bytes(fd, 0, file_content.data(), file_content.size());
+
+  // 返回SST对象
+  auto res = std::make_shared<SSTable>();
+
+  res->sst_id = sst_id;
+  res->fd = fd;
+  res->first_key = meta_entries.front().first_key;
+  res->last_key = meta_entries.back().last_key;
+  res->meta_block_offset = meta_offset;
+  res->bloom_filter = bloom_filter_;
   res->bloom_offset = bloom_offset;
   res->meta_entries = std::move(meta_entries);
   res->block_cache = block_cache;

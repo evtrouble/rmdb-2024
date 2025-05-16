@@ -35,44 +35,7 @@
  * 其中, num_entries 表示 metadata 数组的长度, Hash 是 metadata
  数组的哈希值(只包括数组部分, 不包括 num_entries ), 用于校验 metadata 的完整性
  */
-
-class SstIterator : public BaseIterator {
-  friend class SSTable;
-
-private:
-  std::shared_ptr<SSTable> m_sst;
-  size_t m_block_idx;
-  std::shared_ptr<BlockIterator> m_block_it;
-  size_t upper_block_idx;
-  std::string right_key;
-  bool is_closed;
-
-public:
-  SstIterator(const std::shared_ptr<SSTable> &sst, 
-    const std::string &lower, bool is_lower_closed, 
-    const std::string &upper, bool is_upper_closed);
-  // 创建迭代器, 并移动到第指定key
-  SstIterator(const std::shared_ptr<SSTable> &sst, const std::string& key, bool is_closed);
-  SstIterator(const std::shared_ptr<SSTable> &sst) : m_sst(std::move(sst)), m_block_idx(0)
-  {
-    upper_block_idx = m_sst->num_blocks();
-    if (m_block_idx < upper_block_idx)
-    {
-      auto next_block = m_sst->read_block(m_block_idx);
-      m_block_it = next_block->begin();
-    }
-  }
-
-  void seek(const std::string &key, bool is_closed);
-  void set_upper_id(const std::string &key, bool is_closed);
-  void set_high_key(const std::string &high_key, bool is_closed);
-
-  virtual BaseIterator &operator++() override;
-  virtual T& operator*() const override;
-  virtual T* operator->() const override;
-  virtual IteratorType get_type() const override;
-  virtual bool is_end() const override;
-};
+class SstIterator;
 
 class SSTable : public std::enable_shared_from_this<SSTable> {
   friend class SSTBuilder;
@@ -111,6 +74,7 @@ public:
   }
   // 删除sst文件
   void mark_delete() { is_delete = true; }
+  bool is_deleted() { return is_delete; }
   // 创建一个sst, 只包含首尾key的元数据
 
   // 根据索引读取block
@@ -156,10 +120,11 @@ private:
   size_t block_size;
   DiskManager *disk_manager_;
   LsmFileHdr *file_hdr_;
+  std::shared_ptr<BloomFilter> bloom_filter_;
 
 public:
   // 创建一个sst构建器, 指定目标block的大小
-  SSTBuilder(DiskManager *disk_manager, LsmFileHdr *file_hdr, size_t block_size); // 添加一个key-value对
+  SSTBuilder(DiskManager *disk_manager, LsmFileHdr *file_hdr, size_t block_size, bool need_bloom = false); // 添加一个key-value对
   void add(const std::string &key, const Rid &value);
   // 估计sst的大小
   size_t estimated_size() const;
@@ -168,4 +133,44 @@ public:
   // 构建sst, 将sst写入文件并返回SST描述类
   std::shared_ptr<SSTable> build(size_t sst_id, const std::string &path,
     const std::shared_ptr<BlockCache> &block_cache, std::shared_ptr<BloomFilter> bloom_filter);
+  std::shared_ptr<SSTable> build(size_t sst_id, const std::string &path,
+                                 const std::shared_ptr<BlockCache> &block_cache);
+};
+
+class SstIterator : public BaseIterator {
+  friend class SSTable;
+
+private:
+  std::shared_ptr<SSTable> m_sst;
+  size_t m_block_idx;
+  std::shared_ptr<BlockIterator> m_block_it;
+  size_t upper_block_idx;
+  std::string right_key;
+  bool is_closed;
+
+public:
+  SstIterator(const std::shared_ptr<SSTable> &sst, 
+    const std::string &lower, bool is_lower_closed, 
+    const std::string &upper, bool is_upper_closed);
+  // 创建迭代器, 并移动到第指定key
+  SstIterator(const std::shared_ptr<SSTable> &sst, const std::string& key, bool is_closed);
+  SstIterator(const std::shared_ptr<SSTable> &sst) : m_sst(std::move(sst)), m_block_idx(0)
+  {
+    upper_block_idx = m_sst->num_blocks();
+    if (m_block_idx < upper_block_idx)
+    {
+      auto next_block = m_sst->read_block(m_block_idx);
+      m_block_it = next_block->begin();
+    }
+  }
+
+  void seek(const std::string &key, bool is_closed);
+  void set_upper_id(const std::string &key, bool is_closed);
+  void set_high_key(const std::string &high_key, bool is_closed);
+
+  virtual BaseIterator &operator++() override;
+  virtual T& operator*() const override;
+  virtual T* operator->() const override;
+  virtual IteratorType get_type() const override;
+  virtual bool is_end() const override;
 };

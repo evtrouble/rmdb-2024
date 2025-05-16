@@ -1,7 +1,7 @@
 #include "iterator.h"
 
 MergeIterator::MergeIterator(std::vector<std::shared_ptr<BaseIterator>> &iters, LsmFileHdr *file_hdr, bool filter)
-    : iters_(std::move(iters)), file_hdr_(file_hdr), min_heap(compare_key), cur_pos(0), filter_(filter)
+    : iters_(std::move(iters)), file_hdr_(file_hdr), cur_pos(0), filter_(filter)
 {
     int num = std::max(block_size_ / (sizeof(Rid) + sizeof(size_t) + sizeof(file_hdr_->col_tot_len_)),
             iters_.size());
@@ -10,7 +10,7 @@ MergeIterator::MergeIterator(std::vector<std::shared_ptr<BaseIterator>> &iters, 
         auto &iter = iters_[id];
         if (iter->is_end())
             continue;
-        min_heap.emplace(std::move((*iter)->first), (*iter)->second, id);
+        min_heap.emplace(std::move((*iter)->first), (*iter)->second, id, file_hdr_);
         ++(*iter);
     }
     fill(num);
@@ -35,7 +35,7 @@ BaseIterator &MergeIterator::operator++()
                 auto iter = iters_[id];
                 if (!iter->is_end())
                 {
-                    min_heap.emplace(std::move((*iter)->first), (*iter)->second, id);
+                    min_heap.emplace(std::move((*iter)->first), (*iter)->second, id, file_hdr_);
                     ++(*iter);
                 }    
                 /* code */
@@ -44,26 +44,6 @@ BaseIterator &MergeIterator::operator++()
         } while (filter_ && !rid.is_valid() && min_heap.size());
     }
     return *this;
-}
-
-bool MergeIterator::operator==(const BaseIterator &other) const
-{
-    if (other.get_type() != IteratorType::MergeIterator)
-        return false;
-    auto other2 = static_cast<const MergeIterator &>(other);
-    if(iters_.size() != other2.iters_.size())
-        return false;
-    for (size_t id = 0; id < iters_.size();id++)
-    {
-        if(iters_[id] != other2.iters_[id])
-            return false;
-    }
-    return true;
-}
-
-bool MergeIterator::operator!=(const BaseIterator &other) const
-{
-    return !(*this == other);
 }
 
 MergeIterator::T& MergeIterator::operator*() const

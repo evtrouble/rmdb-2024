@@ -14,7 +14,6 @@ See the Mulan PSL v2 for more details. */
 
 #include "defs.h"
 #include "storage/buffer_pool_manager.h"
-#include "sstable.h"
 
 constexpr int IX_NO_PAGE = -1;
 constexpr int IX_FILE_HDR_PAGE = 0;
@@ -131,14 +130,13 @@ class LsmFileHdr {
         std::vector<ColType> col_types_;    // 字段的类型
         std::vector<int> col_lens_;         // 字段的长度
         int col_tot_len_;                   // 索引包含的字段的总长度
-        int keys_size_;                     // keys_size = (btree_order + 1) * col_tot_len
+        // int keys_size_;                     // keys_size = (btree_order + 1) * col_tot_len
         int tot_len_;                       // 记录结构体的整体长度
     
         LsmFileHdr() : col_num_(0), tot_len_(0) {}
     
-        LsmFileHdr(int col_num, int col_tot_len, int keys_size)
-                    : col_num_(col_num), col_tot_len_(col_tot_len), 
-                    keys_size_(keys_size), tot_len_(0) {} 
+        LsmFileHdr(int col_num, int col_tot_len)
+                    : col_num_(col_num), col_tot_len_(col_tot_len), tot_len_(0) {} 
     
         void update_tot_len() {
             tot_len_ = sizeof(int) * 4;
@@ -161,8 +159,8 @@ class LsmFileHdr {
             }
             memcpy(dest + offset, &col_tot_len_, sizeof(int));
             offset += sizeof(int);
-            memcpy(dest + offset, &keys_size_, sizeof(int));
-            offset += sizeof(int);
+            // memcpy(dest + offset, &keys_size_, sizeof(int));
+            // offset += sizeof(int);
             assert(offset == tot_len_);
         }
     
@@ -190,8 +188,8 @@ class LsmFileHdr {
             }
             col_tot_len_ = *reinterpret_cast<const int*>(src + offset);
             offset += sizeof(int);
-            keys_size_ = *reinterpret_cast<const int*>(src + offset);
-            offset += sizeof(int);
+            // keys_size_ = *reinterpret_cast<const int*>(src + offset);
+            // offset += sizeof(int);
             assert(offset == tot_len_);
         }
 };
@@ -201,169 +199,3 @@ class LsmFileHdr {
 #define LSM_BLOCK_SIZE (32 * 1024)               // BLOCK的大小, 32KB
 
 #define LSM_SST_LEVEL_RATIO 4 // 不同层级的sst的大小比例
-
-struct FlushThread
-{
-    struct ToFlush
-    {
-        std::shared_ptr<SkipList> skiplist;
-        std::shared_ptr<LsmTree> lsm;
-        ToFlush(std::shared_ptr<SkipList> &skiplist, std::shared_ptr<LsmTree> &lsm)
-            : skiplist(std::move(skiplist)), lsm(std::move(lsm))
-        {}
-    };
-    std::queue<ToFlush> flush_queue_;
-    std::mutex queue_mutex_;
-    std::thread flush_thread_;
-    std::condition_variable flush_cond_;
-    std::atomic<bool> terminate_{false};
-
-    ~FlushThread(){
-        terminate_ = true;
-        flush_cond_.notify_all();
-        if (flush_thread_.joinable()) {
-            flush_thread_.join();
-        }
-    }
-
-    void add(std::shared_ptr<SkipList> &to_flush, std::shared_ptr<LsmTree> lsm)
-    {
-        std::lock_guard lock(queue_mutex_);
-        flush_queue_.emplace(to_flush, lsm);
-    }
-
-    void background_flush()
-    {
-        while (!terminate_.load()) {
-            std::vector<ToFlush> batch;
-            {
-                std::unique_lock lock(queue_mutex_);
-                flush_cond_.wait_for(lock, std::chrono::seconds(1),
-                    [this] { return !flush_queue_.empty() || terminate_; });
-
-                batch.reserve(flush_queue_.size());
-                while (!flush_queue_.empty())
-                {
-                    batch.emplace_back(std::move(flush_queue_.front()));
-                    flush_queue_.pop();
-                }
-            }
-    
-            if(batch.empty())continue;
-            for (auto& [table, lsm] : batch) {
-                size_t new_sst_id = lsm->next_sst_id++;
-
-                // 3. 准备 SSTBuilder
-                SSTBuilder builder(lsm->disk_manager_, lsm->file_hdr_, LSM_BLOCK_SIZE); // 4KB block size
-              
-                // 4. 将 memtable 中最旧的表写入 SST
-                auto sst_path = lsm->get_sst_path(new_sst_id, 0);
-                std::vector<std::pair<std::string, Rid>> flush_data = table->flush();
-                for (auto &[k, v] : flush_data) {
-                    builder.add(k, v);
-                }
-
-                auto sst = builder.build(new_sst_id, sst_path, lsm->block_cache, table->bloom_filter());
-                lsm->set_new_sst_id(new_sst_id, sst);
-            }
-        }
-    }
-};
-
-struct CompactionThread
-{
-    struct ToFlush
-    {
-        std::shared_ptr<SkipList> skiplist;
-        std::shared_ptr<LsmTree> lsm;
-        ToFlush(std::shared_ptr<SkipList> &skiplist, std::shared_ptr<LsmTree> &lsm)
-            : skiplist(std::move(skiplist)), lsm(std::move(lsm))
-        {}
-    };
-
-//     std::vector<std::shared_ptr<SST>>
-// LSMEngine::gen_sst_from_iter(BaseIterator &iter, size_t target_sst_size,
-//                              size_t target_level) {
-//   // TODO: 这里需要补全的是对已经完成事务的删除
-
-//   std::vector<std::shared_ptr<SST>> new_ssts;
-//   auto new_sst_builder = SSTBuilder(LSM_BLOCK_SIZE, true);
-//   while (iter.is_valid() && !iter.is_end()) {
-
-//     new_sst_builder.add((*iter).first, (*iter).second, 0);
-//     ++iter;
-
-//     if (new_sst_builder.estimated_size() >= target_sst_size) {
-//       size_t sst_id = next_sst_id++; // TODO: 后续优化并发性
-//       std::string sst_path = get_sst_path(sst_id, target_level);
-//       auto new_sst = new_sst_builder.build(sst_id, sst_path, this->block_cache);
-//       new_ssts.push_back(new_sst);
-//       new_sst_builder = SSTBuilder(LSM_BLOCK_SIZE, true); // 重置builder
-//     }
-//   }
-//   if (new_sst_builder.estimated_size() > 0) {
-//     size_t sst_id = next_sst_id++; // TODO: 后续优化并发性
-//     std::string sst_path = get_sst_path(sst_id, target_level);
-//     auto new_sst = new_sst_builder.build(sst_id, sst_path, this->block_cache);
-//     new_ssts.push_back(new_sst);
-//   }
-
-//   return new_ssts;
-// }
-    std::queue<ToFlush> flush_queue_;
-    std::mutex queue_mutex_;
-    std::thread flush_thread_;
-    std::condition_variable flush_cond_;
-    std::atomic<bool> terminate_{false};
-
-    ~CompactionThread(){
-        terminate_ = true;
-        flush_cond_.notify_all();
-        if (flush_thread_.joinable()) {
-            flush_thread_.join();
-        }
-    }
-
-    void add(std::shared_ptr<SkipList> &to_flush, std::shared_ptr<LsmTree> lsm)
-    {
-        std::lock_guard lock(queue_mutex_);
-        flush_queue_.emplace(to_flush, lsm);
-    }
-
-    void background_flush()
-    {
-        while (!terminate_.load()) {
-            std::vector<ToFlush> batch;
-            {
-                std::unique_lock lock(queue_mutex_);
-                flush_cond_.wait_for(lock, std::chrono::seconds(1),
-                    [this] { return !flush_queue_.empty() || terminate_; });
-
-                batch.reserve(flush_queue_.size());
-                while (!flush_queue_.empty())
-                {
-                    batch.emplace_back(std::move(flush_queue_.front()));
-                    flush_queue_.pop();
-                }
-            }
-    
-            if(batch.empty())continue;
-            for (auto& [table, lsm] : batch) {
-                size_t new_sst_id = lsm->next_sst_id++;
-
-                // 3. 准备 SSTBuilder
-                SSTBuilder builder(lsm->disk_manager_, lsm->file_hdr_, LSM_BLOCK_SIZE); // 4KB block size
-              
-                // 4. 将 memtable 中最旧的表写入 SST
-                auto sst_path = lsm->get_sst_path(new_sst_id, 0);
-                std::vector<std::pair<std::string, Rid>> flush_data = table->flush();
-                for (auto &[k, v] : flush_data) {
-                    builder.add(k, v);
-                }
-
-                auto sst = builder.build(new_sst_id, sst_path, lsm->block_cache, table->bloom_filter());
-                lsm->set_new_sst_id(new_sst_id, sst);
-            }
-        }
-    }
-};

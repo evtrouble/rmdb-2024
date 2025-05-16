@@ -59,7 +59,7 @@ void TransactionManager::commit(Transaction *txn, LogManager *log_manager)
     // 写操作已经在执行时完成，这里不需要额外操作
     txn->get_write_set()->clear();
 
-    txn->set_commit_ts(next_timestamp_++); // 设置提交时间戳
+    // txn->set_commit_ts(next_timestamp_++); // 设置提交时间戳
 
     // 阶段2：更新内存中的版本链（关键！）
     // auto write_version_set = txn->get_write_version_set();

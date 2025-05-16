@@ -5,7 +5,7 @@
 #include <vector>
 #include <optional>
 
-#include "transaction.h"
+#include "transaction/transaction.h"
 #include "storage/bloom_filter.h"
 #include "comparator.h"
 #include "ix_defs.h"
@@ -22,27 +22,7 @@ struct SkipListNode {
           next_(height, nullptr) {}
 };
 
-class SkipListIterator : public BaseIterator {
-public:
-    SkipListIterator(const std::shared_ptr<SkipListNode>& node, const std::shared_ptr<SkipList>& skiplist) 
-        : current_(node), lock_(std::move(skiplist)) {}
-    SkipListIterator(const std::shared_ptr<SkipListNode>& node, 
-        const std::shared_ptr<SkipList>& skiplist, const std::string& upper, bool is_closed) 
-        : current_(node), right_key(upper), is_closed(is_closed), lock_(std::move(skiplist)) {}
-    SkipListIterator() : current_(nullptr) {}
-    virtual BaseIterator &operator++() override;
-    virtual T& operator*() const override;
-    virtual T* operator->() const override;
-    virtual IteratorType get_type() const override;
-    virtual bool is_end() const override;
-private:
-    std::shared_ptr<SkipListNode> current_;
-    std::string right_key;// 右键
-    bool is_closed;
-    std::shared_ptr<SkipList> lock_;       // 引用计数
-    mutable std::optional<T> cached_value; // 缓存当前值
-};
-
+class SkipListIterator;
 // 当前实现key和value的长度是固定的，且key在同一个跳表中是唯一的
 // 当前操作能访问的所有节点对于当前事务都是可见的，由上层范围锁表保证，
 // 任何大于当前时间戳的操作都不会影响当前操作需要访问的节点，任何小于当前时间戳的操作都已提交
@@ -64,7 +44,7 @@ public:
     std::shared_ptr<SkipListIterator> find(const std::string& key, bool is_closed);
     std::shared_ptr<SkipListIterator> find(const std::string &lower, bool is_lower_closed, 
         const std::string &upper, bool is_upper_closed);
-    size_t SkipList::get_size() { return size_bytes; }
+    size_t get_size() { return size_bytes; }
     std::vector<std::pair<std::string, Rid>> flush();
 
     std::shared_ptr<BloomFilter> bloom_filter() const {
@@ -91,3 +71,23 @@ private:
     size_t size_bytes = 0;
 };
 
+class SkipListIterator : public BaseIterator {
+public:
+    SkipListIterator(const std::shared_ptr<SkipListNode>& node, const std::shared_ptr<SkipList>& skiplist) 
+        : current_(node), lock_(std::move(skiplist)) {}
+    SkipListIterator(const std::shared_ptr<SkipListNode>& node, 
+        const std::shared_ptr<SkipList>& skiplist, const std::string& upper, bool is_closed) 
+        : current_(node), right_key(upper), is_closed(is_closed), lock_(std::move(skiplist)) {}
+    SkipListIterator() : current_(nullptr) {}
+    virtual BaseIterator &operator++() override;
+    virtual T& operator*() const override;
+    virtual T* operator->() const override;
+    virtual IteratorType get_type() const override;
+    virtual bool is_end() const override;
+private:
+    std::shared_ptr<SkipListNode> current_;
+    std::string right_key;// 右键
+    bool is_closed;
+    std::shared_ptr<SkipList> lock_;       // 引用计数
+    mutable std::optional<T> cached_value; // 缓存当前值
+};

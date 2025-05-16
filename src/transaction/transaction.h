@@ -42,8 +42,8 @@ public:
     inline void set_txn_mode(bool txn_mode) { txn_mode_ = txn_mode; }
     inline bool get_txn_mode() { return txn_mode_; }
 
-    // inline void set_start_ts(timestamp_t start_ts) { start_ts_ = start_ts; }
-    // inline timestamp_t get_start_ts() { return start_ts_; }
+    inline void set_start_ts(timestamp_t start_ts) { start_ts_ = start_ts; }
+    inline timestamp_t get_start_ts() { return start_ts_; }
     // inline void set_commit_ts(timestamp_t commit_ts) { commit_ts_ = commit_ts; }
     // inline timestamp_t get_commit_ts() { return commit_ts_; }
 
@@ -67,8 +67,8 @@ public:
     inline std::shared_ptr<std::unordered_set<int>> get_lock_set() { return lock_set_; }
     inline void append_lock_set(int fd) { lock_set_->emplace(fd); }
 
-    inline std::shared_ptr<std::deque<Version*>> get_write_version_set() { return write_version_set_; }
-    inline void append_write_version_set(Version* version) { write_version_set_->emplace_back(version); }
+    // inline std::shared_ptr<std::deque<Version*>> get_write_version_set() { return write_version_set_; }
+    // inline void append_write_version_set(Version* version) { write_version_set_->emplace_back(version); }
 
     inline static std::vector<ColMeta> &trx_fields() { return fields_;}
 
@@ -79,7 +79,7 @@ private:
     std::thread::id thread_id_;      // 当前事务对应的线程id
     lsn_t prev_lsn_;                 // 当前事务执行的最后一条操作对应的lsn，用于系统故障恢复
     txn_id_t txn_id_;                // 事务的ID，唯一标识符
-    // timestamp_t start_ts_;           // 事务的开始时间戳
+    timestamp_t start_ts_;           // 事务的开始时间戳
     // timestamp_t commit_ts_;          // 事务的提交时间戳
 
     std::shared_ptr<std::deque<WriteRecord>> write_set_;  // 事务包含的所有写操作
