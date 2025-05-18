@@ -214,6 +214,7 @@ public:
             col.offset += left_->tupleLen();
         }
         cols_.insert(cols_.end(), right_cols.begin(), right_cols.end());
+        print();
     }
 
     void beginTuple() override {
@@ -271,4 +272,108 @@ public:
     const std::vector<ColMeta> &cols() const { return cols_; }
 
     ExecutionType type() const override { return ExecutionType::MergeJoin;  }
+
+    void print(){
+        std::fstream outfile;
+        outfile.open("sorted_results.txt", std::ios::out | std::ios::app);
+        print_left(outfile);
+        print_right(outfile);
+        outfile.close();
+    }
+
+    void print_left(std::fstream &outfile){
+        std::vector<std::string> captions;
+        for (auto &sel_col : left_->cols()){
+            captions.push_back(sel_col.name);
+        }
+
+        // print header into file
+        outfile << "|";
+        for (const auto &caption : captions){
+            outfile << " " << caption << " |";
+        }
+        outfile << "\n";
+
+        for (left_->beginTuple(); !left_->is_end(); left_->nextTuple()){
+            auto Tuple = left_->Next();
+            std::vector<std::string> columns;
+            for (auto &col : left_->cols()){
+                std::string col_str;
+                char *rec_buf = Tuple->data + col.offset;
+                if (col.type == TYPE_INT){
+                    auto val = *(int *)rec_buf;
+                    if (val == INT_MAX)
+                        col_str = "";
+                    else
+                        col_str = std::to_string(*(int *)rec_buf);
+                }
+                else if (col.type == TYPE_FLOAT){
+                    auto val = *(float *)rec_buf;
+                    if (val == FLT_MAX)
+                        col_str = "";
+                    else
+                        col_str = std::to_string(*(float *)rec_buf);
+                }
+                else if (col.type == TYPE_STRING){
+                    col_str = std::string((char *)rec_buf, col.len);
+                    col_str.resize(strlen(col_str.c_str()));
+                }
+                columns.push_back(col_str);
+            }
+
+            outfile << "|";
+            for (const auto &column : columns){
+                outfile << " " << column << " |";
+            }
+            outfile << "\n";
+        }
+    }
+
+    void print_right(std::fstream &outfile){
+        std::vector<std::string> captions;
+        for (auto &sel_col : right_->cols()){
+            captions.push_back(sel_col.name);
+        }
+
+        // print header into file
+        outfile << "|";
+        for (const auto &caption : captions){
+            outfile << " " << caption << " |";
+        }
+        outfile << "\n";
+
+        for (right_->beginTuple(); !right_->is_end(); right_->nextTuple()){
+            auto Tuple = right_->Next();
+            std::vector<std::string> columns;
+            for (auto &col : right_->cols()){
+                std::string col_str;
+                char *rec_buf = Tuple->data + col.offset;
+                if (col.type == TYPE_INT){
+                    auto val = *(int *)rec_buf;
+                    if (val == INT_MAX)
+                        col_str = "";
+                    else
+                        col_str = std::to_string(*(int *)rec_buf);
+                }
+                else if (col.type == TYPE_FLOAT){
+                    auto val = *(float *)rec_buf;
+                    if (val == FLT_MAX)
+                        col_str = "";
+                    else
+                        col_str = std::to_string(*(float *)rec_buf);
+                }
+                else if (col.type == TYPE_STRING){
+                    col_str = std::string((char *)rec_buf, col.len);
+                    col_str.resize(strlen(col_str.c_str()));
+                }
+                columns.push_back(col_str);
+            }
+
+            outfile << "|";
+            for (const auto &column : columns){
+                outfile << " " << column << " |";
+            }
+            outfile << "\n";
+        }
+    }
 };
