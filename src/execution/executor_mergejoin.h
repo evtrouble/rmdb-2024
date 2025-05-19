@@ -284,7 +284,7 @@ public:
     void print_left(std::fstream &outfile){
         std::vector<std::string> captions;
         for (auto &sel_col : left_->cols()){
-            captions.push_back(sel_col.name);
+            captions.emplace_back(sel_col.name);
         }
 
         // print header into file
@@ -318,7 +318,7 @@ public:
                     col_str = std::string((char *)rec_buf, col.len);
                     col_str.resize(strlen(col_str.c_str()));
                 }
-                columns.push_back(col_str);
+                columns.emplace_back(col_str);
             }
 
             outfile << "|";
@@ -332,7 +332,7 @@ public:
     void print_right(std::fstream &outfile){
         std::vector<std::string> captions;
         for (auto &sel_col : right_->cols()){
-            captions.push_back(sel_col.name);
+            captions.emplace_back(sel_col.name);
         }
 
         // print header into file
@@ -366,7 +366,7 @@ public:
                     col_str = std::string((char *)rec_buf, col.len);
                     col_str.resize(strlen(col_str.c_str()));
                 }
-                columns.push_back(col_str);
+                columns.emplace_back(col_str);
             }
 
             outfile << "|";

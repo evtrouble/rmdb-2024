@@ -23,42 +23,98 @@ private:
     std::vector<ColMeta> cols_;                 // join后获得的记录的字段
 
     std::vector<Condition> fed_conds_;          // join条件
-    std::unique_ptr<RmRecord> left_current_;
-    std::unique_ptr<RmRecord> right_current_;
+
+    const size_t BLOCK_SIZE = 100;             // 缓冲区大小(记录数)
+    std::vector<std::unique_ptr<RmRecord>> left_buffer_;  // 左表缓冲区
+    std::vector<std::unique_ptr<RmRecord>> right_buffer_; // 右表缓冲区
+    
+    size_t left_block_idx_;      // 当前左表缓冲区的索引
+    size_t right_block_idx_;     // 当前右表缓冲区的索引
+
     bool isend;
 
-    void find_valid_tuples() {
-        while (!left_->is_end()) {
-            while (!right_->is_end()) {
-                bool is_valid = std::all_of(fed_conds_.begin(), fed_conds_.end(), 
-                    [&](const Condition &cond) { return check_cond(cond); });
-                if (is_valid) {
-                    return;
-                } else {
-                    right_->nextTuple();
-                    right_current_ = right_->Next();
-                }
-            }
+    // 填充左表缓冲区
+    void fill_left_buffer() {
+        left_buffer_.clear();
+        while (!left_->is_end() && left_buffer_.size() < BLOCK_SIZE) {
+            left_buffer_.emplace_back(left_->Next());
             left_->nextTuple();
-            right_->beginTuple();
-            left_current_ = left_->Next();
-            right_current_ = right_->Next();
         }
-        isend = true;
     }
 
-    bool check_cond(const Condition& cond) {
+    // 填充右表缓冲区
+    void fill_right_buffer() {
+        right_buffer_.clear();
+        while (!right_->is_end() && right_buffer_.size() < BLOCK_SIZE) {
+            right_buffer_.emplace_back(right_->Next());
+            right_->nextTuple();
+        }
+    }
+
+    void find_valid_tuples() {
+        while (true) {
+            // 如果左表缓冲区已遍历完，则填充新块（右表）
+            if (left_block_idx_ >= left_buffer_.size()) {
+                fill_right_buffer();
+                left_block_idx_ = 0;
+                // 如果右表全部遍历完了，则填充新块（左表），并重置右表
+                if (right_buffer_.empty()) {
+                    fill_left_buffer();
+                    // 如果左表全部遍历完了，标志结束
+                    if(left_buffer_.empty()){
+                        isend = true;
+                        return;
+                    } else {
+                        right_->beginTuple();
+                        fill_right_buffer();
+                    }
+                }
+            }
+            
+            // 如果右表缓冲区为空或已遍历完，则填充新块
+            if (right_buffer_.empty() || right_block_idx_ >= right_buffer_.size()) {
+                fill_right_buffer();
+                right_block_idx_ = 0;
+                if (right_buffer_.empty()) {
+                    isend = true;
+                    return;
+                }
+            }
+            
+            // 检查当前记录对是否满足条件
+            bool is_valid = std::all_of(fed_conds_.begin(), fed_conds_.end(),
+                [&](const Condition& cond) {
+                    return check_cond(cond, left_buffer_[left_block_idx_], right_buffer_[right_block_idx_]);
+                });
+            
+            if (is_valid) {
+                return;
+            }
+            
+            // 移动到下一对记录
+            right_block_idx_++;
+            if (right_block_idx_ >= right_buffer_.size()) {
+                right_block_idx_ = 0;
+                left_block_idx_++;
+            }
+        }
+    }
+
+    bool check_cond(const Condition& cond, 
+                   const std::unique_ptr<RmRecord>& left_rec,
+                   const std::unique_ptr<RmRecord>& right_rec) {
         auto left_col = left_->get_col(left_->cols(), cond.lhs_col);
-        char* left_value = left_current_->data + left_col->offset;
+        char* left_value = left_rec->data + left_col->offset;
         char* right_value;
         ColType right_type;
+        
         if (cond.is_rhs_val) {
             right_type = cond.rhs_val.type;
             right_value = cond.rhs_val.raw->data;
         } else {
             auto rhs_col = right_->get_col(right_->cols(), cond.rhs_col);
             right_type = rhs_col->type;
-            right_value = right_current_->data + rhs_col->offset;
+            right_value = right_rec->data + rhs_col->offset;
         }
         return check_condition(left_value, left_col->type, right_value, right_type, cond.op);
     }
@@ -67,7 +123,7 @@ public:
     NestedLoopJoinExecutor(std::unique_ptr<AbstractExecutor> left, std::unique_ptr<AbstractExecutor> right, 
                             const std::vector<Condition> &conds)
         : left_(std::move(left)), right_(std::move(right)), 
-        fed_conds_(std::move(conds)), isend(false)
+        fed_conds_(std::move(conds)), left_block_idx_(0), right_block_idx_(0), isend(false)
     {
         len_ = left_->tupleLen() + right_->tupleLen();
         cols_ = left_->cols();
@@ -82,28 +138,44 @@ public:
         left_->beginTuple();
         right_->beginTuple();
         isend = false;
-        left_current_ = left_->Next();
-        right_current_ = right_->Next();
+        isend = false;
+        left_block_idx_ = 0;
+        right_block_idx_ = 0;
+        // 初始填充缓冲区
+        fill_left_buffer();
+        fill_right_buffer();
         find_valid_tuples();
     }
 
     void nextTuple() override {
-        if (right_->is_end()) {
-            left_->nextTuple();
-            right_->beginTuple();
-            left_current_ = left_->Next();
-            right_current_ = right_->Next();
-        } else {
-            right_->nextTuple();
-            right_current_ = right_->Next();
+        right_block_idx_++;
+        if (static_cast<size_t>(right_block_idx_) >= right_buffer_.size()) {
+            right_block_idx_ = 0;
+            left_block_idx_++;
+            if (static_cast<size_t>(left_block_idx_) >= left_buffer_.size()) {
+                left_block_idx_ = 0;
+                fill_right_buffer();
+                if (right_buffer_.empty()) {
+                    right_->beginTuple();
+                    fill_left_buffer();
+                    if(left_buffer_.empty()){
+                        isend = true;
+                        return;
+                    }else {
+                        fill_right_buffer();
+                    }
+                }
+            }
         }
         find_valid_tuples();
     }
 
     std::unique_ptr<RmRecord> Next() override {
         auto record = std::make_unique<RmRecord>(len_);
-        std::memcpy(record->data, left_current_->data, left_->tupleLen());
-        std::memcpy(record->data + left_->tupleLen(), right_current_->data, right_->tupleLen());
+        auto& left_rec = left_buffer_[left_block_idx_];
+        auto& right_rec = right_buffer_[right_block_idx_];
+        std::memcpy(record->data, left_rec->data, left_->tupleLen());
+        std::memcpy(record->data + left_->tupleLen(), right_rec->data, right_->tupleLen());
         return record;
     }
 
