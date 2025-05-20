@@ -196,7 +196,7 @@ public:
 
     void redistribute(IxNodeHandle &neighbor_node, IxNodeHandle &node, IxNodeHandle &parent, int index);
 
-    bool coalesce(IxNodeHandle &neighbor_node, IxNodeHandle &node, IxNodeHandle &parent, int index, Transaction *transaction);
+    bool coalesce(IxNodeHandle neighbor_node, IxNodeHandle node, IxNodeHandle &parent, int index, Transaction *transaction);
 
     Iid lower_bound(const char *key);
 

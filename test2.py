@@ -15,39 +15,39 @@ def generate_sql_files():
             f.write(f"INSERT INTO warehouse VALUES ({i}, '{unique_str}');\n")
         print(f"INSERT SQL文件已生成: stage1_insert.sql")
     
-    # # 阶段2: 无索引查询测试
-    # with open("stage2_no_index.sql", 'w') as f:
-    #     f.write("-- 无索引查询测试开始\n")
-    #     for i in range(1, 3001):
-    #         f.write(f"SELECT * FROM warehouse WHERE w_id = {i};\n")
-    #     f.write("-- 无索引查询测试结束\n")
-    #     print(f"无索引查询SQL文件已生成: stage2_no_index.sql")
+    # 阶段2: 无索引查询测试
+    with open("stage2_no_index.sql", 'w') as f:
+        f.write("-- 无索引查询测试开始\n")
+        for i in range(1, 3001):
+            f.write(f"SELECT * FROM warehouse WHERE w_id = {i};\n")
+        f.write("-- 无索引查询测试结束\n")
+        print(f"无索引查询SQL文件已生成: stage2_no_index.sql")
     
     # 阶段3: 创建索引
     with open("stage3_create_index.sql", 'w') as f:
         f.write("CREATE INDEX warehouse(w_id);\n")
         print(f"创建索引SQL文件已生成: stage3_create_index.sql")
     
-    # # 阶段4: 有索引查询测试
-    # with open("stage4_with_index.sql", 'w') as f:
-    #     f.write("-- 有索引查询测试开始\n")
-    #     for i in range(1, 3001):
-    #         f.write(f"SELECT * FROM warehouse WHERE w_id = {i};\n")
-    #     f.write("-- 有索引查询测试结束\n")
-    #     print(f"有索引查询SQL文件已生成: stage4_with_index.sql")
+    # 阶段4: 有索引查询测试
+    with open("stage4_with_index.sql", 'w') as f:
+        f.write("-- 有索引查询测试开始\n")
+        for i in range(1, 3001):
+            f.write(f"SELECT * FROM warehouse WHERE w_id = {i};\n")
+        f.write("-- 有索引查询测试结束\n")
+        print(f"有索引查询SQL文件已生成: stage4_with_index.sql")
     
-    # # 新增阶段5: 删除所有数据（3000个删除操作）
-    # with open("stage5_delete.sql", 'w') as f:
-    #     f.write("-- 删除测试开始\n")
-    #     for i in range(1, 3001):
-    #         f.write(f"DELETE FROM warehouse WHERE w_id = {i};\n")
-    #     f.write("-- 删除测试结束\n")
-    #     print(f"删除SQL文件已生成: stage5_delete.sql")
+    # 新增阶段5: 删除所有数据（3000个删除操作）
+    with open("stage5_delete.sql", 'w') as f:
+        f.write("-- 删除测试开始\n")
+        for i in range(1, 3001):
+            f.write(f"DELETE FROM warehouse WHERE w_id = {i};\n")
+        f.write("-- 删除测试结束\n")
+        print(f"删除SQL文件已生成: stage5_delete.sql")
     
-    # # 阶段6: 清理
-    # with open("stage6_cleanup.sql", 'w') as f:
-    #     f.write("DROP TABLE IF EXISTS warehouse;\n")
-    #     print(f"清理SQL文件已生成: stage6_cleanup.sql")
+    # 阶段6: 清理
+    with open("stage6_cleanup.sql", 'w') as f:
+        f.write("DROP TABLE IF EXISTS warehouse;\n")
+        print(f"清理SQL文件已生成: stage6_cleanup.sql")
 
 def run_individual_queries(client_path: str, sql_file: str, output_file: str, stage_name: str) -> List[float]:
     """逐行执行SQL查询并记录每个查询的执行时间（支持增删改查）"""
@@ -223,25 +223,25 @@ if __name__ == "__main__":
     # 阶段1: 插入数据
     stage_times["插入数据"] = run_stage(client_path, "插入数据", "stage1_insert.sql", output_file)
     
-    # # 阶段2: 无索引查询
-    # if stage_times["插入数据"] >= 0:
-    #     no_index_times = run_individual_queries(client_path, "stage2_no_index.sql", output_file, "无索引查询")
+    # 阶段2: 无索引查询
+    if stage_times["插入数据"] >= 0:
+        no_index_times = run_individual_queries(client_path, "stage2_no_index.sql", output_file, "无索引查询")
     
     # 阶段3: 创建索引
     if no_index_times:
         stage_times["创建索引"] = run_stage(client_path, "创建索引", "stage3_create_index.sql", output_file)
     
-    # # 阶段4: 有索引查询
-    # if stage_times.get("创建索引", -1) >= 0:
-    #     index_times = run_individual_queries(client_path, "stage4_with_index.sql", output_file, "有索引查询")
+    # 阶段4: 有索引查询
+    if stage_times.get("创建索引", -1) >= 0:
+        index_times = run_individual_queries(client_path, "stage4_with_index.sql", output_file, "有索引查询")
     
-    # # 新增阶段5: 删除操作（依赖索引存在）
-    # if index_times:
-    #     delete_times = run_individual_queries(client_path, "stage5_delete.sql", output_file, "索引删除操作")
+    # 新增阶段5: 删除操作（依赖索引存在）
+    if index_times:
+        delete_times = run_individual_queries(client_path, "stage5_delete.sql", output_file, "索引删除操作")
     
-    # # 阶段6: 清理
-    # if delete_times or index_times:
-    #     run_stage(client_path, "清理", "stage6_cleanup.sql", output_file)
+    # 阶段6: 清理
+    if delete_times or index_times:
+        run_stage(client_path, "清理", "stage6_cleanup.sql", output_file)
     
     # 生成分析报告
     analyze_query_times(no_index_times, index_times, delete_times, output_file)
