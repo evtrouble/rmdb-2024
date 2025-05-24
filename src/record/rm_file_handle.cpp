@@ -47,7 +47,27 @@ Rid RmFileHandle::insert_record(char *buf, Context *context)
     RmPageHandle page_handle = create_page_handle();
 
     // 2. 在page handle中找到空闲slot位置
-    int slot_no = page_handle.page_hdr->num_records;
+    int slot_no = -1;
+    // 先在现有的bitmap中找空闲位置
+    for (int i = 0; i < file_hdr_.num_records_per_page; i++)
+    {
+        if (!Bitmap::is_set(page_handle.bitmap, i))
+        {
+            slot_no = i;
+            break;
+        }
+    }
+    // 如果没有找到空闲位置，则使用num_records作为新的slot_no
+    if (slot_no == -1)
+    {
+        slot_no = page_handle.page_hdr->num_records;
+        if (slot_no >= file_hdr_.num_records_per_page)
+        {
+            // 当前页面已满，需要创建新页面
+            page_handle = create_new_page_handle();
+            slot_no = 0;
+        }
+    }
 
     // 3. 将buf复制到空闲slot位置
     char *slot = page_handle.get_slot(slot_no);
@@ -125,8 +145,13 @@ void RmFileHandle::delete_record(const Rid &rid, Context *context)
     Bitmap::reset(page_handle.bitmap, rid.slot_no);
     page_handle.page_hdr->num_records--;
 
-    // 4. 如果页面从满状态变为未满状态，需要更新空闲页面链表
-    if (page_handle.page_hdr->num_records == file_hdr_.num_records_per_page - 1)
+    // 4. 如果页面变为空，将其加入空闲页面链表
+    if (page_handle.page_hdr->num_records == 0)
+    {
+        release_page_handle(page_handle);
+    }
+    // 如果页面从满状态变为未满状态，也需要更新空闲页面链表
+    else if (page_handle.page_hdr->num_records == file_hdr_.num_records_per_page - 1)
     {
         release_page_handle(page_handle);
     }
