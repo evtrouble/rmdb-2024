@@ -68,10 +68,10 @@ public:
         std::cout << "log type in father_function: " << LogTypeStr[log_type_] << "\n";
         printf("Print Log Record:\n");
         printf("log_type_: %s\n", LogTypeStr[log_type_].c_str());
-        printf("lsn: %d\n", lsn_);
+        printf("lsn: %ld\n", lsn_);
         printf("log_tot_len: %d\n", log_tot_len_);
-        printf("log_tid: %d\n", log_tid_);
-        printf("prev_lsn: %d\n", prev_lsn_);
+        printf("log_tid: %ld\n", log_tid_);
+        printf("prev_lsn: %ld\n", prev_lsn_);
     }
 };
 
