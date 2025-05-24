@@ -43,11 +43,11 @@ struct Rid
     friend bool operator!=(const Rid &x, const Rid &y) { return !(x == y); }
 };
 
-inline std::ostream &operator<<(std::ostream &os, const Rid &rid)
-{
-    os << "(" << rid.page_no << ", " << rid.slot_no << ")";
-    return os;
-}
+// inline std::ostream &operator<<(std::ostream &os, const Rid &rid)
+// {
+//     os << "(" << rid.page_no << ", " << rid.slot_no << ")";
+//     return os;
+// }
 
 enum ColType
 {
