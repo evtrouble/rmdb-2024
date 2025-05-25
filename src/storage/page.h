@@ -60,6 +60,8 @@ class Page
     friend class BufferPoolManager;
 
 public:
+    std::shared_mutex latch_;
+
     Page() { reset_memory(); }
 
     ~Page() = default;
