@@ -92,16 +92,15 @@ private:
     void reset_memory() { memset(data_, OFFSET_PAGE_START, PAGE_SIZE); } // 将data_的PAGE_SIZE个字节填充为0
 
     /** page的唯一标识符 */
-    PageId id_;
-
+    PageId id_ = {.fd = -1, .page_no = INVALID_PAGE_ID};
     /** The actual data that is stored within a page.
      *  该页面在bufferPool中的偏移地址
      */
     char data_[PAGE_SIZE] = {};
 
     /** 脏页判断 */
-    bool is_dirty_ = false;
+    std::atomic<bool> is_dirty_{false};
 
     /** The pin count of this page. */
-    int pin_count_ = 0;
+    std::atomic<int> pin_count_{0};
 };

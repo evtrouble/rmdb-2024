@@ -11,6 +11,11 @@ See the Mulan PSL v2 for more details. */
 #pragma once
 #include <fcntl.h>
 #include <unistd.h>
+#include <shared_mutex>
+#include <atomic>
+#include <condition_variable>
+#include <thread>
+#include <queue>
 
 #include <cassert>
 #include <list>
@@ -21,13 +26,14 @@ See the Mulan PSL v2 for more details. */
 #include "errors.h"
 #include "page.h"
 #include "replacer/lru_replacer.h"
+#include "replacer/clock_replacer.h"
 #include "replacer/replacer.h"
 
 class BufferPoolManager
 {
 private:
-    size_t pool_size_;                                              // buffer_pool中可容纳页面的个数，即帧的个数
-    Page *pages_;                                                   // buffer_pool中的Page对象数组，在构造空间中申请内存空间，在析构函数中释放，大小为BUFFER_POOL_SIZE
+    size_t pool_size_; // buffer_pool中可容纳页面的个数，即帧的个数
+    std::vector<Page> pages_;
     std::unordered_map<PageId, frame_id_t, PageIdHash> page_table_; // 帧号和页面号的映射哈希表，用于根据页面的PageId定位该页面的帧编号
     std::list<frame_id_t> free_list_;                               // 空闲帧编号的链表
     DiskManager *disk_manager_;
@@ -35,33 +41,29 @@ private:
     std::mutex latch_;   // 用于共享数据结构的并发控制
 
 public:
-    BufferPoolManager(size_t pool_size, DiskManager *disk_manager)
-        : pool_size_(pool_size), disk_manager_(disk_manager)
-    {
-        // 为buffer pool分配一块连续的内存空间
-        pages_ = new Page[pool_size_];
-        // 可以被Replacer改变
-        if (REPLACER_TYPE.compare("LRU"))
-            replacer_ = new LRUReplacer(pool_size_);
-        else if (REPLACER_TYPE.compare("CLOCK"))
-            replacer_ = new LRUReplacer(pool_size_);
-        else
-        {
-            replacer_ = new LRUReplacer(pool_size_);
-        }
-        // 初始化时，所有的page都在free_list_中
-        for (size_t i = 0; i < pool_size_; ++i)
-        {
-            free_list_.emplace_back(static_cast<frame_id_t>(i)); // static_cast转换数据类型
-        }
-    }
+    // BufferPoolManager(size_t pool_size, DiskManager *disk_manager)
+    //     : pool_size_(pool_size), disk_manager_(disk_manager)
+    // {
+    //     // 为buffer pool分配一块连续的内存空间
+    //     pages_ = new Page[pool_size_];
+    //     // 可以被Replacer改变
+    //     if (REPLACER_TYPE.compare("LRU"))
+    //         replacer_ = new LRUReplacer(pool_size_);
+    //     else if (REPLACER_TYPE.compare("CLOCK"))
+    //         replacer_ = new LRUReplacer(pool_size_);
+    //     else
+    //     {
+    //         replacer_ = new LRUReplacer(pool_size_);
+    //     }
+    //     // 初始化时，所有的page都在free_list_中
+    //     for (size_t i = 0; i < pool_size_; ++i)
+    //     {
+    //         free_list_.emplace_back(static_cast<frame_id_t>(i)); // static_cast转换数据类型
+    //     }
+    // }
+    BufferPoolManager(size_t pool_size, DiskManager *disk_manager);
 
-    ~BufferPoolManager()
-    {
-        delete[] pages_;
-        delete replacer_;
-    }
-
+    ~BufferPoolManager();
     /**
      * @description: 将目标页面标记为脏页
      * @param {Page*} page 脏页
@@ -85,4 +87,30 @@ private:
     bool find_victim_page(frame_id_t *frame_id);
 
     void update_page(Page *page, PageId new_page_id, frame_id_t new_frame_id);
+
+    struct Bucket
+    {
+        std::shared_mutex latch;
+        std::unordered_map<PageId, frame_id_t, PageIdHash> page_table;
+    };
+
+    static constexpr int BUCKET_COUNT = 16;
+    std::vector<Bucket> buckets_;
+    std::mutex free_list_mutex_; // 保护 free_list_
+    DiskManager *disk_manager_;
+    Replacer *replacer_;
+    // 异步刷盘
+    std::queue<frame_id_t> flush_queue_;
+    std::mutex queue_mutex_;
+    std::condition_variable flush_cond_;
+    std::atomic<bool> terminate_{false};
+    std::thread flush_thread_;
+    Bucket &get_bucket(const PageId &page_id)
+    {
+        size_t hash = std::hash<int>{}(page_id.fd) ^
+                      (std::hash<page_id_t>{}(page_id.page_no) << 1);
+        return buckets_[hash & (BUCKET_COUNT - 1)];
+    }
+
+    void background_flush();
 };
