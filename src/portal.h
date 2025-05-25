@@ -227,6 +227,7 @@ public:
             std::unique_ptr<AbstractExecutor> left = convert_plan_executor(x->left_, context);
             std::unique_ptr<AbstractExecutor> right = convert_plan_executor(x->right_, context);
             std::unique_ptr<AbstractExecutor> join;
+            context->setJoinFlag(true); // 设置 join 标志位
             return std::make_unique<NestedLoopJoinExecutor>(std::move(left), std::move(right), std::move(x->conds_));
         }
         case PlanTag::T_SortMerge:
@@ -235,6 +236,7 @@ public:
             std::unique_ptr<AbstractExecutor> left = convert_plan_executor(x->left_, context);
             std::unique_ptr<AbstractExecutor> right = convert_plan_executor(x->right_, context);
             std::unique_ptr<AbstractExecutor> join;
+            context->setJoinFlag(true); // 设置 join 标志位
             return std::make_unique<MergeJoinExecutor>(std::move(left), std::move(right), std::move(x->conds_));
         }
         case PlanTag::T_Sort:
