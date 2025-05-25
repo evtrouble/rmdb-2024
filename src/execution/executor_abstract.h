@@ -62,7 +62,7 @@ public:
 
 protected:
     // 检查条件是否满足的通用函数
-    bool check_condition(char *lhs_value, ColType lhs_type, char *rhs_value, ColType rhs_type, CompOp op)
+    bool check_condition(char *lhs_value, ColType lhs_type, char *rhs_value, ColType rhs_type, CompOp op, int len)
     {
         int cmp;
 
@@ -111,7 +111,7 @@ protected:
             }
             case TYPE_STRING:
             {
-                cmp = memcmp(lhs_value, rhs_value, strlen(rhs_value));
+                cmp = memcmp(lhs_value, rhs_value, len);
                 break;
             }
             default:

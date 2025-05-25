@@ -20,7 +20,7 @@ class SeqScanExecutor : public AbstractExecutor
 {
 private:
     std::string tab_name_;             // 表的名称
-    std::vector<Condition> conds_;     // scan的条件
+    // std::vector<Condition> conds_;     // scan的条件
     RmFileHandle *fh_;                 // 表的数据文件句柄
     std::vector<ColMeta> cols_;        // scan后生成的记录的字段
     size_t len_;                       // scan后生成的每条记录的长度
@@ -31,7 +31,11 @@ private:
     std::unique_ptr<RecScan> scan_; // table_iterator
 
     SmManager *sm_manager_;
-    bool first = true;
+        // 新增：用于存储扫描结果的缓存
+    std::vector<std::unique_ptr<RmRecord>> result_cache_;
+    mutable bool first_record_ = true;  // 是否是第一次读取记录
+    size_t cache_index_ = 0;
+
     // 获取指定列的值
     inline char *get_col_value(const RmRecord *rec, const ColMeta &col)
     {
@@ -50,7 +54,7 @@ private:
     // 检查记录是否满足所有条件
     bool satisfy_conditions(const RmRecord *rec)
     {
-        return std::all_of(conds_.begin(), conds_.end(), [&](auto &cond)
+        return std::all_of(fed_conds_.begin(), fed_conds_.end(), [&](auto &cond)
                            {
             // if (!cond.is_subquery) {
                 // 处理普通条件
@@ -72,7 +76,7 @@ private:
                     rhs_value = get_col_value(rec, right_col);
                     rhs_type = right_col.type;
                 }
-                return check_condition(lhs_value, left_col.type, rhs_value, rhs_type, cond.op);
+                return check_condition(lhs_value, left_col.type, rhs_value, rhs_type, cond.op, left_col.len);
             // } else {
             //     // 处理子查询条件
             //     ColMeta &left_col = get_col_meta(cond.lhs_col.col_name);
@@ -173,25 +177,37 @@ private:
     }
     void find_next_valid_tuple()
     {
-        while (!scan_->is_end())
-        {
-            rid_ = scan_->rid();
-            std::unique_ptr<RmRecord> rid_record = fh_->get_record(rid_, context_);
-            if (satisfy_conditions(rid_record.get()))
+        if (first_record_) {
+            while (!scan_->is_end())
             {
+                rid_ = scan_->rid();
+                std::unique_ptr<RmRecord> rid_record = fh_->get_record(rid_, context_);
+                if (satisfy_conditions(rid_record.get()))
+                {
+                    if(context_->hasJoinFlag() || result_cache_.empty()) {
+                        result_cache_.emplace_back(std::move(rid_record));
+                        ++cache_index_;
+                    }
+                    else
+                    {
+                        result_cache_[0] = std::move(rid_record);
+                    }
+                    sm_manager_->get_bpm()->unpin_page({fh_->GetFd(), rid_.page_no}, false);
+                    // context_->lock_mgr_->lock_shared_on_record(context_->txn_, rid_, fh_->GetFd());
+                    return;
+                }
                 sm_manager_->get_bpm()->unpin_page({fh_->GetFd(), rid_.page_no}, false);
-                return;
+                scan_->next();
             }
-            sm_manager_->get_bpm()->unpin_page({fh_->GetFd(), rid_.page_no}, false);
-            scan_->next();
+            rid_.page_no = RM_NO_PAGE; // 设置 rid_ 以指示结束
         }
-        rid_.page_no = RM_NO_PAGE; // 设置 rid_ 以指示结束
+        ++cache_index_;
     }
 
 public:
     SeqScanExecutor(SmManager *sm_manager, const std::string &tab_name, const std::vector<Condition> &conds,
-                    Context *context) : AbstractExecutor(context), tab_name_(tab_name),
-                                        conds_(conds), sm_manager_(sm_manager), first(true)
+                    Context *context) : AbstractExecutor(context), tab_name_(std::move(tab_name)),
+                                        fed_conds_(std::move(conds)), sm_manager_(sm_manager)
     {
         // 检查文件句柄是否存在
         auto fh_iter = sm_manager_->fhs_.find(tab_name_);
@@ -206,11 +222,14 @@ public:
         len_ = tab_.cols.back().offset + tab_.cols.back().len;
 
         // 对条件进行排序，以便后续处理
-        std::sort(conds_.begin(), conds_.end());
+        std::sort(fed_conds_.begin(), fed_conds_.end());
     }
     void beginTuple() override
     {
-        scan_ = std::make_unique<RmScan>(fh_);
+        if (first_record_) {
+            scan_ = std::make_unique<RmScan>(fh_);
+        }
+        cache_index_ = -1;
         find_next_valid_tuple();
     }
 
@@ -220,18 +239,26 @@ public:
         find_next_valid_tuple();
     }
 
-    bool is_end() const override { return rid_.page_no == RM_NO_PAGE; }
+    bool is_end() const override { 
+        if (first_record_) {
+            bool end = (rid_.page_no == INVALID_PAGE_ID);
+            if (end)
+            {
+                first_record_ = false;
+                return true;
+            }
+            return false;
+        }
+        return cache_index_ >= result_cache_.size() || cache_index_ < 0;
+    }
 
     std::unique_ptr<RmRecord> Next() override
     {
-        if (!is_end())
-        {
-            std::unique_ptr<RmRecord> rid_record = fh_->get_record(rid_, context_);
-            std::unique_ptr<RmRecord> ret = std::make_unique<RmRecord>(rid_record->size, rid_record->data);
-            sm_manager_->get_bpm()->unpin_page({fh_->GetFd(), rid_.page_no}, false);
-            return ret;
+        if(cache_index_ >= 0 && cache_index_ < result_cache_.size()) {
+            std::unique_ptr<RmRecord> record = std::make_unique<RmRecord>(*result_cache_[cache_index_]);
+            return record;
         }
-        return nullptr;
+        return nullptr;  // 如果没有更多记录，返回空指针
     }
 
     const std::vector<ColMeta> &cols() const override { return tab_.cols; }

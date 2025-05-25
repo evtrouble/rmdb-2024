@@ -87,8 +87,8 @@ struct Value
             {
                 throw StringOverflowError();
             }
-            memset(raw->data, 0, len);
             memcpy(raw->data, str_val.c_str(), str_val.size());
+            memset(raw->data + str_val.size(), 0, len - str_val.size());
         }
     }
     void export_val(char *dest, int len)

@@ -70,7 +70,7 @@ private:
             right_type = rhs_col->type;
             right_value = right_current_->data + rhs_col->offset;
         }
-        return check_condition(left_value, left_col->type, right_value, right_type, cond.op);
+        return check_condition(left_value, left_col->type, right_value, right_type, cond.op, left_col->len);
     }
 
 public:

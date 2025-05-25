@@ -282,20 +282,20 @@ public:
     /**
      * @brief 检查元组是否满足条件
      */
-    bool check_con(const Condition &cond, const RmRecord *record, const std::vector<ColMeta> &cols_meta) {
-        auto lhs_col = get_col(cols_meta, cond.lhs_col);
-        char *lhs_data = record->data + lhs_col->offset;
+    bool check_con(Condition &cond, const RmRecord *record) {
+        auto& lhs_col = get_col_meta(cond.lhs_col.col_name);
+        char *lhs_data = record->data + lhs_col.offset;
         char *rhs_data = nullptr;
         ColType rhs_type;
         if (cond.is_rhs_val) {
             rhs_type = cond.rhs_val.type;
             rhs_data = cond.rhs_val.raw->data;
         } else {
-            auto rhs_col = get_col(cols_meta, cond.rhs_col);
-            rhs_type = rhs_col->type;
-            rhs_data = record->data + rhs_col->offset;
+            auto& rhs_col = get_col_meta(cond.rhs_col.col_name);
+            rhs_type = rhs_col.type;
+            rhs_data = record->data + rhs_col.offset;
         }
-        int cmp = ix_compare(lhs_data, rhs_data, rhs_type, lhs_col->len);
+        int cmp = ix_compare(lhs_data, rhs_data, rhs_type, lhs_col.len);
         switch (cond.op) {
             case OP_EQ:
                 return cmp == 0;
@@ -314,12 +314,20 @@ public:
         }
     }
 
+    ColMeta &get_col_meta(const std::string &col_name)
+    {
+        auto iter = tab_.cols_map.find(col_name);
+        if (iter != tab_.cols_map.end())
+            return tab_.cols.at(iter->second);
+        throw ColumnNotFoundError(col_name);
+    }
+
     /**
      * @brief 检查元组是否满足条件组
      */
-    inline bool check_cons(const std::vector<Condition> &conds, const RmRecord *record, const std::vector<ColMeta> &cols_meta) {
+    inline bool check_cons(std::vector<Condition> &conds, const RmRecord *record) {
         return std::all_of(conds.begin(), conds.end(), [&](auto &cond) {
-            return check_con(cond, record, cols_meta);
+            return check_con(cond, record);
         });
     }
 
@@ -359,7 +367,7 @@ public:
             while (!scan_->is_end()) {
                 rid_ = scan_->rid(); 
                 auto record = fh_->get_record(rid_, context_);
-                if (check_cons(fed_conds_, record.get(), cols_)) {
+                if (check_cons(fed_conds_, record.get())) {
                     if(context_->hasJoinFlag() || result_cache_.empty()) {
                         result_cache_.emplace_back(std::move(record));
                         ++cache_index_;
@@ -369,9 +377,11 @@ public:
                         result_cache_[0] = std::move(record);
                     }
                     scan_->next();
+                    sm_manager_->get_bpm()->unpin_page({fh_->GetFd(), rid_.page_no}, false);
                     // context_->lock_mgr_->lock_shared_on_record(context_->txn_, rid_, fh_->GetFd());
                     return;
                 }
+                sm_manager_->get_bpm()->unpin_page({fh_->GetFd(), rid_.page_no}, false);
                 scan_->next();
             }
             rid_.page_no = INVALID_PAGE_ID;  // 如果没有找到满足条件的记录，设置为无效
