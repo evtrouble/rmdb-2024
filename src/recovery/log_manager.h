@@ -70,7 +70,7 @@ public:
         printf("log_type_: %s\n", LogTypeStr[log_type_].c_str());
         printf("lsn: %d\n", lsn_);
         printf("log_tot_len: %d\n", log_tot_len_);
-        printf("log_tid: %ld\n", log_tid_);
+        printf("log_tid: %d\n", log_tid_);
         printf("prev_lsn: %d\n", prev_lsn_);
     }
 };
@@ -90,6 +90,7 @@ public:
     {
         log_tid_ = txn_id;
     }
+
     // 序列化Begin日志记录到dest中
     void serialize(char *dest) const override
     {
@@ -133,7 +134,7 @@ public:
         prev_lsn_ = INVALID_LSN;
         table_name_ = nullptr;
     }
-    InsertLogRecord(txn_id_t txn_id, RmRecord &insert_value, Rid &rid, std::string table_name)
+    InsertLogRecord(txn_id_t txn_id, RmRecord &insert_value, Rid &rid, std::string &table_name)
         : InsertLogRecord()
     {
         log_tid_ = txn_id;
@@ -146,6 +147,11 @@ public:
         table_name_ = new char[table_name_size_];
         memcpy(table_name_, table_name.c_str(), table_name_size_);
         log_tot_len_ += sizeof(size_t) + table_name_size_;
+    }
+    ~InsertLogRecord()
+    {
+        if (table_name_ != nullptr)
+            delete[] table_name_;
     }
 
     // 把insert日志记录序列化到dest中
