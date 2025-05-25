@@ -35,13 +35,19 @@ struct Rid
     int page_no;
     int slot_no;
 
-    bool operator==(const Rid &other) const
+    friend bool operator==(const Rid &x, const Rid &y)
     {
-        return page_no == other.page_no && slot_no == other.slot_no;
+        return x.page_no == y.page_no && x.slot_no == y.slot_no;
     }
 
     friend bool operator!=(const Rid &x, const Rid &y) { return !(x == y); }
 };
+
+inline std::ostream &operator<<(std::ostream &os, const Rid &rid)
+{
+    os << "(" << rid.page_no << ", " << rid.slot_no << ")";
+    return os;
+}
 
 // inline std::ostream &operator<<(std::ostream &os, const Rid &rid)
 // {
@@ -53,7 +59,8 @@ enum ColType
 {
     TYPE_INT,
     TYPE_FLOAT,
-    TYPE_STRING
+    TYPE_STRING,
+    TYPE_DATETIME
 };
 
 inline std::string coltype2str(ColType type)
@@ -61,7 +68,8 @@ inline std::string coltype2str(ColType type)
     std::map<ColType, std::string> m = {
         {TYPE_INT, "INT"},
         {TYPE_FLOAT, "FLOAT"},
-        {TYPE_STRING, "STRING"}};
+        {TYPE_STRING, "STRING"},
+        {TYPE_DATETIME, "DATETIME"}};
     return m.at(type);
 }
 
