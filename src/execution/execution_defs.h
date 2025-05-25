@@ -12,3 +12,17 @@ See the Mulan PSL v2 for more details. */
 
 #include "defs.h"
 #include "errors.h"
+enum class ExecutionType
+{
+        Agg,
+        Sort,
+        Delete,
+        IndexScan,
+        Insert,
+        MergeJoin,
+        NestedLoopJoin,
+        Projection,
+        Select,
+        SeqScan,
+        Update
+};

@@ -26,25 +26,30 @@ private:
     SmManager *sm_manager_;
 
 public:
-    InsertExecutor(SmManager *sm_manager, const std::string &tab_name, std::vector<Value> values, Context *context)
+    InsertExecutor(SmManager *sm_manager, const std::string &tab_name, const std::vector<Value> &values, Context *context)
+        : AbstractExecutor(context), values_(std::move(values)),
+          tab_name_(std::move(tab_name)), sm_manager_(sm_manager)
     {
-        sm_manager_ = sm_manager;
-        tab_ = sm_manager_->db_.get_table(tab_name);
-        values_ = values;
-        tab_name_ = tab_name;
+        tab_ = sm_manager_->db_.get_table(tab_name_);
         if (values.size() != tab_.cols.size())
         {
             throw InvalidValueCountError();
         }
-        fh_ = sm_manager_->fhs_.at(tab_name).get();
-        context_ = context;
+        fh_ = sm_manager_->fhs_.at(tab_name_).get();
     };
 
     std::unique_ptr<RmRecord> Next() override
     {
+        std::vector<IxIndexHandle *> ihs;
+        ihs.reserve(tab_.indexes.size());
+        for (auto &index : tab_.indexes)
+        {
+            ihs.emplace_back(sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get());
+        }
+
         // Make record buffer
         RmRecord rec(fh_->get_file_hdr().record_size);
-        for (size_t i = 0; i < values_.size(); i++)
+        for (size_t i = 0; i < values_.size(); ++i)
         {
             auto &col = tab_.cols[i];
             auto &val = values_[i];
@@ -52,16 +57,18 @@ public:
             {
                 throw IncompatibleTypeError(coltype2str(col.type), coltype2str(val.type));
             }
-            val.init_raw(col.len);
-            memcpy(rec.data + col.offset, val.raw->data, col.len);
+            val.export_val(rec.data + col.offset, col.len);
         }
+
         // Insert into record file
         rid_ = fh_->insert_record(rec.data, context_);
+        context_->txn_->append_write_record(new WriteRecord(WType::INSERT_TUPLE,
+                                                            tab_name_, rid_, rec));
 
         // Insert into index
-        for (auto& index : tab_.indexes)
+        for (size_t id = 0; id < tab_.indexes.size(); id++)
         {
-            auto ih = sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get();
+            auto &index = tab_.indexes[id];
             char *key = new char[index.col_tot_len];
             int offset = 0;
             for (int i = 0; i < index.col_num; ++i)
@@ -69,9 +76,12 @@ public:
                 memcpy(key + offset, rec.data + index.cols[i].offset, index.cols[i].len);
                 offset += index.cols[i].len;
             }
-            ih->insert_entry(key, rid_, context_->txn_);
+            ihs[id]->insert_entry(key, rid_, context_->txn_);
+            delete[] key;
         }
+
         return nullptr;
     }
     Rid &rid() override { return rid_; }
+    ExecutionType type() const override { return ExecutionType::Insert; }
 };

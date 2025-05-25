@@ -15,8 +15,9 @@ See the Mulan PSL v2 for more details. */
 #include "index/ix.h"
 #include "system/sm.h"
 
-class UpdateExecutor : public AbstractExecutor {
-   private:
+class UpdateExecutor : public AbstractExecutor
+{
+private:
     TabMeta tab_;
     std::vector<Condition> conds_;
     RmFileHandle *fh_;
@@ -24,21 +25,33 @@ class UpdateExecutor : public AbstractExecutor {
     std::string tab_name_;
     std::vector<SetClause> set_clauses_;
     SmManager *sm_manager_;
+    std::unordered_set<int> changes;
 
-   public:
-    UpdateExecutor(SmManager *sm_manager, const std::string &tab_name, std::vector<SetClause> set_clauses,
-                   std::vector<Condition> conds, std::vector<Rid> rids, Context *context) {
-        sm_manager_ = sm_manager;
-        tab_name_ = tab_name;
-        set_clauses_ = set_clauses;
-        tab_ = sm_manager_->db_.get_table(tab_name);
-        fh_ = sm_manager_->fhs_.at(tab_name).get();
-        conds_ = conds;
-        rids_ = rids;
-        context_ = context;
+public:
+    UpdateExecutor(SmManager *sm_manager, const std::string &tab_name, const std::vector<SetClause> &set_clauses,
+                   const std::vector<Condition> &conds, const std::vector<Rid> &rids, Context *context)
+        : AbstractExecutor(context), rids_(rids), tab_name_(tab_name),
+          set_clauses_(set_clauses), conds_(conds), sm_manager_(sm_manager)
+    {
+        tab_ = sm_manager_->db_.get_table(tab_name_);
+        fh_ = sm_manager_->fhs_.at(tab_name_).get();
+
+        // 检查每个要更新的列的类型是否匹配
+        for (auto &set_clause : set_clauses_)
+        {
+            // 找到要更新的列的元数据
+            auto col = tab_.get_col(set_clause.lhs.col_name);
+            // 检查类型是否匹配
+            if (col->type != set_clause.rhs.type)
+            {
+                throw IncompatibleTypeError(coltype2str(col->type), coltype2str(set_clause.rhs.type));
+            }
+            changes.insert(col->offset);
+        }
     }
-    std::unique_ptr<RmRecord> Next() override {
-        
+    std::unique_ptr<RmRecord> Next() override
+    {
+
         return nullptr;
     }
 
