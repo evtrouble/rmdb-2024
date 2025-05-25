@@ -21,44 +21,46 @@ See the Mulan PSL v2 for more details. */
 #include "planner.h"
 #include "plan.h"
 
-class Optimizer {
-   private:
+class Optimizer
+{
+private:
     SmManager *sm_manager_;
     Planner *planner_;
 
-   public:
-    Optimizer(SmManager *sm_manager,  Planner *planner) 
-        : sm_manager_(sm_manager),  planner_(planner)
-        {}
-    
-    std::shared_ptr<Plan> plan_query(std::shared_ptr<Query> query, Context *context) {
-        if (auto x = std::dynamic_pointer_cast<ast::Help>(query->parse)) {
-            // help;
+public:
+    Optimizer(SmManager *sm_manager, Planner *planner)
+        : sm_manager_(sm_manager), planner_(planner)
+    {
+    }
+
+    std::shared_ptr<Plan> plan_query(std::shared_ptr<Query> query, Context *context)
+    {
+        switch (query->parse->Nodetype())
+        {
+        case ast::TreeNodeType::Help:
             return std::make_shared<OtherPlan>(T_Help, std::string());
-        } else if (auto x = std::dynamic_pointer_cast<ast::ShowTables>(query->parse)) {
-            // show tables;
+        case ast::TreeNodeType::ShowTables:
             return std::make_shared<OtherPlan>(T_ShowTable, std::string());
-        } else if (auto x = std::dynamic_pointer_cast<ast::DescTable>(query->parse)) {
-            // desc table;
+        case ast::TreeNodeType::DescTable:
+        {
+            auto x = std::static_pointer_cast<ast::DescTable>(query->parse);
             return std::make_shared<OtherPlan>(T_DescTable, x->tab_name);
-        } else if (auto x = std::dynamic_pointer_cast<ast::TxnBegin>(query->parse)) {
-            // begin;
+        }
+        case ast::TreeNodeType::TxnBegin:
             return std::make_shared<OtherPlan>(T_Transaction_begin, std::string());
-        } else if (auto x = std::dynamic_pointer_cast<ast::TxnAbort>(query->parse)) {
-            // abort;
+        case ast::TreeNodeType::TxnAbort:
             return std::make_shared<OtherPlan>(T_Transaction_abort, std::string());
-        } else if (auto x = std::dynamic_pointer_cast<ast::TxnCommit>(query->parse)) {
-            // commit;
+        case ast::TreeNodeType::TxnCommit:
             return std::make_shared<OtherPlan>(T_Transaction_commit, std::string());
-        } else if (auto x = std::dynamic_pointer_cast<ast::TxnRollback>(query->parse)) {
-            // rollback;
+        case ast::TreeNodeType::TxnRollback:
             return std::make_shared<OtherPlan>(T_Transaction_rollback, std::string());
-        } else if (auto x = std::dynamic_pointer_cast<ast::SetStmt>(query->parse)) {
-            // Set Knob Plan
+        case ast::TreeNodeType::SetStmt:
+        {
+            auto x = std::static_pointer_cast<ast::SetStmt>(query->parse);
             return std::make_shared<SetKnobPlan>(x->set_knob_type_, x->bool_val_);
-        } else {
+        }
+        default:
             return planner_->do_planner(query, context);
         }
     }
-
 };

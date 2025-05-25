@@ -38,6 +38,7 @@ static constexpr int BUFFER_POOL_SIZE = 65536;     // size of buffer pool 256MB
 // static constexpr int BUFFER_POOL_SIZE = 262144;                                // size of buffer pool 1GB
 static constexpr int LOG_BUFFER_SIZE = (1024 * PAGE_SIZE); // size of a log buffer in byte
 static constexpr int BUCKET_SIZE = 50;                     // size of extendible hash bucket
+static constexpr int MAX_TABLE_NUMBER = 50;
 
 using frame_id_t = int32_t;   // frame id type, 帧页ID, 页在BufferPool中的存储单元称为帧,一帧对应一页
 using page_id_t = int32_t;    // page id type , 页ID
@@ -51,6 +52,6 @@ using timestamp_t = int64_t; // timestamp type, used for transaction concurrency
 static const std::string LOG_FILE_NAME = "db.log";
 
 // replacer
-static const std::string REPLACER_TYPE = "LRU";
+static const std::string REPLACER_TYPE = "CLOCK";
 
 static const std::string DB_META_NAME = "db.meta";
