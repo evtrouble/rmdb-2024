@@ -103,9 +103,9 @@ struct TabMeta
     {
         for (auto &index : indexes)
         {
-            if (index.col_num == col_names.size())
+            if (index.col_num == (int)col_names.size())
             {
-                size_t i = 0;
+                int i = 0;
                 for (; i < index.col_num; ++i)
                 {
                     if (index.cols[i].name.compare(col_names[i]) != 0)
@@ -124,16 +124,16 @@ struct TabMeta
     {
         for (auto index = indexes.begin(); index != indexes.end(); ++index)
         {
-            if ((*index).col_num != col_names.size())
+            if (index->col_num != (int)col_names.size())
                 continue;
-            auto &index_cols = (*index).cols;
-            size_t i = 0;
-            for (; i < col_names.size(); ++i)
+            auto &index_cols = index->cols;
+            int i = 0;
+            for (; i < (int)col_names.size(); ++i)
             {
                 if (index_cols[i].name.compare(col_names[i]) != 0)
                     break;
             }
-            if (i == col_names.size())
+            if (i == (int)col_names.size())
                 return index;
         }
         throw IndexNotFoundError(name, col_names);

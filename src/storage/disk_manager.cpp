@@ -17,7 +17,9 @@ See the Mulan PSL v2 for more details. */
 
 #include "defs.h"
 
-DiskManager::DiskManager() { memset(fd2pageno_, 0, MAX_FD * (sizeof(std::atomic<page_id_t>) / sizeof(char))); }
+DiskManager::DiskManager() { 
+    // memset(fd2pageno_, 0, MAX_FD * (sizeof(std::atomic<page_id_t>) / sizeof(char))); 
+}
 
 /**
  * @description: 将数据写入文件的指定磁盘页面中
@@ -172,7 +174,7 @@ void DiskManager::destroy_file(const std::string &path)
     // 删除文件
     if (unlink(path.c_str()) < 0)
     {
-        throw UnixError();
+        throw FileNotFoundError(path);
     }
 }
 
@@ -197,7 +199,7 @@ int DiskManager::open_file(const std::string &path)
     int fd = open(path.c_str(), O_RDWR);
     if (fd < 0)
     {
-        throw UnixError();
+        throw FileNotFoundError(path);
     }
 
     // 更新文件打开列表
