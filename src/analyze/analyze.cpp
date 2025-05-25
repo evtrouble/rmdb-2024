@@ -372,30 +372,30 @@ void Analyze::get_clause(const std::vector<std::shared_ptr<ast::BinaryExpr>> &sv
             cond.is_rhs_val = false;
             cond.rhs_col = TabCol(rhs_col->tab_name, rhs_col->col_name, expr->lhs->agg_type);
         }
-        else if (expr->rhs == nullptr)
-        {
-            auto sub_query = std::static_pointer_cast<ast::SubQueryExpr>(expr);
-            if (!sub_query)
-            {
-                throw RMDBError("Invalid expression with null right-hand side");
-            }
+        // else if (expr->rhs == nullptr)
+        // {
+        //     auto sub_query = std::static_pointer_cast<ast::SubQueryExpr>(expr);
+        //     if (!sub_query)
+        //     {
+        //         throw RMDBError("Invalid expression with null right-hand side");
+        //     }
 
-            auto subQuery_ = std::make_shared<SubQuery>();
-            subQuery_->stmt = sub_query->subquery;
-            cond.is_rhs_val = false;
-            cond.is_subquery = true;
+        //     auto subQuery_ = std::make_shared<SubQuery>();
+        //     subQuery_->stmt = sub_query->subquery;
+        //     cond.is_rhs_val = false;
+        //     cond.is_subquery = true;
 
-            if (cond.op != OP_IN && cond.op != OP_NOT_IN)
-            {
-                subQuery_->is_scalar = true;
-            }
-            for (const auto &val : sub_query->vals)
-            {
-                subQuery_->result.insert(convert_sv_value(val));
-            }
+        //     if (cond.op != OP_IN && cond.op != OP_NOT_IN)
+        //     {
+        //         subQuery_->is_scalar = true;
+        //     }
+        //     for (const auto &val : sub_query->vals)
+        //     {
+        //         subQuery_->result.insert(convert_sv_value(val));
+        //     }
 
-            cond.subQuery = std::move(subQuery_);
-        }
+        //     cond.subQuery = std::move(subQuery_);
+        // }
         conds.emplace_back(std::move(cond));
     }
 }
@@ -409,7 +409,7 @@ void Analyze::check_clause(const std::vector<std::string> &tab_names, std::vecto
     {
         // 检查 WHERE 子句中是否包含聚合函数
         if (!is_having && (cond.lhs_col.aggFuncType != ast::AggFuncType::NO_TYPE ||
-                           (!cond.is_rhs_val && !cond.is_subquery && cond.rhs_col.aggFuncType != ast::AggFuncType::NO_TYPE)))
+                           (!cond.is_rhs_val/* && !cond.is_subquery*/ && cond.rhs_col.aggFuncType != ast::AggFuncType::NO_TYPE)))
         {
             throw RMDBError("Aggregate functions are not allowed in WHERE clause");
         }
@@ -419,7 +419,7 @@ void Analyze::check_clause(const std::vector<std::string> &tab_names, std::vecto
         {
             cond.lhs_col = check_column(all_cols, cond.lhs_col);
         }
-        if (!cond.is_rhs_val && !cond.is_subquery && cond.rhs_col.col_name != "*")
+        if (!cond.is_rhs_val &&/* !cond.is_subquery &&*/ cond.rhs_col.col_name != "*")
         {
             cond.rhs_col = check_column(all_cols, cond.rhs_col);
         }
@@ -430,7 +430,7 @@ void Analyze::check_clause(const std::vector<std::string> &tab_names, std::vecto
             ColType lhs_type = lhs_col->type;
             ColType rhs_type;
 
-            if (cond.is_rhs_val && !cond.is_subquery)
+            if (cond.is_rhs_val/* && !cond.is_subquery*/)
             {
                 rhs_type = cond.rhs_val.type;
 
@@ -465,76 +465,76 @@ void Analyze::check_clause(const std::vector<std::string> &tab_names, std::vecto
                     }
                 }
             }
-            else if (!cond.is_subquery)
-            {
-                // Get rhs column metadata
-                TabMeta &rhs_tab = sm_manager_->db_.get_table(cond.rhs_col.tab_name);
-                auto rhs_col = rhs_tab.get_col(cond.rhs_col.col_name);
-                rhs_type = rhs_col->type;
+            // else if (!cond.is_subquery)
+            // {
+            //     // Get rhs column metadata
+            //     TabMeta &rhs_tab = sm_manager_->db_.get_table(cond.rhs_col.tab_name);
+            //     auto rhs_col = rhs_tab.get_col(cond.rhs_col.col_name);
+            //     rhs_type = rhs_col->type;
 
-                // 检查类型是否兼容
-                if (lhs_type != rhs_type)
-                {
-                    // 允许 INT 和 FLOAT 之间的比较，但此处不执行转换
-                    if (!((lhs_type == TYPE_INT && rhs_type == TYPE_FLOAT) ||
-                          (lhs_type == TYPE_FLOAT && rhs_type == TYPE_INT)))
-                    {
-                        throw IncompatibleTypeError(coltype2str(lhs_type), coltype2str(rhs_type));
-                    }
-                }
-                // 对于列与列比较，暂不支持自动类型转换
-            }
-            else if (cond.is_subquery && cond.subQuery->stmt != nullptr)
-            {
-                // 1、子查询的列数只能为1
-                if (cond.subQuery->stmt->cols.size() != 1)
-                {
-                    throw RMDBError("Subquery must return only one column");
-                }
+            //     // 检查类型是否兼容
+            //     if (lhs_type != rhs_type)
+            //     {
+            //         // 允许 INT 和 FLOAT 之间的比较，但此处不执行转换
+            //         if (!((lhs_type == TYPE_INT && rhs_type == TYPE_FLOAT) ||
+            //               (lhs_type == TYPE_FLOAT && rhs_type == TYPE_INT)))
+            //         {
+            //             throw IncompatibleTypeError(coltype2str(lhs_type), coltype2str(rhs_type));
+            //         }
+            //     }
+            //     // 对于列与列比较，暂不支持自动类型转换
+            // }
+            // else if (cond.is_subquery && cond.subQuery->stmt != nullptr)
+            // {
+            //     // 1、子查询的列数只能为1
+            //     if (cond.subQuery->stmt->cols.size() != 1)
+            //     {
+            //         throw RMDBError("Subquery must return only one column");
+            //     }
 
-                // 2、获取子查询的列类型
-                TabMeta &sub_tab = sm_manager_->db_.get_table(cond.subQuery->stmt->tabs[0]);
-                auto sub_col = sub_tab.get_col(cond.subQuery->stmt->cols[0]->col_name);
+            //     // 2、获取子查询的列类型
+            //     TabMeta &sub_tab = sm_manager_->db_.get_table(cond.subQuery->stmt->tabs[0]);
+            //     auto sub_col = sub_tab.get_col(cond.subQuery->stmt->cols[0]->col_name);
 
-                // 3、检查子查询的列类型是否与左边的列类型相同
-                cond.subQuery->subquery_type = sub_col->type;
-                if (!can_cast_type(sub_col->type, lhs_type))
-                {
-                    throw RMDBError("Subquery Type Error");
-                }
+            //     // 3、检查子查询的列类型是否与左边的列类型相同
+            //     cond.subQuery->subquery_type = sub_col->type;
+            //     if (!can_cast_type(sub_col->type, lhs_type))
+            //     {
+            //         throw RMDBError("Subquery Type Error");
+            //     }
 
-                // 4、分析子查询计划
-                cond.subQuery->query = do_analyze(cond.subQuery->stmt);
-            }
-            else if (cond.is_subquery)
-            {
-                // 子查询是数组（IN/NOT IN 操作）
-                // 创建一个临时集合来存储转换后的值
-                std::unordered_set<Value> tempResult;
+            //     // 4、分析子查询计划
+            //     cond.subQuery->query = do_analyze(cond.subQuery->stmt);
+            // }
+            // else if (cond.is_subquery)
+            // {
+            //     // 子查询是数组（IN/NOT IN 操作）
+            //     // 创建一个临时集合来存储转换后的值
+            //     std::unordered_set<Value> tempResult;
 
-                // 遍历子查询结果
-                for (const Value &val : cond.subQuery->result)
-                {
-                    Value newVal = val;
+            //     // 遍历子查询结果
+            //     for (const Value &val : cond.subQuery->result)
+            //     {
+            //         Value newVal = val;
 
-                    // 检查类型是否一致或可转换
-                    if (lhs_type != val.type)
-                    {
-                        if (!can_cast_type(val.type, lhs_type))
-                        {
-                            throw RMDBError("Subquery Type Error");
-                        }
-                        else
-                        {
-                            cast_value(newVal, lhs_type);
-                        }
-                    }
-                    tempResult.insert(newVal); // 将转换后的值插入临时集合
-                }
+            //         // 检查类型是否一致或可转换
+            //         if (lhs_type != val.type)
+            //         {
+            //             if (!can_cast_type(val.type, lhs_type))
+            //             {
+            //                 throw RMDBError("Subquery Type Error");
+            //             }
+            //             else
+            //             {
+            //                 cast_value(newVal, lhs_type);
+            //             }
+            //         }
+            //         tempResult.insert(newVal); // 将转换后的值插入临时集合
+            //     }
 
-                // 用临时集合替换原始集合
-                cond.subQuery->result = std::move(tempResult);
-            }
+            //     // 用临时集合替换原始集合
+            //     cond.subQuery->result = std::move(tempResult);
+            // }
             else
             {
                 TabMeta &rhs_tab = sm_manager_->db_.get_table(cond.rhs_col.tab_name);

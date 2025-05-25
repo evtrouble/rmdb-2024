@@ -183,7 +183,7 @@ struct TabMeta
             if (index->col_num != (int)col_names.size())
                 continue;
             auto &index_cols = index->cols;
-            int i = 0;
+            size_t i = 0;
             for (; i < col_names.size(); ++i)
             {
                 if (index_cols[i].name.compare(col_names[i]) != 0)

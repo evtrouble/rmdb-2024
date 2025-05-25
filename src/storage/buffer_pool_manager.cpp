@@ -12,8 +12,7 @@ See the Mulan PSL v2 for more details. */
 #include <fstream>
 
 BufferPoolManager::BufferPoolManager(size_t pool_size, DiskManager *disk_manager)
-    : buckets_(BUCKET_COUNT), pages_(pool_size),
-      disk_manager_(disk_manager)
+    : pages_(pool_size), disk_manager_(disk_manager), buckets_(BUCKET_COUNT)
 {
     // 可以被Replacer改变
     if (REPLACER_TYPE.compare("LRU") == 0)

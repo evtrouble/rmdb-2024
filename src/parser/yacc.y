@@ -257,14 +257,6 @@ condition:
     {
         $$ = std::make_shared<BinaryExpr>($1, $2, $3);
     }
-    |   col op '(' dml ')'
-    {
-	$$ = std::make_shared<SubQueryExpr>($1, $2, $4);
-    }
-    |   col op '(' valueList ')'
-    {
-	$$ = std::make_shared<SubQueryExpr>($1, $2, $4);
-    }
     ;
 
 

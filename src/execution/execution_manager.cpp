@@ -294,58 +294,58 @@ void QlManager::run_dml(std::unique_ptr<AbstractExecutor> exec)
 {
     exec->Next();
 }
-std::unordered_set<Value>
-QlManager::sub_select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, bool converse_to_float)
-{
-    std::unordered_set<Value> results;
-    // 确保一列
-    if (executorTreeRoot->cols().size() != 1)
-        throw RMDBError("subquery must have only one column");
-    const auto &col = executorTreeRoot->cols()[0];
+// std::unordered_set<Value>
+// QlManager::sub_select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, bool converse_to_float)
+// {
+//     std::unordered_set<Value> results;
+//     // 确保一列
+//     if (executorTreeRoot->cols().size() != 1)
+//         throw RMDBError("subquery must have only one column");
+//     const auto &col = executorTreeRoot->cols()[0];
 
-    // 执行query_plan
-    for (executorTreeRoot->beginTuple(); !executorTreeRoot->is_end(); executorTreeRoot->nextTuple())
-    {
-        auto Tuple = executorTreeRoot->Next();
-        char *rec_buf = Tuple->data + col.offset;
-        Value value;
-        switch (col.type)
-        {
-        case TYPE_INT:
-        {
-            auto val = *reinterpret_cast<int *>(rec_buf);
-            if (val != INT_MAX)
-            {
-                if (!converse_to_float)
-                    value.set_int(val);
-                else
-                    value.set_float(static_cast<float>(val));
-            }
-            break;
-        }
-        case TYPE_FLOAT:
-        {
-            auto val = *reinterpret_cast<float *>(rec_buf);
-            if (val != FLT_MAX)
-            {
-                value.set_float(val);
-            }
-            break;
-        }
-        case TYPE_STRING:
-        {
-            std::string col_str(reinterpret_cast<char *>(rec_buf), col.len);
-            col_str.resize(strlen(col_str.c_str()));
-            value.set_str(col_str);
-            break;
-        }
-        default:
-        {
-            throw RMDBError("Unsupported column type");
-        }
-        }
-        results.insert(value);
-    }
+//     // 执行query_plan
+//     for (executorTreeRoot->beginTuple(); !executorTreeRoot->is_end(); executorTreeRoot->nextTuple())
+//     {
+//         auto Tuple = executorTreeRoot->Next();
+//         char *rec_buf = Tuple->data + col.offset;
+//         Value value;
+//         switch (col.type)
+//         {
+//         case TYPE_INT:
+//         {
+//             auto val = *reinterpret_cast<int *>(rec_buf);
+//             if (val != INT_MAX)
+//             {
+//                 if (!converse_to_float)
+//                     value.set_int(val);
+//                 else
+//                     value.set_float(static_cast<float>(val));
+//             }
+//             break;
+//         }
+//         case TYPE_FLOAT:
+//         {
+//             auto val = *reinterpret_cast<float *>(rec_buf);
+//             if (val != FLT_MAX)
+//             {
+//                 value.set_float(val);
+//             }
+//             break;
+//         }
+//         case TYPE_STRING:
+//         {
+//             std::string col_str(reinterpret_cast<char *>(rec_buf), col.len);
+//             col_str.resize(strlen(col_str.c_str()));
+//             value.set_str(col_str);
+//             break;
+//         }
+//         default:
+//         {
+//             throw RMDBError("Unsupported column type");
+//         }
+//         }
+//         results.insert(value);
+//     }
 
-    return results;
-}
+//     return results;
+// }

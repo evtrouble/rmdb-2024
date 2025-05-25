@@ -52,7 +52,7 @@ private:
     {
         return std::all_of(conds_.begin(), conds_.end(), [&](auto &cond)
                            {
-            if (!cond.is_subquery) {
+            // if (!cond.is_subquery) {
                 // 处理普通条件
                 ColMeta &left_col = get_col_meta(cond.lhs_col.col_name);
                 char *lhs_value = get_col_value(rec, left_col);
@@ -73,55 +73,55 @@ private:
                     rhs_type = right_col.type;
                 }
                 return check_condition(lhs_value, left_col.type, rhs_value, rhs_type, cond.op);
-            } else {
-                // 处理子查询条件
-                ColMeta &left_col = get_col_meta(cond.lhs_col.col_name);
-                char *lhs_buf = get_col_value(rec, left_col);
-                Value lhs;
+            // } else {
+            //     // 处理子查询条件
+            //     ColMeta &left_col = get_col_meta(cond.lhs_col.col_name);
+            //     char *lhs_buf = get_col_value(rec, left_col);
+            //     Value lhs;
 
-                switch (left_col.type)
-                {
-                case TYPE_INT:
-                {
-                    int lhs_value = *reinterpret_cast<int *>(lhs_buf);
-                    lhs.set_int(lhs_value);
-                    break;
-                }
-                case TYPE_FLOAT:
-                {
-                    float lhs_value = *reinterpret_cast<float *>(lhs_buf);
-                    lhs.set_float(lhs_value);
-                    break;
-                }
-                case TYPE_STRING:
-                {
-                    std::string lhs_value(lhs_buf, strnlen(lhs_buf, left_col.len));
-                    lhs.set_str(lhs_value);
-                    break;
-                }
-                }
+            //     switch (left_col.type)
+            //     {
+            //     case TYPE_INT:
+            //     {
+            //         int lhs_value = *reinterpret_cast<int *>(lhs_buf);
+            //         lhs.set_int(lhs_value);
+            //         break;
+            //     }
+            //     case TYPE_FLOAT:
+            //     {
+            //         float lhs_value = *reinterpret_cast<float *>(lhs_buf);
+            //         lhs.set_float(lhs_value);
+            //         break;
+            //     }
+            //     case TYPE_STRING:
+            //     {
+            //         std::string lhs_value(lhs_buf, strnlen(lhs_buf, left_col.len));
+            //         lhs.set_str(lhs_value);
+            //         break;
+            //     }
+            //     }
 
-                if (cond.subQuery->is_scalar)
-                {
-                    if (cond.subQuery->result.size() != 1)
-                    {
-                        throw RMDBError("Scalar subquery result size is not 1");
-                    }
+            //     if (cond.subQuery->is_scalar)
+            //     {
+            //         if (cond.subQuery->result.size() != 1)
+            //         {
+            //             throw RMDBError("Scalar subquery result size is not 1");
+            //         }
 
-                    const auto &subQueryResult = *cond.subQuery->result.begin();
-                    // 比较左值和子查询结果
-                    return compare_values(lhs, subQueryResult, cond.op);
-                }
+            //         const auto &subQueryResult = *cond.subQuery->result.begin();
+            //         // 比较左值和子查询结果
+            //         return compare_values(lhs, subQueryResult, cond.op);
+            //     }
 
-                // 对于 IN/NOT IN 类型的子查询
-                if (lhs.type == TYPE_INT && cond.subQuery->subquery_type == TYPE_FLOAT)
-                {
-                    lhs.set_float((float)lhs.int_val);
-                }
+            //     // 对于 IN/NOT IN 类型的子查询
+            //     if (lhs.type == TYPE_INT && cond.subQuery->subquery_type == TYPE_FLOAT)
+            //     {
+            //         lhs.set_float((float)lhs.int_val);
+            //     }
 
-                bool found = (cond.subQuery->result.find(lhs) != cond.subQuery->result.end());
-                return (cond.op == OP_IN) == found;
-            } });
+            //     bool found = (cond.subQuery->result.find(lhs) != cond.subQuery->result.end());
+            //     return (cond.op == OP_IN) == found;}
+            });
     }
 
     // 比较两个 Value 值

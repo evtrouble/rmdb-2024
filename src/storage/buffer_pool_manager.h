@@ -97,8 +97,6 @@ private:
     static constexpr int BUCKET_COUNT = 16;
     std::vector<Bucket> buckets_;
     std::mutex free_list_mutex_; // 保护 free_list_
-    DiskManager *disk_manager_;
-    Replacer *replacer_;
     // 异步刷盘
     std::queue<frame_id_t> flush_queue_;
     std::mutex queue_mutex_;

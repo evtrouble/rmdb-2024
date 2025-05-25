@@ -430,8 +430,11 @@ page_id_t IxIndexHandle::insert_entry(const char *key, const Rid &value, Transac
         throw;
     }
     if (!abort)
-        transaction->append_write_record(WriteRecord(WType::IX_INSERT_TUPLE,
-                                                     disk_manager_->get_file_name(fd_), value, RmRecord(key, file_hdr_->col_tot_len_)));
+    {
+        auto write_record = new WriteRecord(WType::IX_INSERT_TUPLE,
+                                    disk_manager_->get_file_name(fd_), value, RmRecord(key, file_hdr_->col_tot_len_));
+        transaction->append_write_record(write_record);
+    }
     // 3. 如果结点已满，分裂结点，并把新结点的相关信息插入父节点
     // 提示：记得unpin page；若当前叶子节点是最右叶子节点，则需要更新file_hdr_.last_leaf；记得处理并发的上锁
     if (leaf_node.page_hdr->num_key == leaf_node.get_max_size())
@@ -471,8 +474,11 @@ bool IxIndexHandle::delete_entry(const char *key, const Rid &value, Transaction 
             transaction->append_index_deleted_page(leaf_node.page);
         // 4. 如果需要并发，并且需要删除叶子结点，则需要在事务的delete_page_set中添加删除结点的对应页面；记得处理并发的上锁
         if (!abort)
-            transaction->append_write_record(WriteRecord(WType::IX_DELETE_TUPLE,
-                                                         disk_manager_->get_file_name(fd_), value, RmRecord(key, file_hdr_->col_tot_len_)));
+        {
+            auto write_record = new WriteRecord(WType::IX_DELETE_TUPLE,
+                                    disk_manager_->get_file_name(fd_), value, RmRecord(key, file_hdr_->col_tot_len_));
+            transaction->append_write_record(write_record);
+        }
     }
     release_all_xlock(transaction->get_index_latch_page_set(), true);
     auto page_set = transaction->get_index_deleted_page_set();

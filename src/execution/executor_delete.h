@@ -72,9 +72,10 @@ public:
             }
 
             // 删除记录
-            fh_->delete_record(rid);
-            context_->txn_->append_write_record(WriteRecord(WType::DELETE_TUPLE,
-                                                            tab_name_, rid, rec));
+            fh_->delete_record(rid, context_);
+            auto write_record = new WriteRecord(WType::DELETE_TUPLE,
+                                                            tab_name_, rid, rec);
+            context_->txn_->append_write_record(write_record);
         }
         return nullptr;
     }

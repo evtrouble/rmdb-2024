@@ -96,7 +96,6 @@ namespace ast
         JoinExpr,
         SelectStmt,
         SetStmt,
-        SubqueryExpr,
         InExpr
     };
     // Base class for tree nodes
@@ -374,26 +373,6 @@ namespace ast
 
         SetStmt(SetKnobType &type, bool bool_value) : set_knob_type_(type), bool_val_(bool_value) {}
         TreeNodeType Nodetype() const override { return TreeNodeType::SetStmt; }
-    };
-
-    struct SubQueryExpr : public BinaryExpr
-    {
-        std::shared_ptr<SelectStmt> subquery;
-        std::vector<std::shared_ptr<Value>> vals;
-
-        SubQueryExpr(std::shared_ptr<Col> lhs_, SvCompOp op_, std::shared_ptr<TreeNode> rhs_) : BinaryExpr(std::move(lhs_), op_, nullptr)
-        {
-            // 确保 rhs_ 是 SelectStmt 类型
-            auto selectStmt = std::dynamic_pointer_cast<SelectStmt>(rhs_);
-            if (!selectStmt)
-            {
-                throw RMDBError("error");
-            }
-            subquery = selectStmt;
-        }
-        TreeNodeType Nodetype() const override { return TreeNodeType::SubqueryExpr; }
-
-        SubQueryExpr(std::shared_ptr<Col> lhs_, SvCompOp op_, std::vector<std::shared_ptr<Value>> rhs_) : BinaryExpr(std::move(lhs_), op_, nullptr), vals(std::move(rhs_)) {}
     };
 
     // Semantic value

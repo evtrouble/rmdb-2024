@@ -46,7 +46,7 @@ typedef enum PlanTag
     T_Sort,
     T_Agg,
     T_Projection,
-    T_Subquery // 子查询
+    // T_Subquery // 子查询
 } PlanTag;
 
 // 查询执行计划
@@ -57,6 +57,7 @@ public:
     Plan(PlanTag tag) : tag(tag) {}
     virtual ~Plan() = default;
 };
+
 class ScanPlan : public Plan
 {
 public:
@@ -75,7 +76,7 @@ public:
     std::vector<Condition> conds_;
     size_t len_;
     std::vector<Condition> fed_conds_;
-    std::vector<std::string> index_col_names_;
+    IndexMeta index_meta_;
 };
 
 class JoinPlan : public Plan
@@ -169,6 +170,7 @@ public:
     ast::SetKnobType set_knob_type_;
     bool bool_value_;
 };
+
 class AggPlan : public Plan
 {
 public:
@@ -183,17 +185,18 @@ public:
 };
 
 // 子查询计划
-class SubqueryPlan : public Plan
-{
-public:
-    std::shared_ptr<Plan> subplan_; // 子查询的查询计划
-    bool is_scalar_;                // 是否是标量子查询(返回单行单列)
-    bool is_in_predicate_;          // 是否是IN谓词子查询
+// class SubqueryPlan : public Plan
+// {
+// public:
+//     std::shared_ptr<Plan> subplan_; // 子查询的查询计划
+//     bool is_scalar_;                // 是否是标量子查询(返回单行单列)
+//     bool is_in_predicate_;          // 是否是IN谓词子查询
 
-    SubqueryPlan(PlanTag tag, std::shared_ptr<Plan> subplan, bool is_scalar, bool is_in_predicate) : Plan(tag), subplan_(std::move(subplan)), is_scalar_(is_scalar), is_in_predicate_(is_in_predicate) {}
+//     SubqueryPlan(PlanTag tag, std::shared_ptr<Plan> subplan, bool is_scalar, bool is_in_predicate) : Plan(tag), subplan_(std::move(subplan)), is_scalar_(is_scalar), is_in_predicate_(is_in_predicate) {}
 
-    ~SubqueryPlan() override = default;
-};
+//     ~SubqueryPlan() override = default;
+// };
+
 class plannerInfo
 {
 public:

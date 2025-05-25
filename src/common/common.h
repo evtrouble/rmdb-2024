@@ -17,6 +17,7 @@ See the Mulan PSL v2 for more details. */
 #include <vector>
 #include "defs.h"
 #include "record/rm_defs.h"
+#include "parser/ast.h"
 
 struct TabCol
 {
@@ -262,8 +263,8 @@ struct Condition
     TabCol rhs_col;  // right-hand side column
     Value rhs_val;   // right-hand side value
     // subquery
-    bool is_subquery = false;
-    std::shared_ptr<SubQuery> subQuery;
+    // bool is_subquery = false;
+    // std::shared_ptr<SubQuery> subQuery;
 
     int get_priority(CompOp op) const
     {

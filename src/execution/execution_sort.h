@@ -81,33 +81,7 @@ private:
                       }
                   });
     }
-    void sortExternally()
-    {
-        // 分块排序
-        std::vector<std::unique_ptr<RmRecord>> block;
-        size_t current_block_size = 0;
 
-        for (prev_->beginTuple(); !prev_->is_end(); prev_->nextTuple())
-        {
-            block.emplace_back(prev_->Next());
-            current_block_size += prev_->Next()->size;
-
-            if (current_block_size >= block_size_)
-            {
-                sortAndWriteBlock(block);
-                block.clear();
-                current_block_size = 0;
-            }
-        }
-
-        if (!block.empty())
-        {
-            sortAndWriteBlock(block);
-        }
-
-        // 归并排序
-        mergeSortedBlocks();
-    }
     void sortExternally()
     {
         // 分块排序

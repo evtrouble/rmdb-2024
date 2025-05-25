@@ -101,7 +101,7 @@ std::vector<Condition> pop_conds(std::vector<Condition> &conds, std::string &tab
     {
         std::string s = cond.lhs_col.tab_name;
         return (tab_names.compare(cond.lhs_col.tab_name) == 0 && cond.is_rhs_val) ||
-               (cond.lhs_col.tab_name.compare(cond.rhs_col.tab_name) == 0) || (tab_names == cond.lhs_col.tab_name && cond.is_subquery);
+               (cond.lhs_col.tab_name.compare(cond.rhs_col.tab_name) == 0)/* || (tab_names == cond.lhs_col.tab_name && cond.is_subquery)*/;
     };
     while (left < right)
     {
@@ -207,12 +207,12 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
     std::vector<std::string> tables = query->tables;
 
     // 处理where里面的不相关子查询
-    for (auto &cond : query->conds)
-    {
-        if (!cond.is_subquery || cond.subQuery->stmt == nullptr)
-            continue;
-        cond.subQuery->plan = do_planner(cond.subQuery->query, context);
-    }
+    // for (auto &cond : query->conds)
+    // {
+    //     if (!cond.is_subquery || cond.subQuery->stmt == nullptr)
+    //         continue;
+    //     cond.subQuery->plan = do_planner(cond.subQuery->query, context);
+    // }
 
     // // Scan table , 生成表算子列表tab_nodes
     std::vector<std::shared_ptr<Plan>> table_scan_executors(tables.size());
