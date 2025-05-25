@@ -3,11 +3,20 @@
 #include "yacc.tab.h"
 #include <iostream>
 #include <memory>
-
+#include <cstring>
 int yylex(YYSTYPE *yylval, YYLTYPE *yylloc);
 
 void yyerror(YYLTYPE *locp, const char* s) {
-    std::cerr << "Parser Error at line " << locp->first_line << " column " << locp->first_column << ": " << s << std::endl;
+    //std::cerr << "Parser Error at line " << locp->first_line << " column " << locp->first_column << ": " << s << std::endl;
+        std::string error_msg = "Parser Error at line " + std::to_string(locp->first_line) +
+                           " column " + std::to_string(locp->first_column) + ": " + s + "\n";
+    std::cerr << error_msg;
+
+    // 将错误信息保存到全局变量中，以便后续传递给客户端
+    extern char *g_error_msg;
+    if (g_error_msg != nullptr) {
+        strcpy(g_error_msg, error_msg.c_str());
+    }
 }
 
 using namespace ast;
@@ -21,13 +30,14 @@ using namespace ast;
 %define parse.error verbose
 
 // keywords
-%token SHOW TABLES CREATE TABLE DROP DESC INSERT INTO VALUES DELETE FROM ASC ORDER BY
-WHERE UPDATE SET SELECT INT CHAR FLOAT INDEX AND JOIN EXIT HELP TXN_BEGIN TXN_COMMIT TXN_ABORT TXN_ROLLBACK ORDER_BY ENABLE_NESTLOOP ENABLE_SORTMERGE
+%token SHOW TABLES CREATE TABLE DROP DESC INSERT INTO VALUES DELETE FROM ASC ORDER GROUP BY HAVING
+WHERE UPDATE SET SELECT INT CHAR FLOAT DATETIME INDEX AND JOIN IN NOT EXIT HELP TXN_BEGIN TXN_COMMIT TXN_ABORT TXN_ROLLBACK ORDER_BY ENABLE_NESTLOOP ENABLE_SORTMERGE
+SUM COUNT MAX MIN AS
 // non-keywords
 %token LEQ NEQ GEQ T_EOF
 
 // type-specific tokens
-%token <sv_str> IDENTIFIER VALUE_STRING
+%token <sv_str> IDENTIFIER VALUE_STRING VALUE_PATH
 %token <sv_int> VALUE_INT
 %token <sv_float> VALUE_FLOAT
 %token <sv_bool> VALUE_BOOL
@@ -41,14 +51,14 @@ WHERE UPDATE SET SELECT INT CHAR FLOAT INDEX AND JOIN EXIT HELP TXN_BEGIN TXN_CO
 %type <sv_expr> expr
 %type <sv_val> value
 %type <sv_vals> valueList
-%type <sv_str> tbName colName
+%type <sv_str> tbName colName ALIAS
 %type <sv_strs> tableList colNameList
-%type <sv_col> col
-%type <sv_cols> colList selector
+%type <sv_col> col aggCol
+%type <sv_cols> colList selector opt_groupby_clause
 %type <sv_set_clause> setClause
 %type <sv_set_clauses> setClauses
 %type <sv_cond> condition
-%type <sv_conds> whereClause optWhereClause
+%type <sv_conds> whereClause optWhereClause opt_having_clause
 %type <sv_orderby>  order_clause opt_order_clause
 %type <sv_orderby_dir> opt_asc_desc
 %type <sv_setKnobType> set_knob_type
@@ -139,6 +149,10 @@ ddl:
     {
         $$ = std::make_shared<DropIndex>($3, $5);
     }
+    |   SHOW INDEX FROM tbName
+    {
+        $$ = std::make_shared<ShowIndex>($4);
+    }
     ;
 
 dml:
@@ -154,9 +168,9 @@ dml:
     {
         $$ = std::make_shared<UpdateStmt>($2, $4, $5);
     }
-    |   SELECT selector FROM tableList optWhereClause opt_order_clause
+    |   SELECT selector FROM tableList optWhereClause opt_groupby_clause opt_having_clause opt_order_clause
     {
-        $$ = std::make_shared<SelectStmt>($2, $4, $5, $6);
+        $$ = std::make_shared<SelectStmt>($2, $4, $5, $6, $7, $8);
     }
     ;
 
@@ -202,6 +216,10 @@ type:
     {
         $$ = std::make_shared<TypeLen>(SV_TYPE_FLOAT, sizeof(float));
     }
+    |   DATETIME
+    {
+        $$ = std::make_shared<TypeLen>(SV_TYPE_DATETIME, 19);
+    }
     ;
 
 valueList:
@@ -239,7 +257,16 @@ condition:
     {
         $$ = std::make_shared<BinaryExpr>($1, $2, $3);
     }
+    |   col op '(' dml ')'
+    {
+	$$ = std::make_shared<SubQueryExpr>($1, $2, $4);
+    }
+    |   col op '(' valueList ')'
+    {
+	$$ = std::make_shared<SubQueryExpr>($1, $2, $4);
+    }
     ;
+
 
 optWhereClause:
         /* epsilon */ { /* ignore*/ }
@@ -249,8 +276,16 @@ optWhereClause:
     }
     ;
 
+opt_having_clause:
+    /* epsilon */ { /* ignore*/ }
+    |   HAVING whereClause
+    {
+        $$ = $2;
+    }
+    ;
+
 whereClause:
-        condition 
+        condition
     {
         $$ = std::vector<std::shared_ptr<BinaryExpr>>{$1};
     }
@@ -260,6 +295,7 @@ whereClause:
     }
     ;
 
+
 col:
         tbName '.' colName
     {
@@ -268,6 +304,44 @@ col:
     |   colName
     {
         $$ = std::make_shared<Col>("", $1);
+    }
+    ;
+    |   aggCol
+    {
+        $$ = $1;
+    }
+    |   colName AS ALIAS
+    {
+        $$ = std::make_shared<Col>("", $1);
+        $$->alias = $3;
+    }
+    |   aggCol AS ALIAS
+    {
+        $$ = $1;
+        $$->alias = $3;
+    }
+    ;
+
+aggCol:
+        SUM '(' col ')'
+    {
+        $$ = std::make_shared<Col>($3->tab_name, $3->col_name, AggFuncType::SUM);
+    }
+    |   MIN '(' col ')'
+    {
+        $$ = std::make_shared<Col>($3->tab_name, $3->col_name, AggFuncType::MIN);
+    }
+    |   MAX '(' col ')'
+    {
+        $$ = std::make_shared<Col>($3->tab_name, $3->col_name, AggFuncType::MAX);
+    }
+    |   COUNT '(' col ')'
+    {
+        $$ = std::make_shared<Col>($3->tab_name, $3->col_name, AggFuncType::COUNT);
+    }
+    |   COUNT '(' '*' ')'
+    {
+        $$ = std::make_shared<Col>("", "*", AggFuncType::COUNT);
     }
     ;
 
@@ -306,6 +380,14 @@ op:
     |   GEQ
     {
         $$ = SV_OP_GE;
+    }
+    |   IN
+    {
+	    $$ = SV_OP_IN;
+    }
+    |   NOT IN
+    {
+    	$$ = SV_OP_NOT_IN;
     }
     ;
 
@@ -362,25 +444,33 @@ tableList:
     ;
 
 opt_order_clause:
-    ORDER BY order_clause      
-    { 
-        $$ = $3; 
+    ORDER BY order_clause
+    {
+        $$ = $3;
+    }
+    |   /* epsilon */ { /* ignore*/ }
+    ;
+
+opt_groupby_clause:
+    GROUP BY colList
+    {
+        $$ = $3;
     }
     |   /* epsilon */ { /* ignore*/ }
     ;
 
 order_clause:
-      col  opt_asc_desc 
-    { 
+      col  opt_asc_desc
+    {
         $$ = std::make_shared<OrderBy>($1, $2);
     }
-    ;   
+    ;
 
 opt_asc_desc:
     ASC          { $$ = OrderBy_ASC;     }
     |  DESC      { $$ = OrderBy_DESC;    }
     |       { $$ = OrderBy_DEFAULT; }
-    ;    
+    ;
 
 set_knob_type:
     ENABLE_NESTLOOP { $$ = EnableNestLoop; }
@@ -390,4 +480,9 @@ set_knob_type:
 tbName: IDENTIFIER;
 
 colName: IDENTIFIER;
+
+ALIAS: IDENTIFIER;
+
+
+
 %%

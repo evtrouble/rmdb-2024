@@ -40,6 +40,7 @@ value_int {sign}?{digit}+
 value_float {sign}?{digit}+\.({digit}+)?
 value_string '[^']*'
 single_op ";"|"("|")"|","|"*"|"="|">"|"<"|"."
+value_path [\.|\/][^ \t]+\.csv
 
 %x STATE_COMMENT
 
@@ -77,19 +78,29 @@ single_op ";"|"("|")"|","|"*"|"="|">"|"<"|"."
 "INT" { return INT; }
 "CHAR" { return CHAR; }
 "FLOAT" { return FLOAT; }
+"DATETIME" {return DATETIME; }
 "INDEX" { return INDEX; }
 "AND" { return AND; }
 "JOIN" {return JOIN;}
+"IN" { return IN; }
+"NOT" { return NOT; }
 "EXIT" { return EXIT; }
 "HELP" { return HELP; }
 "ORDER" { return ORDER; }
+"GROUP" { return GROUP; }
 "BY" {  return BY;  }
+"HAVING" { return HAVING; }
 "ASC" { return ASC; }
+"SUM" { return SUM; }
+"COUNT" { return COUNT; }
+"MAX" { return MAX; }
+"MIN" { return MIN; }
+"AS" { return AS; }
 "ENABLE_NESTLOOP" { return ENABLE_NESTLOOP; }
 "ENABLE_SORTMERGE" { return ENABLE_SORTMERGE; }
-"TRUE" { 
+"TRUE" {
     yylval->sv_bool = true;
-    return VALUE_BOOL; 
+    return VALUE_BOOL;
 }
 "FALSE" {
     yylval->sv_bool = false;
@@ -118,6 +129,11 @@ single_op ";"|"("|")"|","|"*"|"="|">"|"<"|"."
     yylval->sv_str = std::string(yytext + 1, strlen(yytext) - 2);
     return VALUE_STRING;
 }
+{value_path} {
+    yylval->sv_str = yytext;
+    return VALUE_PATH;
+}
+
     /* EOF */
 <<EOF>> { return T_EOF; }
     /* unexpected char */
