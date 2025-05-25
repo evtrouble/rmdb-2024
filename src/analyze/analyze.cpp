@@ -623,8 +623,8 @@ CompOp Analyze::convert_sv_comp_op(ast::SvCompOp op)
         {ast::SV_OP_GT, OP_GT},
         {ast::SV_OP_LE, OP_LE},
         {ast::SV_OP_GE, OP_GE},
-        {ast::SV_OP_IN, OP_IN},
-        {ast::SV_OP_NOT_IN, OP_NOT_IN},
+        // {ast::SV_OP_IN, OP_IN},
+        // {ast::SV_OP_NOT_IN, OP_NOT_IN},
     };
     return m.at(op);
 }
@@ -694,6 +694,9 @@ Value Analyze::convert_value_type(const Value &value, ColType target_type)
                 throw IncompatibleTypeError("STRING", "FLOAT");
             }
         }
+        break;
+    case TYPE_DATETIME:
+        // TODO: Implement datetime conversion if needed
         break;
     }
 

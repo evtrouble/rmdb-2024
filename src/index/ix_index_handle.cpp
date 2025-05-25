@@ -457,7 +457,7 @@ bool IxIndexHandle::delete_entry(const char *key, const Rid &value, Transaction 
 {
     // 1. 获取该键值对所在的叶子结点
     root_lacth_.lock_shared();
-    // 0x7fffe72594c0
+    std::cout << "nu\n";
     auto leaf_node = find_leaf_page(key, Operation::DELETE, transaction);
 
     int index = leaf_node.lower_bound(key);

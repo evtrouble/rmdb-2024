@@ -227,14 +227,6 @@ public:
         cols_ = *get_col(prev_->cols(), sel_cols);
         record_size = prev_->tupleLen();
     }
-    SortExecutor(std::unique_ptr<AbstractExecutor> prev, TabCol sel_cols, bool is_desc)
-    {
-        prev_ = std::move(prev);
-        cols_ = prev_->get_col_offset(sel_cols);
-        is_desc_ = is_desc;
-        tuple_num = 0;
-        used_tuple.clear();
-    }
 
     void beginTuple() override
     {

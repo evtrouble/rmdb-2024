@@ -67,7 +67,7 @@
 
 
 /* First part of user prologue.  */
-#line 1 "yacc.y"
+#line 1 "/home/gyl/cpp/db2025/src/parser/yacc.y"
 
 #include "ast.h"
 #include "yacc.tab.h"
@@ -91,7 +91,7 @@ void yyerror(YYLTYPE *locp, const char* s) {
 
 using namespace ast;
 
-#line 95 "yacc.tab.cpp"
+#line 95 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
 
 # ifndef YY_CAST
 #  ifdef __cplusplus
@@ -114,7 +114,7 @@ using namespace ast;
 #  endif
 # endif
 
-#include "yacc.tab.hpp"
+#include "yacc.tab.h"
 /* Symbol kind.  */
 enum yysymbol_kind_t
 {
@@ -1692,643 +1692,643 @@ yyreduce:
   switch (yyn)
     {
   case 2: /* start: stmt ';'  */
-#line 69 "yacc.y"
+#line 69 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         parse_tree = (yyvsp[-1].sv_node);
         YYACCEPT;
     }
-#line 1701 "yacc.tab.cpp"
+#line 1701 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 3: /* start: HELP  */
-#line 74 "yacc.y"
+#line 74 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         parse_tree = std::make_shared<Help>();
         YYACCEPT;
     }
-#line 1710 "yacc.tab.cpp"
+#line 1710 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 4: /* start: EXIT  */
-#line 79 "yacc.y"
+#line 79 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         parse_tree = nullptr;
         YYACCEPT;
     }
-#line 1719 "yacc.tab.cpp"
+#line 1719 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 5: /* start: T_EOF  */
-#line 84 "yacc.y"
+#line 84 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         parse_tree = nullptr;
         YYACCEPT;
     }
-#line 1728 "yacc.tab.cpp"
+#line 1728 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 11: /* txnStmt: TXN_BEGIN  */
-#line 100 "yacc.y"
+#line 100 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_node) = std::make_shared<TxnBegin>();
     }
-#line 1736 "yacc.tab.cpp"
+#line 1736 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 12: /* txnStmt: TXN_COMMIT  */
-#line 104 "yacc.y"
+#line 104 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_node) = std::make_shared<TxnCommit>();
     }
-#line 1744 "yacc.tab.cpp"
+#line 1744 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 13: /* txnStmt: TXN_ABORT  */
-#line 108 "yacc.y"
+#line 108 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_node) = std::make_shared<TxnAbort>();
     }
-#line 1752 "yacc.tab.cpp"
+#line 1752 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 14: /* txnStmt: TXN_ROLLBACK  */
-#line 112 "yacc.y"
+#line 112 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_node) = std::make_shared<TxnRollback>();
     }
-#line 1760 "yacc.tab.cpp"
+#line 1760 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 15: /* dbStmt: SHOW TABLES  */
-#line 119 "yacc.y"
+#line 119 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_node) = std::make_shared<ShowTables>();
     }
-#line 1768 "yacc.tab.cpp"
+#line 1768 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 16: /* setStmt: SET set_knob_type '=' VALUE_BOOL  */
-#line 126 "yacc.y"
+#line 126 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_node) = std::make_shared<SetStmt>((yyvsp[-2].sv_setKnobType), (yyvsp[0].sv_bool));
     }
-#line 1776 "yacc.tab.cpp"
+#line 1776 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 17: /* ddl: CREATE TABLE tbName '(' fieldList ')'  */
-#line 133 "yacc.y"
+#line 133 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_node) = std::make_shared<CreateTable>((yyvsp[-3].sv_str), (yyvsp[-1].sv_fields));
     }
-#line 1784 "yacc.tab.cpp"
+#line 1784 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 18: /* ddl: DROP TABLE tbName  */
-#line 137 "yacc.y"
+#line 137 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_node) = std::make_shared<DropTable>((yyvsp[0].sv_str));
     }
-#line 1792 "yacc.tab.cpp"
+#line 1792 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 19: /* ddl: DESC tbName  */
-#line 141 "yacc.y"
+#line 141 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_node) = std::make_shared<DescTable>((yyvsp[0].sv_str));
     }
-#line 1800 "yacc.tab.cpp"
+#line 1800 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 20: /* ddl: CREATE INDEX tbName '(' colNameList ')'  */
-#line 145 "yacc.y"
+#line 145 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_node) = std::make_shared<CreateIndex>((yyvsp[-3].sv_str), (yyvsp[-1].sv_strs));
     }
-#line 1808 "yacc.tab.cpp"
+#line 1808 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 21: /* ddl: DROP INDEX tbName '(' colNameList ')'  */
-#line 149 "yacc.y"
+#line 149 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_node) = std::make_shared<DropIndex>((yyvsp[-3].sv_str), (yyvsp[-1].sv_strs));
     }
-#line 1816 "yacc.tab.cpp"
+#line 1816 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 22: /* ddl: SHOW INDEX FROM tbName  */
-#line 153 "yacc.y"
+#line 153 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_node) = std::make_shared<ShowIndex>((yyvsp[0].sv_str));
     }
-#line 1824 "yacc.tab.cpp"
+#line 1824 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 23: /* dml: INSERT INTO tbName VALUES '(' valueList ')'  */
-#line 160 "yacc.y"
+#line 160 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_node) = std::make_shared<InsertStmt>((yyvsp[-4].sv_str), (yyvsp[-1].sv_vals));
     }
-#line 1832 "yacc.tab.cpp"
+#line 1832 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 24: /* dml: DELETE FROM tbName optWhereClause  */
-#line 164 "yacc.y"
+#line 164 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_node) = std::make_shared<DeleteStmt>((yyvsp[-1].sv_str), (yyvsp[0].sv_conds));
     }
-#line 1840 "yacc.tab.cpp"
+#line 1840 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 25: /* dml: UPDATE tbName SET setClauses optWhereClause  */
-#line 168 "yacc.y"
+#line 168 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_node) = std::make_shared<UpdateStmt>((yyvsp[-3].sv_str), (yyvsp[-1].sv_set_clauses), (yyvsp[0].sv_conds));
     }
-#line 1848 "yacc.tab.cpp"
+#line 1848 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 26: /* dml: SELECT selector FROM tableList optWhereClause opt_groupby_clause opt_having_clause opt_order_clause  */
-#line 172 "yacc.y"
+#line 172 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_node) = std::make_shared<SelectStmt>((yyvsp[-6].sv_cols), (yyvsp[-4].sv_strs), (yyvsp[-3].sv_conds), (yyvsp[-2].sv_cols), (yyvsp[-1].sv_conds), (yyvsp[0].sv_orderby));
     }
-#line 1856 "yacc.tab.cpp"
+#line 1856 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 27: /* fieldList: field  */
-#line 179 "yacc.y"
+#line 179 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_fields) = std::vector<std::shared_ptr<Field>>{(yyvsp[0].sv_field)};
     }
-#line 1864 "yacc.tab.cpp"
+#line 1864 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 28: /* fieldList: fieldList ',' field  */
-#line 183 "yacc.y"
+#line 183 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_fields).push_back((yyvsp[0].sv_field));
     }
-#line 1872 "yacc.tab.cpp"
+#line 1872 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 29: /* colNameList: colName  */
-#line 190 "yacc.y"
+#line 190 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_strs) = std::vector<std::string>{(yyvsp[0].sv_str)};
     }
-#line 1880 "yacc.tab.cpp"
+#line 1880 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 30: /* colNameList: colNameList ',' colName  */
-#line 194 "yacc.y"
+#line 194 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_strs).push_back((yyvsp[0].sv_str));
     }
-#line 1888 "yacc.tab.cpp"
+#line 1888 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 31: /* field: colName type  */
-#line 201 "yacc.y"
+#line 201 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_field) = std::make_shared<ColDef>((yyvsp[-1].sv_str), (yyvsp[0].sv_type_len));
     }
-#line 1896 "yacc.tab.cpp"
+#line 1896 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 32: /* type: INT  */
-#line 208 "yacc.y"
+#line 208 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_type_len) = std::make_shared<TypeLen>(SV_TYPE_INT, sizeof(int));
     }
-#line 1904 "yacc.tab.cpp"
+#line 1904 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 33: /* type: CHAR '(' VALUE_INT ')'  */
-#line 212 "yacc.y"
+#line 212 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_type_len) = std::make_shared<TypeLen>(SV_TYPE_STRING, (yyvsp[-1].sv_int));
     }
-#line 1912 "yacc.tab.cpp"
+#line 1912 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 34: /* type: FLOAT  */
-#line 216 "yacc.y"
+#line 216 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_type_len) = std::make_shared<TypeLen>(SV_TYPE_FLOAT, sizeof(float));
     }
-#line 1920 "yacc.tab.cpp"
+#line 1920 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 35: /* type: DATETIME  */
-#line 220 "yacc.y"
+#line 220 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_type_len) = std::make_shared<TypeLen>(SV_TYPE_DATETIME, 19);
     }
-#line 1928 "yacc.tab.cpp"
+#line 1928 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 36: /* valueList: value  */
-#line 227 "yacc.y"
+#line 227 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_vals) = std::vector<std::shared_ptr<Value>>{(yyvsp[0].sv_val)};
     }
-#line 1936 "yacc.tab.cpp"
+#line 1936 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 37: /* valueList: valueList ',' value  */
-#line 231 "yacc.y"
+#line 231 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_vals).push_back((yyvsp[0].sv_val));
     }
-#line 1944 "yacc.tab.cpp"
+#line 1944 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 38: /* value: VALUE_INT  */
-#line 238 "yacc.y"
+#line 238 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_val) = std::make_shared<IntLit>((yyvsp[0].sv_int));
     }
-#line 1952 "yacc.tab.cpp"
+#line 1952 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 39: /* value: VALUE_FLOAT  */
-#line 242 "yacc.y"
+#line 242 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_val) = std::make_shared<FloatLit>((yyvsp[0].sv_float));
     }
-#line 1960 "yacc.tab.cpp"
+#line 1960 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 40: /* value: VALUE_STRING  */
-#line 246 "yacc.y"
+#line 246 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_val) = std::make_shared<StringLit>((yyvsp[0].sv_str));
     }
-#line 1968 "yacc.tab.cpp"
+#line 1968 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 41: /* value: VALUE_BOOL  */
-#line 250 "yacc.y"
+#line 250 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_val) = std::make_shared<BoolLit>((yyvsp[0].sv_bool));
     }
-#line 1976 "yacc.tab.cpp"
+#line 1976 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 42: /* condition: col op expr  */
-#line 257 "yacc.y"
+#line 257 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_cond) = std::make_shared<BinaryExpr>((yyvsp[-2].sv_col), (yyvsp[-1].sv_comp_op), (yyvsp[0].sv_expr));
     }
-#line 1984 "yacc.tab.cpp"
+#line 1984 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 43: /* optWhereClause: %empty  */
-#line 264 "yacc.y"
+#line 264 "/home/gyl/cpp/db2025/src/parser/yacc.y"
                       { /* ignore*/ }
-#line 1990 "yacc.tab.cpp"
+#line 1990 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 44: /* optWhereClause: WHERE whereClause  */
-#line 266 "yacc.y"
+#line 266 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_conds) = (yyvsp[0].sv_conds);
     }
-#line 1998 "yacc.tab.cpp"
+#line 1998 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 45: /* opt_having_clause: %empty  */
-#line 272 "yacc.y"
+#line 272 "/home/gyl/cpp/db2025/src/parser/yacc.y"
                   { /* ignore*/ }
-#line 2004 "yacc.tab.cpp"
+#line 2004 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 46: /* opt_having_clause: HAVING whereClause  */
-#line 274 "yacc.y"
+#line 274 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_conds) = (yyvsp[0].sv_conds);
     }
-#line 2012 "yacc.tab.cpp"
+#line 2012 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 47: /* whereClause: condition  */
-#line 281 "yacc.y"
+#line 281 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_conds) = std::vector<std::shared_ptr<BinaryExpr>>{(yyvsp[0].sv_cond)};
     }
-#line 2020 "yacc.tab.cpp"
+#line 2020 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 48: /* whereClause: whereClause AND condition  */
-#line 285 "yacc.y"
+#line 285 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_conds).push_back((yyvsp[0].sv_cond));
     }
-#line 2028 "yacc.tab.cpp"
+#line 2028 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 49: /* col: tbName '.' colName  */
-#line 293 "yacc.y"
+#line 293 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_col) = std::make_shared<Col>((yyvsp[-2].sv_str), (yyvsp[0].sv_str));
     }
-#line 2036 "yacc.tab.cpp"
+#line 2036 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 50: /* col: colName  */
-#line 297 "yacc.y"
+#line 297 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_col) = std::make_shared<Col>("", (yyvsp[0].sv_str));
     }
-#line 2044 "yacc.tab.cpp"
+#line 2044 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 51: /* col: aggCol  */
-#line 302 "yacc.y"
+#line 302 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_col) = (yyvsp[0].sv_col);
     }
-#line 2052 "yacc.tab.cpp"
+#line 2052 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 52: /* col: colName AS ALIAS  */
-#line 306 "yacc.y"
+#line 306 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_col) = std::make_shared<Col>("", (yyvsp[-2].sv_str));
         (yyval.sv_col)->alias = (yyvsp[0].sv_str);
     }
-#line 2061 "yacc.tab.cpp"
+#line 2061 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 53: /* col: aggCol AS ALIAS  */
-#line 311 "yacc.y"
+#line 311 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_col) = (yyvsp[-2].sv_col);
         (yyval.sv_col)->alias = (yyvsp[0].sv_str);
     }
-#line 2070 "yacc.tab.cpp"
+#line 2070 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 54: /* aggCol: SUM '(' col ')'  */
-#line 319 "yacc.y"
+#line 319 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_col) = std::make_shared<Col>((yyvsp[-1].sv_col)->tab_name, (yyvsp[-1].sv_col)->col_name, AggFuncType::SUM);
     }
-#line 2078 "yacc.tab.cpp"
+#line 2078 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 55: /* aggCol: MIN '(' col ')'  */
-#line 323 "yacc.y"
+#line 323 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_col) = std::make_shared<Col>((yyvsp[-1].sv_col)->tab_name, (yyvsp[-1].sv_col)->col_name, AggFuncType::MIN);
     }
-#line 2086 "yacc.tab.cpp"
+#line 2086 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 56: /* aggCol: MAX '(' col ')'  */
-#line 327 "yacc.y"
+#line 327 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_col) = std::make_shared<Col>((yyvsp[-1].sv_col)->tab_name, (yyvsp[-1].sv_col)->col_name, AggFuncType::MAX);
     }
-#line 2094 "yacc.tab.cpp"
+#line 2094 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 57: /* aggCol: COUNT '(' col ')'  */
-#line 331 "yacc.y"
+#line 331 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_col) = std::make_shared<Col>((yyvsp[-1].sv_col)->tab_name, (yyvsp[-1].sv_col)->col_name, AggFuncType::COUNT);
     }
-#line 2102 "yacc.tab.cpp"
+#line 2102 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 58: /* aggCol: COUNT '(' '*' ')'  */
-#line 335 "yacc.y"
+#line 335 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_col) = std::make_shared<Col>("", "*", AggFuncType::COUNT);
     }
-#line 2110 "yacc.tab.cpp"
+#line 2110 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 59: /* colList: col  */
-#line 342 "yacc.y"
+#line 342 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_cols) = std::vector<std::shared_ptr<Col>>{(yyvsp[0].sv_col)};
     }
-#line 2118 "yacc.tab.cpp"
+#line 2118 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 60: /* colList: colList ',' col  */
-#line 346 "yacc.y"
+#line 346 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_cols).push_back((yyvsp[0].sv_col));
     }
-#line 2126 "yacc.tab.cpp"
+#line 2126 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 61: /* op: '='  */
-#line 353 "yacc.y"
+#line 353 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_comp_op) = SV_OP_EQ;
     }
-#line 2134 "yacc.tab.cpp"
+#line 2134 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 62: /* op: '<'  */
-#line 357 "yacc.y"
+#line 357 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_comp_op) = SV_OP_LT;
     }
-#line 2142 "yacc.tab.cpp"
+#line 2142 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 63: /* op: '>'  */
-#line 361 "yacc.y"
+#line 361 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_comp_op) = SV_OP_GT;
     }
-#line 2150 "yacc.tab.cpp"
+#line 2150 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 64: /* op: NEQ  */
-#line 365 "yacc.y"
+#line 365 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_comp_op) = SV_OP_NE;
     }
-#line 2158 "yacc.tab.cpp"
+#line 2158 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 65: /* op: LEQ  */
-#line 369 "yacc.y"
+#line 369 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_comp_op) = SV_OP_LE;
     }
-#line 2166 "yacc.tab.cpp"
+#line 2166 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 66: /* op: GEQ  */
-#line 373 "yacc.y"
+#line 373 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_comp_op) = SV_OP_GE;
     }
-#line 2174 "yacc.tab.cpp"
+#line 2174 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 67: /* op: IN  */
-#line 377 "yacc.y"
+#line 377 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
 	    (yyval.sv_comp_op) = SV_OP_IN;
     }
-#line 2182 "yacc.tab.cpp"
+#line 2182 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 68: /* op: NOT IN  */
-#line 381 "yacc.y"
+#line 381 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
     	(yyval.sv_comp_op) = SV_OP_NOT_IN;
     }
-#line 2190 "yacc.tab.cpp"
+#line 2190 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 69: /* expr: value  */
-#line 388 "yacc.y"
+#line 388 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_expr) = std::static_pointer_cast<Expr>((yyvsp[0].sv_val));
     }
-#line 2198 "yacc.tab.cpp"
+#line 2198 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 70: /* expr: col  */
-#line 392 "yacc.y"
+#line 392 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_expr) = std::static_pointer_cast<Expr>((yyvsp[0].sv_col));
     }
-#line 2206 "yacc.tab.cpp"
+#line 2206 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 71: /* setClauses: setClause  */
-#line 399 "yacc.y"
+#line 399 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_set_clauses) = std::vector<std::shared_ptr<SetClause>>{(yyvsp[0].sv_set_clause)};
     }
-#line 2214 "yacc.tab.cpp"
+#line 2214 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 72: /* setClauses: setClauses ',' setClause  */
-#line 403 "yacc.y"
+#line 403 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_set_clauses).push_back((yyvsp[0].sv_set_clause));
     }
-#line 2222 "yacc.tab.cpp"
+#line 2222 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 73: /* setClause: colName '=' value  */
-#line 410 "yacc.y"
+#line 410 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_set_clause) = std::make_shared<SetClause>((yyvsp[-2].sv_str), (yyvsp[0].sv_val));
     }
-#line 2230 "yacc.tab.cpp"
+#line 2230 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 74: /* selector: '*'  */
-#line 417 "yacc.y"
+#line 417 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_cols) = {};
     }
-#line 2238 "yacc.tab.cpp"
+#line 2238 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 76: /* tableList: tbName  */
-#line 425 "yacc.y"
+#line 425 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_strs) = std::vector<std::string>{(yyvsp[0].sv_str)};
     }
-#line 2246 "yacc.tab.cpp"
+#line 2246 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 77: /* tableList: tableList ',' tbName  */
-#line 429 "yacc.y"
+#line 429 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_strs).push_back((yyvsp[0].sv_str));
     }
-#line 2254 "yacc.tab.cpp"
+#line 2254 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 78: /* tableList: tableList JOIN tbName  */
-#line 433 "yacc.y"
+#line 433 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_strs).push_back((yyvsp[0].sv_str));
     }
-#line 2262 "yacc.tab.cpp"
+#line 2262 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 79: /* opt_order_clause: ORDER BY order_clause  */
-#line 440 "yacc.y"
+#line 440 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_orderby) = (yyvsp[0].sv_orderby);
     }
-#line 2270 "yacc.tab.cpp"
+#line 2270 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 80: /* opt_order_clause: %empty  */
-#line 443 "yacc.y"
+#line 443 "/home/gyl/cpp/db2025/src/parser/yacc.y"
                       { /* ignore*/ }
-#line 2276 "yacc.tab.cpp"
+#line 2276 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 81: /* opt_groupby_clause: GROUP BY colList  */
-#line 448 "yacc.y"
+#line 448 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_cols) = (yyvsp[0].sv_cols);
     }
-#line 2284 "yacc.tab.cpp"
+#line 2284 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 82: /* opt_groupby_clause: %empty  */
-#line 451 "yacc.y"
+#line 451 "/home/gyl/cpp/db2025/src/parser/yacc.y"
                       { /* ignore*/ }
-#line 2290 "yacc.tab.cpp"
+#line 2290 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 83: /* order_clause: col opt_asc_desc  */
-#line 456 "yacc.y"
+#line 456 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_orderby) = std::make_shared<OrderBy>((yyvsp[-1].sv_col), (yyvsp[0].sv_orderby_dir));
     }
-#line 2298 "yacc.tab.cpp"
+#line 2298 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 84: /* opt_asc_desc: ASC  */
-#line 462 "yacc.y"
+#line 462 "/home/gyl/cpp/db2025/src/parser/yacc.y"
                  { (yyval.sv_orderby_dir) = OrderBy_ASC;     }
-#line 2304 "yacc.tab.cpp"
+#line 2304 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 85: /* opt_asc_desc: DESC  */
-#line 463 "yacc.y"
+#line 463 "/home/gyl/cpp/db2025/src/parser/yacc.y"
                  { (yyval.sv_orderby_dir) = OrderBy_DESC;    }
-#line 2310 "yacc.tab.cpp"
+#line 2310 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 86: /* opt_asc_desc: %empty  */
-#line 464 "yacc.y"
+#line 464 "/home/gyl/cpp/db2025/src/parser/yacc.y"
             { (yyval.sv_orderby_dir) = OrderBy_DEFAULT; }
-#line 2316 "yacc.tab.cpp"
+#line 2316 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 87: /* set_knob_type: ENABLE_NESTLOOP  */
-#line 468 "yacc.y"
+#line 468 "/home/gyl/cpp/db2025/src/parser/yacc.y"
                     { (yyval.sv_setKnobType) = EnableNestLoop; }
-#line 2322 "yacc.tab.cpp"
+#line 2322 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 88: /* set_knob_type: ENABLE_SORTMERGE  */
-#line 469 "yacc.y"
+#line 469 "/home/gyl/cpp/db2025/src/parser/yacc.y"
                          { (yyval.sv_setKnobType) = EnableSortMerge; }
-#line 2328 "yacc.tab.cpp"
+#line 2328 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
 
-#line 2332 "yacc.tab.cpp"
+#line 2332 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
 
       default: break;
     }
@@ -2557,4 +2557,4 @@ yyreturnlab:
   return yyresult;
 }
 
-#line 480 "yacc.y"
+#line 480 "/home/gyl/cpp/db2025/src/parser/yacc.y"

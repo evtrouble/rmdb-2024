@@ -125,6 +125,9 @@ struct Value
             return float_val < other.float_val;
         case TYPE_STRING:
             return str_val < other.str_val;
+        case TYPE_DATETIME:
+            // TODO: Implement datetime comparison
+            break;
         }
         return false;
     }
@@ -139,6 +142,9 @@ struct Value
             return float_val == other.float_val;
         case TYPE_STRING:
             return str_val == other.str_val;
+        case TYPE_DATETIME:
+            // TODO: Implement datetime equality check
+            break;
         }
         return false;
     }
@@ -177,6 +183,9 @@ struct Value
         case TYPE_STRING:
             str_val.append(len, 255);
             break;
+        case TYPE_DATETIME:
+            // TODO: Implement datetime max value
+            break;
         }
     }
     void set_min(ColType type, int len)
@@ -192,6 +201,9 @@ struct Value
             break;
         case TYPE_STRING:
             str_val.append(len, 0);
+            break;
+        case TYPE_DATETIME:
+            // TODO: Implement datetime min value
             break;
         }
     }
@@ -223,6 +235,9 @@ namespace std
                 h ^= hash<string>()(v.str_val) + 0x9e3779b9 + (h << 6) + (h >> 2);
                 break;
                 // 可以添加对其他可能类型的处理
+            case TYPE_DATETIME:
+                // TODO: Implement datetime hash if needed
+                break;
             }
             return h;
         }
@@ -251,8 +266,8 @@ enum CompOp
     OP_GT,
     OP_LE,
     OP_GE,
-    OP_IN,
-    OP_NOT_IN
+    // OP_IN,
+    // OP_NOT_IN
 };
 
 struct Condition

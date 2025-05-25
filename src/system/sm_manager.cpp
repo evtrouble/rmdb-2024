@@ -24,8 +24,7 @@ See the Mulan PSL v2 for more details. */
  * @return {bool} 返回是否为一个文件夹
  * @param {string&} db_name 数据库文件名称，与文件夹同名
  */
-bool SmManager::is_dir(const std::string &db_name)
-{
+bool SmManager::is_dir(const std::string& db_name) {
     struct stat st;
     return stat(db_name.c_str(), &st) == 0 && S_ISDIR(st.st_mode);
 }
@@ -62,12 +61,8 @@ void SmManager::create_db(const std::string &db_name)
 
     delete new_db;
 
-    // 创建日志文件
-    disk_manager_->create_file(LOG_FILE_NAME);
-
     // 回到根目录
-    if (chdir("..") < 0)
-    {
+    if (chdir("..") < 0) {
         throw UnixError();
     }
 }
@@ -76,15 +71,12 @@ void SmManager::create_db(const std::string &db_name)
  * @description: 删除数据库，同时需要清空相关文件以及数据库同名文件夹
  * @param {string&} db_name 数据库名称，与文件夹同名
  */
-void SmManager::drop_db(const std::string &db_name)
-{
-    if (!is_dir(db_name))
-    {
+void SmManager::drop_db(const std::string& db_name) {
+    if (!is_dir(db_name)) {
         throw DatabaseNotFoundError(db_name);
     }
     std::string cmd = "rm -r " + db_name;
-    if (system(cmd.c_str()) < 0)
-    {
+    if (system(cmd.c_str()) < 0) {
         throw UnixError();
     }
 }
@@ -93,10 +85,8 @@ void SmManager::drop_db(const std::string &db_name)
  * @description: 打开数据库，找到数据库对应的文件夹，并加载数据库元数据和相关文件
  * @param {string&} db_name 数据库名称，与文件夹同名
  */
-void SmManager::open_db(const std::string &db_name)
-{
-    if (!is_dir(db_name))
-    {
+void SmManager::open_db(const std::string& db_name) {
+    if (!is_dir(db_name)) {
         throw DatabaseExistsError(db_name);
     }
     // 如果已有数据库打开，则抛出数据库已存在异常
@@ -133,8 +123,7 @@ void SmManager::open_db(const std::string &db_name)
 /**
  * @description: 把数据库相关的元数据刷入磁盘中
  */
-void SmManager::flush_meta()
-{
+void SmManager::flush_meta() {
     // 默认清空文件
     std::ofstream ofs(DB_META_NAME);
     ofs << db_;
@@ -143,8 +132,7 @@ void SmManager::flush_meta()
 /**
  * @description: 关闭数据库并把数据落盘
  */
-void SmManager::close_db()
-{
+void SmManager::close_db() {
     if (db_.name_.empty())
     {
         throw DatabaseNotFoundError("db not open");
@@ -166,20 +154,18 @@ void SmManager::close_db()
 
     db_.name_.clear();
     db_.tabs_.clear();
-
+    
     // 回到上一级目录
-    if (chdir("..") < 0)
-    {
+    if (chdir("..") < 0) {
         throw UnixError();
     }
 }
 
 /**
  * @description: 显示所有的表,通过测试需要将其结果写入到output.txt,详情看题目文档
- * @param {Context*} context
+ * @param {Context*} context 
  */
-void SmManager::show_tables(Context *context)
-{
+void SmManager::show_tables(Context* context) {
     std::fstream outfile;
     outfile.open("output.txt", std::ios::out | std::ios::app);
     outfile << "| Tables |\n";
@@ -187,8 +173,7 @@ void SmManager::show_tables(Context *context)
     printer.print_separator(context);
     printer.print_record({"Tables"}, context);
     printer.print_separator(context);
-    for (auto &entry : db_.tabs_)
-    {
+    for (auto &entry : db_.tabs_) {
         auto &tab = entry.second;
         printer.print_record({tab.name}, context);
         outfile << "| " << tab.name << " |\n";
@@ -200,10 +185,9 @@ void SmManager::show_tables(Context *context)
 /**
  * @description: 显示表的元数据
  * @param {string&} tab_name 表名称
- * @param {Context*} context
+ * @param {Context*} context 
  */
-void SmManager::desc_table(const std::string &tab_name, Context *context)
-{
+void SmManager::desc_table(const std::string& tab_name, Context* context) {
     TabMeta &tab = db_.get_table(tab_name);
 
     std::vector<std::string> captions = {"Field", "Type", "Index"};
@@ -213,8 +197,7 @@ void SmManager::desc_table(const std::string &tab_name, Context *context)
     printer.print_record(captions, context);
     printer.print_separator(context);
     // Print fields
-    for (auto &col : tab.cols)
-    {
+    for (auto &col : tab.cols) {
         std::vector<std::string> field_info = {col.name, coltype2str(col.type), col.index ? "YES" : "NO"};
         printer.print_record(field_info, context);
     }
@@ -226,36 +209,36 @@ void SmManager::desc_table(const std::string &tab_name, Context *context)
  * @description: 创建表
  * @param {string&} tab_name 表的名称
  * @param {vector<ColDef>&} col_defs 表的字段
- * @param {Context*} context
+ * @param {Context*} context 
  */
-void SmManager::create_table(const std::string &tab_name, const std::vector<ColDef> &col_defs, Context *context)
-{
-    if (db_.is_table(tab_name))
-    {
+void SmManager::create_table(const std::string& tab_name, const std::vector<ColDef>& col_defs, Context* context) {
+    if (db_.is_table(tab_name)) {
         throw TableExistsError(tab_name);
     }
     // Create table meta
-    int curr_offset = 0;
     TabMeta tab;
     tab.name = tab_name;
+    tab.cols.reserve(col_defs.size());
+    int curr_offset = 0;
     for (auto &col_def : col_defs)
     {
         ColMeta col = {.tab_name = tab_name,
-                       .name = col_def.name,
+                       .name = std::move(col_def.name),
                        .type = col_def.type,
                        .len = col_def.len,
                        .offset = curr_offset,
                        .index = false};
         curr_offset += col_def.len;
-        tab.cols.push_back(col);
+        tab.cols.emplace_back(std::move(col));
+        tab.cols_map.emplace(tab.cols.back().name, tab.cols.size() - 1);
     }
     // Create & open record file
-    int record_size = curr_offset; // record_size就是col meta所占的大小（表的元数据也是以记录的形式进行存储的）
-    rm_manager_->create_file(tab_name, record_size);
-    db_.tabs_[tab_name] = tab;
-    // fhs_[tab_name] = rm_manager_->open_file(tab_name);
+    // record_size就是col meta所占的大小（表的元数据也是以记录的形式进行存储的）
+    rm_manager_->create_file(tab_name, curr_offset);
+    
     fhs_.emplace(tab_name, rm_manager_->open_file(tab_name));
-
+    db_.tabs_.emplace(std::move(tab_name), std::move(tab));
+    
     flush_meta();
 }
 
@@ -264,15 +247,13 @@ void SmManager::create_table(const std::string &tab_name, const std::vector<ColD
  * @param {string&} tab_name 表的名称
  * @param {Context*} context
  */
-void SmManager::drop_table(const std::string &tab_name, Context *context)
-{
-    if (!db_.is_table(tab_name))
+void SmManager::drop_table(const std::string& tab_name, Context* context) {
+    if (!db_.is_table(tab_name)) 
         throw TableNotFoundError(tab_name);
 
     // delete index file
     auto &tab = db_.get_table(tab_name);
-    for (auto &index : tab.indexes)
-    {
+    for(auto& index : tab.indexes) {
         auto index_iter = ihs_.find(ix_manager_->get_index_name(tab_name, index.cols));
         ix_manager_->close_index(index_iter->second.get());
         ix_manager_->destroy_index(tab_name, index.cols);
@@ -297,13 +278,12 @@ void SmManager::drop_table(const std::string &tab_name, Context *context)
  * @param {vector<string>&} col_names 索引包含的字段名称
  * @param {Context*} context
  */
-void SmManager::create_index(const std::string &tab_name, const std::vector<std::string> &col_names, Context *context)
-{
+void SmManager::create_index(const std::string& tab_name, const std::vector<std::string>& col_names, Context* context) {
     TabMeta &tab = db_.get_table(tab_name);
     auto index_name = ix_manager_->get_index_name(tab_name, col_names);
     if (ihs_.count(index_name))
         throw IndexExistsError(tab_name, col_names);
-
+    
     // Create index meta
     std::vector<ColMeta> cols;
     cols.reserve(col_names.size());
@@ -333,9 +313,7 @@ void SmManager::create_index(const std::string &tab_name, const std::vector<std:
         {
             ih->insert_entry(insert_data.get(), rmScan.rid(), context->txn_);
         }
-        catch (IndexEntryAlreadyExistError &)
-        {
-        }
+        catch (IndexEntryAlreadyExistError &) {}
     }
 
     ihs_.emplace(index_name, std::move(ih));
@@ -350,14 +328,13 @@ void SmManager::create_index(const std::string &tab_name, const std::vector<std:
  * @param {vector<string>&} col_names 索引包含的字段名称
  * @param {Context*} context
  */
-void SmManager::drop_index(const std::string &tab_name, const std::vector<std::string> &col_names, Context *context)
-{
-    if (!db_.is_table(tab_name))
+void SmManager::drop_index(const std::string& tab_name, const std::vector<std::string>& col_names, Context* context) {
+    if (!db_.is_table(tab_name)) 
         throw TableNotFoundError(tab_name);
 
     // delete index file
     auto index_iter = ihs_.find(ix_manager_->get_index_name(tab_name, col_names));
-    if (index_iter == ihs_.end())
+    if(index_iter == ihs_.end())
         return;
 
     ix_manager_->close_index(index_iter->second.get());
@@ -376,19 +353,18 @@ void SmManager::drop_index(const std::string &tab_name, const std::vector<std::s
  * @param {vector<ColMeta>&} 索引包含的字段元数据
  * @param {Context*} context
  */
-void SmManager::drop_index(const std::string &tab_name, const std::vector<ColMeta> &cols, Context *context)
-{
-    if (!db_.is_table(tab_name))
+void SmManager::drop_index(const std::string& tab_name, const std::vector<ColMeta>& cols, Context* context) {
+    if (!db_.is_table(tab_name)) 
         throw TableNotFoundError(tab_name);
 
     // delete index file
     auto index_iter = ihs_.find(ix_manager_->get_index_name(tab_name, cols));
-    if (index_iter == ihs_.end())
+    if(index_iter == ihs_.end())
         return;
 
     ix_manager_->close_index(index_iter->second.get());
     ix_manager_->destroy_index(tab_name, cols);
-    ihs_.erase(index_iter);
+    ihs_.erase(index_iter);  
 
     auto &tab = db_.get_table(tab_name);
     tab.indexes.erase(tab.get_index_meta(cols));
@@ -396,13 +372,18 @@ void SmManager::drop_index(const std::string &tab_name, const std::vector<ColMet
     flush_meta();
 }
 
+/**
+ * @description: 显示表的所有索引
+ * @param {string&} tab_name 表名称
+ * @param {Context*} context
+ * @return {*}
+ */
 void SmManager::show_index(const std::string &tab_name, Context *context)
 {
     TabMeta &tab = db_.get_table(tab_name);
     int fd = open("output.txt", O_WRONLY | O_CREAT | O_APPEND, 0644);
-    if (fd == -1)
-        return;
-
+    if (fd == -1) return;
+    
     // 64KB缓冲区
     std::string buffer;
     buffer.reserve(8096);
@@ -412,17 +393,16 @@ void SmManager::show_index(const std::string &tab_name, Context *context)
     printer.print_separator(context);
     printer.print_record({"index"}, context);
     printer.print_separator(context);
-    for (auto &index : tab.indexes)
-    {
-        buffer.append("| ").append(tab_name).append(" | unique | (").append(index.cols[0].name);
+    for (auto &index : tab.indexes) {
+        buffer.append("| ").append(tab_name).append(" | unique | (")
+            .append(index.cols[0].name);
         for (size_t i = 1; i < index.cols.size(); ++i)
         {
             buffer.append(",").append(index.cols[i].name);
         }
         buffer.append(") |\n");
         // 缓冲区满时写入
-        if (buffer.size() >= 8096)
-        {
+        if (buffer.size() >= 8096) {
             discard = ::write(fd, buffer.data(), buffer.size());
             buffer.clear();
         }
@@ -430,8 +410,7 @@ void SmManager::show_index(const std::string &tab_name, Context *context)
     }
     printer.print_separator(context);
     // 写入剩余数据
-    if (!buffer.empty())
-    {
+    if (!buffer.empty()) {
         discard = ::write(fd, buffer.data(), buffer.size());
     }
     ::close(fd);

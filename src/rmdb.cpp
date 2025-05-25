@@ -25,7 +25,7 @@ See the Mulan PSL v2 for more details. */
 #include "analyze/analyze.h"
 
 #define SOCK_PORT 8765
-#define MAX_CONN_LIMIT 8
+#define MAX_CONN_LIMIT 256
 
 static bool should_exit = false;
 
@@ -64,6 +64,7 @@ void SetTransaction(txn_id_t *txn_id, Context *context)
         context->txn_->get_state() == TransactionState::ABORTED)
     {
         context->txn_ = txn_manager->begin(nullptr, context->log_mgr_);
+        // printf("context->txn_->get_transaction_id(): %d\n", context->txn_->get_transaction_id());
         *txn_id = context->txn_->get_transaction_id();
         context->txn_->set_txn_mode(false);
     }
@@ -84,19 +85,18 @@ void *client_handler(void *sock_fd)
     // 记录客户端当前正在执行的事务ID
     txn_id_t txn_id = INVALID_TXN_ID;
 
-    std::string output = "establish client connection, sockfd: " + std::to_string(fd) + "\n";
-    std::cout << output;
+    // std::string output = "establish client connection, sockfd: " + std::to_string(fd) + "\n";
+    // std::cout << output;
 
     while (true)
     {
-        std::cout << "Waiting for request..." << std::endl;
-        memset(data_recv, 0, BUFFER_LENGTH);
+        // std::cout << "Waiting for request..." << std::endl;
 
         i_recvBytes = read(fd, data_recv, BUFFER_LENGTH);
 
         if (i_recvBytes == 0)
         {
-            std::cout << "Maybe the client has closed" << std::endl;
+            // std::cout << "Maybe the client has closed" << std::endl;
             break;
         }
         if (i_recvBytes == -1)
@@ -104,8 +104,8 @@ void *client_handler(void *sock_fd)
             std::cout << "Client read error!" << std::endl;
             break;
         }
-
-        printf("i_recvBytes: %d \n ", i_recvBytes);
+        data_recv[i_recvBytes] = '\0';
+        // printf("i_recvBytes: %d \n ", i_recvBytes);
 
         if (strcmp(data_recv, "exit") == 0)
         {
@@ -117,15 +117,12 @@ void *client_handler(void *sock_fd)
             std::cout << "Server crash" << std::endl;
             exit(1);
         }
-
-        std::cout << "Read from client " << fd << ": " << data_recv << std::endl;
-
-        memset(data_send, '\0', BUFFER_LENGTH);
+        // std::cout << "Read from client " << fd << ": " << data_recv << std::endl;
         offset = 0;
 
         // 开启事务，初始化系统所需的上下文信息（包括事务对象指针、锁管理器指针、日志管理器指针、存放结果的buffer、记录结果长度的变量）
-        Context *context = new Context(lock_manager.get(), log_manager.get(), nullptr, data_send, &offset);
-        SetTransaction(&txn_id, context);
+        auto context = std::make_unique<Context>(lock_manager.get(), log_manager.get(), nullptr, data_send, &offset);
+        SetTransaction(&txn_id, context.get());
 
         // 用于判断是否已经调用了yy_delete_buffer来删除buf
         bool finish_analyze = false;
@@ -143,10 +140,10 @@ void *client_handler(void *sock_fd)
                     finish_analyze = true;
                     pthread_mutex_unlock(buffer_mutex);
                     // 优化器
-                    std::shared_ptr<Plan> plan = optimizer->plan_query(query, context);
+                    std::shared_ptr<Plan> plan = optimizer->plan_query(query, context.get());
                     // portal
-                    std::shared_ptr<PortalStmt> portalStmt = portal->start(plan, context);
-                    portal->run(portalStmt, ql_manager.get(), &txn_id, context);
+                    std::shared_ptr<PortalStmt> portalStmt = portal->start(plan, context.get());
+                    portal->run(portalStmt, ql_manager.get(), &txn_id, context.get());
                     portal->drop();
                 }
                 catch (TransactionAbortException &e)
@@ -158,8 +155,9 @@ void *client_handler(void *sock_fd)
                     offset = str.length();
 
                     // 回滚事务
-                    txn_manager->abort(context->txn_, log_manager.get());
-                    std::cout << e.GetInfo() << std::endl;
+                    // txn_manager->abort(context->txn_, log_manager.get());
+                    // txn_id = INVALID_TXN_ID;
+                    // std::cout << e.GetInfo() << std::endl;
 
                     std::fstream outfile;
                     outfile.open("output.txt", std::ios::out | std::ios::app);
@@ -181,29 +179,51 @@ void *client_handler(void *sock_fd)
                     outfile.open("output.txt", std::ios::out | std::ios::app);
                     outfile << "failure\n";
                     outfile.close();
+
+                    // // 回滚事务
+                    // txn_manager->abort(context->txn_, log_manager.get());
+                    // txn_id = INVALID_TXN_ID;
                 }
             }
         }
-        if (finish_analyze == false)
+        else
+        {
+            std::string ParseError = "parse error";
+            std::memcpy(data_send, ParseError.c_str(), ParseError.length());
+            data_send[ParseError.length()] = '\n';
+            data_send[ParseError.length() + 1] = '\0';
+            offset = ParseError.length() + 1;
+
+            // 将报错信息写入output.txt
+            std::fstream outfile;
+            outfile.open("output.txt", std::ios::out | std::ios::app);
+            outfile << "failure\n";
+            outfile.close();
+        }
+        if (!finish_analyze)
         {
             yy_delete_buffer(buf);
             pthread_mutex_unlock(buffer_mutex);
         }
         // future TODO: 格式化 sql_handler.result, 传给客户端
         // send result with fixed format, use protobuf in the future
-        if (write(fd, data_send, offset + 1) == -1)
+        data_send[offset] = '\0';
+        if (::write(fd, data_send, offset + 1) == -1)
         {
             break;
         }
-        // 如果是单挑语句，需要按照一个完整的事务来执行，所以执行完当前语句后，自动提交事务
-        if (context->txn_->get_txn_mode() == false)
+        // 如果是单条语句，需要按照一个完整的事务来执行，所以执行完当前语句后，自动提交事务
+        if (!context->txn_->get_txn_mode())
         {
             txn_manager->commit(context->txn_, context->log_mgr_);
+            txn_id = INVALID_TXN_ID;
         }
     }
 
     // Clear
-    std::cout << "Terminating current client_connection..." << std::endl;
+    // std::cout << "Terminating current client_connection..." << std::endl;
+
+    delete[] data_send;
     close(fd);          // close a file descriptor.
     pthread_exit(NULL); // terminate calling thread!
 }
@@ -247,7 +267,9 @@ void start_server()
 
     while (!should_exit)
     {
+#ifdef DEBUG
         std::cout << "Waiting for new connection..." << std::endl;
+#endif
         pthread_t thread_id;
         struct sockaddr_in s_addr_client{};
         int client_length = sizeof(s_addr_client);

@@ -25,13 +25,11 @@ void IxScan::next()
     ++iid_.slot_no;
     if (node.get_next_leaf() != IX_LEAF_HEADER_PAGE && iid_.slot_no == node.get_size())
     {
-        {
-            // go to next leaf
-            iid_.slot_no = 0;
-            iid_.page_no = node.get_next_leaf();
-        }
-        ih_->unlock_shared(node);
+        // go to next leaf
+        iid_.slot_no = 0;
+        iid_.page_no = node.get_next_leaf();
     }
+    ih_->unlock_shared(node);
 }
 Rid IxScan::rid() const
 {

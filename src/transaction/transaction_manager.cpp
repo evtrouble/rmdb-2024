@@ -28,8 +28,26 @@ Transaction *TransactionManager::begin(Transaction *txn, LogManager *log_manager
     // 3. 把开始事务加入到全局事务表中
     // 4. 返回当前事务指针
     // 如果需要支持MVCC请在上述过程中添加代码
+    if (txn == nullptr)
+    {
+        // 生成新的事务ID
+        txn_id_t new_txn_id = next_txn_id_++;
+        // 创建新事务，使用默认的可串行化隔离级别
+        txn = new Transaction(new_txn_id);
+        // 设置事务开始时间戳
+        txn->set_start_ts(next_timestamp_++);
+    }
 
-    return nullptr;
+    // 设置事务状态为GROWING（增长阶段）
+    txn->set_state(TransactionState::GROWING);
+
+    // 将事务加入全局事务表
+    {
+        std::unique_lock<std::mutex> lock(latch_);
+        txn_map.emplace(txn->get_transaction_id(), txn);
+    }
+
+    return txn;
 }
 
 /**
@@ -46,6 +64,40 @@ void TransactionManager::commit(Transaction *txn, LogManager *log_manager)
     // 4. 把事务日志刷入磁盘中
     // 5. 更新事务状态
     // 如果需要支持MVCC请在上述过程中添加代码
+    txn->get_write_set()->clear();
+
+    // txn->set_commit_ts(next_timestamp_++); // 设置提交时间戳
+
+    // 阶段2：更新内存中的版本链（关键！）
+    // auto write_version_set = txn->get_write_version_set();
+    // for (auto& modified_row : *write_version_set) {
+    //     modified_row->version = txn->get_commit_ts(); // 内存中标记新版本生效
+    //     modified_row->next_version = tx.undo_log.back(); // 挂接Undo记录
+    // }
+
+    // 2. 释放所有锁
+    auto lock_set = txn->get_lock_set();
+    for (auto &lock_data_id : *lock_set)
+    {
+        lock_manager_->unlock(txn, lock_data_id);
+    }
+
+    // 3. 清空事务相关资源
+    lock_set->clear();
+
+    // 4. 把事务日志刷入磁盘
+    if (log_manager != nullptr)
+    {
+        log_manager->flush_log_to_disk();
+    }
+
+    // 5. 更新事务状态为已提交
+    txn->set_state(TransactionState::COMMITTED);
+    {
+        std::unique_lock<std::mutex> lock(latch_);
+        txn_map.erase(txn->get_transaction_id());
+    }
+    delete txn;
 }
 
 /**

@@ -14,6 +14,10 @@ See the Mulan PSL v2 for more details. */
 #include "executor_abstract.h"
 #include "index/ix.h"
 #include "system/sm.h"
+#include <memory>
+#include <vector>
+#include <stdexcept>
+#include <iostream>
 
 class DeleteExecutor : public AbstractExecutor
 {
@@ -24,6 +28,20 @@ private:
     std::vector<Rid> rids_;        // 需要删除的记录的位置
     std::string tab_name_;         // 表名称
     SmManager *sm_manager_;
+    std::vector<IxIndexHandle *> ihs_; // 缓存索引句柄
+
+    // 构建索引键的辅助函数
+    std::unique_ptr<char[]> build_index_key(const IndexMeta &index, const RmRecord &rec)
+    {
+        std::unique_ptr<char[]> key(new char[index.col_tot_len]);
+        int offset = 0;
+        for (int i = 0; i < index.col_num; ++i)
+        {
+            memcpy(key.get() + offset, rec.data + index.cols[i].offset, index.cols[i].len);
+            offset += index.cols[i].len;
+        }
+        return key;
+    }
 
 public:
     DeleteExecutor(SmManager *sm_manager, const std::string &tab_name,
@@ -33,50 +51,54 @@ public:
     {
         tab_ = sm_manager_->db_.get_table(tab_name_);
         fh_ = sm_manager_->fhs_.at(tab_name_).get();
+
+        ihs_.reserve(tab_.indexes.size());
+        for (auto &index : tab_.indexes)
+        {
+            ihs_.emplace_back(sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get());
+        }
     }
+
     std::unique_ptr<RmRecord> Next() override
     {
         if (rids_.empty())
             return nullptr;
 
-        std::vector<IxIndexHandle *> ihs;
-        ihs.reserve(tab_.indexes.size());
-        for (auto &index : tab_.indexes)
+        try
         {
-            ihs.emplace_back(sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get());
-        }
-
-        // 遍历所有需要删除的记录
-        for (auto &rid : rids_)
-        {
-            // 获取要删除的记录
-            RmRecord rec = *fh_->get_record(rid, context_);
-
-            // 删除相关的索引
-            for (auto &index : tab_.indexes)
+            // 遍历所有需要删除的记录
+            for (auto &rid : rids_)
             {
-                auto ih = sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get();
+                // 获取要删除的记录
+                RmRecord rec = *fh_->get_record(rid, context_);
 
-                // 构建索引键
-                char *key = new char[index.col_tot_len];
-                int offset = 0;
-                for (int i = 0; i < index.col_num; ++i)
+                // 删除相关的索引
+                for (size_t i = 0; i < tab_.indexes.size(); ++i)
                 {
-                    memcpy(key + offset, rec.data + index.cols[i].offset, index.cols[i].len);
-                    offset += index.cols[i].len;
+                    auto &index = tab_.indexes[i];
+                    auto ih = ihs_[i];
+
+                    // 构建索引键
+                    auto key = build_index_key(index, rec);
+
+                    // 删除索引项
+                    ih->delete_entry(key.get(), rid, context_->txn_);
                 }
 
-                // 删除索引项
-                ih->delete_entry(key, rid, context_->txn_);
-                delete[] key;
+                // 删除记录
+                fh_->delete_record(rid, context_);
+                auto write_record = new WriteRecord(WType::DELETE_TUPLE,
+                                                    tab_name_, rid, rec);
+                context_->txn_->append_write_record(write_record);
             }
-
-            // 删除记录
-            fh_->delete_record(rid, context_);
-            auto write_record = new WriteRecord(WType::DELETE_TUPLE,
-                                                            tab_name_, rid, rec);
-            context_->txn_->append_write_record(write_record);
         }
+        catch (const std::exception &e)
+        {
+            // 处理异常，例如记录日志
+            std::cerr << "Error in DeleteExecutor: " << e.what() << std::endl;
+            return nullptr;
+        }
+
         return nullptr;
     }
 
