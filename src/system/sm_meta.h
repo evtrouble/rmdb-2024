@@ -49,7 +49,15 @@ struct IndexMeta
     int col_tot_len;           // 索引字段长度总和
     int col_num;               // 索引字段数量
     std::vector<ColMeta> cols; // 索引包含的字段
-
+    std::shared_ptr<char *> max_val;
+    std::shared_ptr<char *> min_val;
+    IndexMeta() = default;
+    IndexMeta(const std::string &tab_name, int col_tot_len, int col_num, const std::vector<ColMeta> &cols)
+        : tab_name(std::move(tab_name)), col_tot_len(col_tot_len), col_num(col_num),
+          cols(std::move(cols))
+    {
+        init();
+    }
     friend std::ostream &operator<<(std::ostream &os, const IndexMeta &index)
     {
         os << index.tab_name << " " << index.col_tot_len << " " << index.col_num;
@@ -72,6 +80,33 @@ struct IndexMeta
         }
         return is;
     }
+
+private:
+    void init()
+    {
+        max_val = std::make_shared<char *>(new char[col_tot_len]);
+        min_val = std::make_shared<char *>(new char[col_tot_len]);
+        int offset = 0;
+        for (auto &col : cols)
+        {
+            switch (col.type)
+            {
+            case ColType::TYPE_INT:
+                *reinterpret_cast<int *>(max_val.get() + offset) = std::numeric_limits<int>::max();
+                *reinterpret_cast<int *>(min_val.get() + offset) = std::numeric_limits<int>::min();
+                break;
+            case ColType::TYPE_FLOAT:
+                *reinterpret_cast<float *>(max_val.get() + offset) = std::numeric_limits<float>::max();
+                *reinterpret_cast<float *>(min_val.get() + offset) = std::numeric_limits<float>::min();
+                break;
+            case ColType::TYPE_STRING:
+                std::memset(max_val.get() + offset, 0xff, col.len);
+                std::memset(min_val.get() + offset, 0, col.len);
+                break;
+            }
+            offset += col.len;
+        }
+    }
 };
 
 /* 表元数据 */
@@ -80,6 +115,7 @@ struct TabMeta
     std::string name;               // 表名称
     std::vector<ColMeta> cols;      // 表包含的字段
     std::vector<IndexMeta> indexes; // 表上建立的索引
+    std::unordered_map<std::string, size_t> cols_map;
 
     TabMeta() {}
 
@@ -118,7 +154,27 @@ struct TabMeta
 
         return false;
     }
-
+    std::vector<IndexMeta>::iterator get_index_meta(const std::vector<ColMeta> &compare_index_cols)
+    {
+        for (auto index = indexes.begin(); index != indexes.end(); ++index)
+        {
+            if ((*index).col_num != (int)compare_index_cols.size())
+                continue;
+            auto &index_cols = (*index).cols;
+            size_t i = 0;
+            for (; i < index_cols.size(); ++i)
+            {
+                if (index_cols[i].name.compare(compare_index_cols[i].name) != 0)
+                    break;
+            }
+            if (i == compare_index_cols.size())
+                return index;
+        }
+        std::vector<std::string> col_names(compare_index_cols.size());
+        for (size_t id = 0; id < compare_index_cols.size(); ++id)
+            col_names[id] = std::move(compare_index_cols[id].name);
+        throw IndexNotFoundError(name, col_names);
+    }
     /* 根据字段名称集合获取索引元数据 */
     std::vector<IndexMeta>::iterator get_index_meta(const std::vector<std::string> &col_names)
     {
@@ -128,12 +184,12 @@ struct TabMeta
                 continue;
             auto &index_cols = index->cols;
             int i = 0;
-            for (; i < (int)col_names.size(); ++i)
+            for (; i < col_names.size(); ++i)
             {
                 if (index_cols[i].name.compare(col_names[i]) != 0)
                     break;
             }
-            if (i == (int)col_names.size())
+            if (i == col_names.size())
                 return index;
         }
         throw IndexNotFoundError(name, col_names);

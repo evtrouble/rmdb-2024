@@ -17,13 +17,11 @@ See the Mulan PSL v2 for more details. */
  */
 bool BufferPoolManager::find_victim_page(frame_id_t *frame_id)
 {
-    std::ofstream debug_log("storage_test.log", std::ios::out | std::ios::app);
 
     if (!free_list_.empty())
     {
         *frame_id = free_list_.front();
         free_list_.pop_front();
-        debug_log.close();
         return true;
     }
 
@@ -34,7 +32,6 @@ bool BufferPoolManager::find_victim_page(frame_id_t *frame_id)
     else
     {
     }
-    debug_log.close();
     return found;
 }
 
@@ -48,7 +45,6 @@ bool BufferPoolManager::find_victim_page(frame_id_t *frame_id)
 void BufferPoolManager::update_page(Page *page, PageId new_page_id, frame_id_t new_frame_id)
 {
     std::scoped_lock lock{latch_};
-    std::ofstream debug_log("storage_test.log", std::ios::out | std::ios::app);
 
     if (page->is_dirty_)
     {
@@ -59,7 +55,6 @@ void BufferPoolManager::update_page(Page *page, PageId new_page_id, frame_id_t n
     page_table_.erase(page->id_);
     page_table_[new_page_id] = new_frame_id;
     page->id_ = new_page_id;
-    debug_log.close();
 }
 
 /**
@@ -72,7 +67,6 @@ void BufferPoolManager::update_page(Page *page, PageId new_page_id, frame_id_t n
 Page *BufferPoolManager::fetch_page(PageId page_id)
 {
     std::scoped_lock lock{latch_};
-    std::ofstream debug_log("storage_test.log", std::ios::out | std::ios::app);
 
     auto it = page_table_.find(page_id);
     if (it != page_table_.end())
@@ -81,14 +75,12 @@ Page *BufferPoolManager::fetch_page(PageId page_id)
         Page *page = &pages_[frame_id];
         page->pin_count_++;
         replacer_->pin(frame_id);
-        debug_log.close();
         return page;
     }
 
     frame_id_t frame_id;
     if (!find_victim_page(&frame_id))
     {
-        debug_log.close();
         return nullptr;
     }
 
@@ -97,7 +89,6 @@ Page *BufferPoolManager::fetch_page(PageId page_id)
     {
         if (page->pin_count_ > 0)
         {
-            debug_log.close();
             return nullptr;
         }
 
@@ -116,7 +107,6 @@ Page *BufferPoolManager::fetch_page(PageId page_id)
     page_table_[page_id] = frame_id;
     replacer_->pin(frame_id);
 
-    debug_log.close();
     return page;
 }
 
