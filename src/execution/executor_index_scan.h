@@ -246,12 +246,45 @@ public:
         int offset = 0;
         for (; i < index_conds_.size(); ++i) {
             int len = index_meta_.cols[i].len;
-            if (index_conds_[i].op == OP_EQ) {
-                memcpy(low_key + offset, index_conds_[i].rhs_val.raw->data, len);
-                memcpy(up_key + offset, index_conds_[i].rhs_val.raw->data, len);
-                offset += len;
-            } else {
-                if (index_conds_[i].op == OP_LE || index_conds_[i].op == OP_LT) {
+            switch (index_conds_[i].op) {
+                case OP_EQ:
+                    memcpy(low_key + offset, index_conds_[i].rhs_val.raw->data, len);
+                    memcpy(up_key + offset, index_conds_[i].rhs_val.raw->data, len);
+                    offset += len;
+                    break;
+                case OP_LT: {
+                    if (index_meta_.cols[i].type == TYPE_STRING) {
+                        // 对于字符串类型，复制值并减一个字符
+                        memcpy(up_key + offset, index_conds_[i].rhs_val.raw->data, len);
+                        // 找到最后一个非空字符并减1
+                        for (int j = len - 1; j >= 0; --j) {
+                            if (up_key[offset + j] > 0) {
+                                --up_key[offset + j];
+                                break;
+                            }
+                        }
+                    } else if (index_meta_.cols[i].type == TYPE_INT) {
+                        int value;
+                        memcpy(&value, index_conds_[i].rhs_val.raw->data, len);
+                        value--;
+                        memcpy(up_key + offset, &value, len);
+                    } else if (index_meta_.cols[i].type == TYPE_FLOAT) {
+                        float value;
+                        memcpy(&value, index_conds_[i].rhs_val.raw->data, len);
+                        value -= std::numeric_limits<float>::epsilon();
+                        memcpy(up_key + offset, &value, len);
+                    } else {
+                        memcpy(up_key + offset, index_conds_[i].rhs_val.raw->data, len);
+                    }
+                    if (is_con_closed_) {
+                        memcpy(low_key + offset, con_closed_.rhs_val.raw->data, len);
+                    } else {
+                        injectLowKey(index_conds_[i].lhs_col.col_name, low_key, offset, len);
+                    }
+                    offset += len;
+                    break;
+                }
+                case OP_LE:
                     memcpy(up_key + offset, index_conds_[i].rhs_val.raw->data, len);
                     if (is_con_closed_) {
                         memcpy(low_key + offset, con_closed_.rhs_val.raw->data, len);
@@ -259,8 +292,40 @@ public:
                         injectLowKey(index_conds_[i].lhs_col.col_name, low_key, offset, len);
                     }
                     offset += len;
+                    break;
+                case OP_GT: {
+                    if (index_meta_.cols[i].type == TYPE_STRING) {
+                        // 对于字符串类型，复制值并加一个字符
+                        memcpy(low_key + offset, index_conds_[i].rhs_val.raw->data, len);
+                        // 找到最后一个非空字符并加1
+                        for (int j = len - 1; j >= 0; --j) {
+                            if (low_key[offset + j] < 0xff) {
+                                ++low_key[offset + j];
+                                break;
+                            }
+                        }
+                    } else if (index_meta_.cols[i].type == TYPE_INT) {
+                        int value;
+                        memcpy(&value, index_conds_[i].rhs_val.raw->data, len);
+                        value++;
+                        memcpy(low_key + offset, &value, len);
+                    } else if (index_meta_.cols[i].type == TYPE_FLOAT) {
+                        float value;
+                        memcpy(&value, index_conds_[i].rhs_val.raw->data, len);
+                        value += std::numeric_limits<float>::epsilon();
+                        memcpy(low_key + offset, &value, len);
+                    } else {
+                        memcpy(low_key + offset, index_conds_[i].rhs_val.raw->data, len);
+                    }
+                    if (is_con_closed_) {
+                        memcpy(up_key + offset, con_closed_.rhs_val.raw->data, len);
+                    } else {
+                        injectHighKey(index_conds_[i].lhs_col.col_name, up_key, offset, len);
+                    }
+                    offset += len;
+                    break;
                 }
-                if (index_conds_[i].op == OP_GE || index_conds_[i].op == OP_GT) {
+                case OP_GE:
                     memcpy(low_key + offset, index_conds_[i].rhs_val.raw->data, len);
                     if (is_con_closed_) {
                         memcpy(up_key + offset, con_closed_.rhs_val.raw->data, len);
@@ -268,7 +333,9 @@ public:
                         injectHighKey(index_conds_[i].lhs_col.col_name, up_key, offset, len);
                     }
                     offset += len;
-                }
+                    break;
+                default:
+                    throw InternalError("Unknown op");
             }
         }
         for (; i < index_meta_.cols.size(); ++i) {
@@ -326,6 +393,7 @@ public:
      * @brief 检查元组是否满足条件组
      */
     inline bool check_cons(std::vector<Condition> &conds, const RmRecord *record) {
+        std::cout << "nm\n";
         return std::all_of(conds.begin(), conds.end(), [&](auto &cond) {
             return check_con(cond, record);
         });
