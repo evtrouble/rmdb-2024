@@ -235,7 +235,8 @@ public:
 
     void nextTuple() override
     {
-        scan_->next();
+        if (first_record_)
+            scan_->next();
         find_next_valid_tuple();
     }
 
