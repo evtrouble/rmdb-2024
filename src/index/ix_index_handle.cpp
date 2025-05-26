@@ -708,13 +708,16 @@ Iid IxIndexHandle::upper_bound(const char *key)
     Iid ret;
 
     int key_idx = node.upper_bound(key);
+    if(key_idx == 1 && ix_compare(key, node.get_key(0), file_hdr_->col_types_, file_hdr_->col_lens_) < 0)
+    {
+        key_idx = 0; // 如果是第一个key，upper_bound返回的是1
+    }
     if (key_idx >= node.page_hdr->num_key && node.get_next_leaf() != IX_LEAF_HEADER_PAGE)
     {
         ret = Iid{.page_no = node.get_next_leaf(), .slot_no = 0};
     }
     else
         ret = Iid{.page_no = node.get_page_no(), .slot_no = key_idx};
-    std::cout<<key_idx<<std::endl;
     unlock_shared(node);
     return ret;
 }

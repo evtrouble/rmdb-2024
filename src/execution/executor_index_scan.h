@@ -25,10 +25,6 @@ private:
     RmFileHandle *fh_;                          // 表的数据文件句柄
     std::vector<ColMeta> cols_;                 // 需要读取的字段
     size_t len_;                                // 选取出来的一条记录的长度 
-    // std::vector<Condition> fed_conds_;          // 扫描条件，和conds_字段相同 
-    // std::vector<Condition> index_conds_;        // index scan涉及到的条件
-    // bool is_con_closed_;                        // 是否闭合区间
-    // Condition con_closed_;                      // 闭合区间的条件
 
     IndexMeta index_meta_;                      // index scan涉及到的索引元数据
     Rid rid_;
