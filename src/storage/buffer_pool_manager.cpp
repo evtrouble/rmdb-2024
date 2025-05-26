@@ -175,14 +175,21 @@ bool BufferPoolManager::delete_page(PageId page_id) {
 void BufferPoolManager::flush_all_pages(int fd) {
     for (auto& bucket : buckets_) {
         std::unique_lock lock(bucket.latch);
-        for (auto &[pid, frame_id] : bucket.page_table)
-        {
-            if (fd != -1 && pid.fd != fd)
+        auto it = bucket.page_table.begin();
+        while (it != bucket.page_table.end()) {
+            auto& [pid, frame_id] = *it;
+            if (fd != -1 && pid.fd != fd) {
+                ++it;
                 continue;
+            }
             Page& page = pages_[frame_id];
             if (page.is_dirty_.exchange(false)) {
                 disk_manager_->write_page(pid.fd, pid.page_no, page.data_, PAGE_SIZE);
             }
+            page.pin_count_.store(0);
+            replacer_->unpin(frame_id);
+            // 删除对应bucket的记录
+            it = bucket.page_table.erase(it);
         }
     }
 }

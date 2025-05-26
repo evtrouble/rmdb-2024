@@ -93,13 +93,15 @@ public:
             offset += col.len;
         }
 
-        for (size_t id = 0; id < index_meta_.cols.size(); ++id) {
-            int offset = index_offsets[id];
-            int col_len = index_meta_.cols[id].len;
-            ColType col_type = index_meta_.cols[id].type;
-            inject_max_value(up_key + offset, col_type, col_len);
-            inject_min_value(low_key + offset, col_type, col_len);
-        }
+        // for (size_t id = 0; id < index_meta_.cols.size(); ++id) {
+        //     int offset = index_offsets[id];
+        //     int col_len = index_meta_.cols[id].len;
+        //     ColType col_type = index_meta_.cols[id].type;
+        //     inject_max_value(up_key + offset, col_type, col_len);
+        //     inject_min_value(low_key + offset, col_type, col_len);
+        // }
+        memcpy(low_key, index_meta_.min_val.get(), index_meta_.col_tot_len);
+        memcpy(up_key, index_meta_.max_val.get(), index_meta_.col_tot_len);
 
         for (auto &cond : fed_conds_) {
             if(cond.is_rhs_val && cond.op != CompOp::OP_NE) {
@@ -168,39 +170,39 @@ public:
     }
 
     // 辅助函数：键值操作
-    void inject_min_value(char* key, ColType type, int len) {
-        switch (type) {
-            case TYPE_INT:
-                *reinterpret_cast<int*>(key) = std::numeric_limits<int>::min();
-                break;
-            case TYPE_FLOAT:
-                *reinterpret_cast<float*>(key) = -std::numeric_limits<float>::infinity();
-                break;
-            case TYPE_STRING:
-                memset(key, 0, len);
-                break;
-            case TYPE_DATETIME:
-                memcpy(key, "0000-01-01 00:00:00", len);
-                break;
-        }
-    }
+    // void inject_min_value(char* key, ColType type, int len) {
+    //     switch (type) {
+    //         case TYPE_INT:
+    //             *reinterpret_cast<int*>(key) = std::numeric_limits<int>::min();
+    //             break;
+    //         case TYPE_FLOAT:
+    //             *reinterpret_cast<float*>(key) = -std::numeric_limits<float>::infinity();
+    //             break;
+    //         case TYPE_STRING:
+    //             memset(key, 0, len);
+    //             break;
+    //         case TYPE_DATETIME:
+    //             memcpy(key, "0000-01-01 00:00:00", len);
+    //             break;
+    //     }
+    // }
 
-    void inject_max_value(char* key, ColType type, int len) {
-        switch (type) {
-            case TYPE_INT:
-                *reinterpret_cast<int*>(key) = std::numeric_limits<int>::max();
-                break;
-            case TYPE_FLOAT:
-                *reinterpret_cast<float*>(key) = std::numeric_limits<float>::infinity();
-                break;
-            case TYPE_STRING:
-                memset(key, 0xFF, len);
-                break;
-            case TYPE_DATETIME:
-                memcpy(key, "9999-12-31 23:59:59", len);
-                break;
-        }
-    }
+    // void inject_max_value(char* key, ColType type, int len) {
+    //     switch (type) {
+    //         case TYPE_INT:
+    //             *reinterpret_cast<int*>(key) = std::numeric_limits<int>::max();
+    //             break;
+    //         case TYPE_FLOAT:
+    //             *reinterpret_cast<float*>(key) = std::numeric_limits<float>::infinity();
+    //             break;
+    //         case TYPE_STRING:
+    //             memset(key, 0xFF, len);
+    //             break;
+    //         case TYPE_DATETIME:
+    //             memcpy(key, "9999-12-31 23:59:59", len);
+    //             break;
+    //     }
+    // }
 
     void increment_key(char* key, ColType type, int len) {
         switch (type) {
