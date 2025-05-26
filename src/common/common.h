@@ -15,6 +15,7 @@ See the Mulan PSL v2 for more details. */
 #include <memory>
 #include <string>
 #include <vector>
+#include <cmath>
 #include "defs.h"
 #include "record/rm_defs.h"
 #include "parser/ast.h"
@@ -79,7 +80,7 @@ struct Value
         else if (type == TYPE_FLOAT)
         {
             assert(len == sizeof(float));
-            *(float *)(raw->data) = float_val;
+            *(float *)(raw->data) = std::round(float_val * multiplier) / multiplier;
         }
         else if (type == TYPE_STRING)
         {
@@ -101,7 +102,7 @@ struct Value
         else if (type == TYPE_FLOAT)
         {
             assert(len == sizeof(float));
-            *(float *)(dest) = float_val;
+            *(float *)(dest) = std::round(float_val * multiplier) / multiplier;
         }
         else if (type == TYPE_STRING)
         {
