@@ -1,9 +1,13 @@
 #include "buffer_pool_manager.h"
 #include <chrono>
 
-BufferPoolManager::BufferPoolManager(size_t pool_size, DiskManager* disk_manager)
-    : pages_(pool_size), disk_manager_(disk_manager), buckets_(BUCKET_COUNT)
+// replacer
+static std::string REPLACER_TYPE;
+BufferPoolManager::BufferPoolManager(size_t pool_size, DiskManager *disk_manager)
+        : buckets_(BUCKET_COUNT), pages_(pool_size), 
+      disk_manager_(disk_manager)
 {
+    // REPLACER_TYPE = "CLOCK";
     // 可以被Replacer改变
     if (REPLACER_TYPE.compare("LRU") == 0)
         replacer_ = new LRUReplacer(pool_size);
@@ -36,8 +40,11 @@ Page* BufferPoolManager::fetch_page(PageId page_id) {
         auto it = bucket.page_table.find(page_id);
         if (it != bucket.page_table.end()) {
             frame_id_t frame_id = it->second;
-            replacer_->pin(frame_id);
-            ++pages_[frame_id].pin_count_;
+            int prev = pages_[frame_id].pin_count_.fetch_add(1);
+            if(prev == 0) {
+                // 如果之前没有被pin，则将其pin到replacer中
+                replacer_->pin(frame_id);
+            } 
             return &pages_[frame_id];
         }
     }
@@ -131,8 +138,12 @@ Page* BufferPoolManager::new_page(PageId* page_id) {
 
     auto& new_bucket = get_bucket(*page_id);
     {
-        std::unique_lock lock(new_bucket.latch);
-        new_bucket.page_table[*page_id] = frame_id;
+        if(&old_bucket != &new_bucket)
+        {
+            std::unique_lock lock(new_bucket.latch);
+            new_bucket.page_table[*page_id] = frame_id;
+        }
+        else new_bucket.page_table[*page_id] = frame_id;        
     }
     replacer_->pin(frame_id);
     page.pin_count_.store(1);
@@ -191,7 +202,7 @@ void BufferPoolManager::background_flush() {
         }
 
         if(batch.empty())continue;
-        std::lock_guard<std::mutex> list_lock(free_list_mutex_);
+        std::lock_guard list_lock(free_list_mutex_);
         for (frame_id_t fid : batch) {
             Page& page = pages_[fid];
             if (page.is_dirty_.exchange(false)) {
@@ -204,7 +215,7 @@ void BufferPoolManager::background_flush() {
 
 bool BufferPoolManager::find_victim_page(frame_id_t* frame_id) {
     {
-        std::lock_guard<std::mutex> lock(free_list_mutex_);
+        std::lock_guard lock(free_list_mutex_);
         if (!free_list_.empty()) {
         
             *frame_id = free_list_.front();

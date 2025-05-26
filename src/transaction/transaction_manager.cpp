@@ -64,6 +64,10 @@ void TransactionManager::commit(Transaction *txn, LogManager *log_manager)
     // 4. 把事务日志刷入磁盘中
     // 5. 更新事务状态
     // 如果需要支持MVCC请在上述过程中添加代码
+    for(auto write : *txn->get_write_set())
+    {
+        delete write;
+    }
     txn->get_write_set()->clear();
 
     // txn->set_commit_ts(next_timestamp_++); // 设置提交时间戳
@@ -94,7 +98,7 @@ void TransactionManager::commit(Transaction *txn, LogManager *log_manager)
     // 5. 更新事务状态为已提交
     txn->set_state(TransactionState::COMMITTED);
     {
-        std::unique_lock<std::mutex> lock(latch_);
+        std::unique_lock lock(latch_);
         txn_map.erase(txn->get_transaction_id());
     }
     delete txn;

@@ -36,6 +36,36 @@ std::unique_ptr<RmRecord> RmFileHandle::get_record(const Rid &rid, Context *cont
     return record;
 }
 
+std::vector<std::pair<std::unique_ptr<RmRecord>, int>> RmFileHandle::get_records(int page_no, Context *context) const
+{
+    // 1. 获取指定记录所在的page handle
+    RmPageHandle page_handle = fetch_page_handle(page_no);
+    std::shared_lock lock(page_handle.page->latch_);
+    std::vector<std::pair<std::unique_ptr<RmRecord>, int>> records;
+    int slot_no = -1;
+    records.reserve(file_hdr_.num_records_per_page); // 预分配空间，避免多次扩容
+
+    while(true)
+    {
+        slot_no = Bitmap::next_bit(true, page_handle.bitmap, file_hdr_.num_records_per_page, slot_no);
+        
+        if (slot_no >= file_hdr_.num_records_per_page)
+        {
+            // 如果没有找到空闲位置，则退出循环
+            break;
+        }
+
+        // 3. 初始化一个指向RmRecord的指针（赋值其内部的data和size）
+        auto record = std::make_unique<RmRecord>(file_hdr_.record_size);
+        // 将slot中的数据复制到record中
+        memcpy(record->data, page_handle.get_slot(slot_no), file_hdr_.record_size);
+        records.emplace_back(std::make_pair(std::move(record), slot_no));
+    }
+    buffer_pool_manager_->unpin_page({fd_, page_no}, false);
+
+    return records;
+}
+
 /**
  * @description: 在当前表中插入一条记录，不指定插入位置
  * @param {char*} buf 要插入的记录的数据

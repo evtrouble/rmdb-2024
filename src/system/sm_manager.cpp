@@ -300,20 +300,24 @@ void SmManager::create_index(const std::string& tab_name, const std::vector<std:
 
     // 向索引中插入表中已有数据
     auto insert_data = std::make_unique<char[]>(tot_col_len);
-    for (RmScan rmScan(fh_); !rmScan.is_end(); rmScan.next())
+    for (RmScan rmScan(fh_); !rmScan.is_end(); rmScan.next_batch())
     {
-        auto rec = fh_->get_record(rmScan.rid(), context);
-        int offset = 0;
-        for (auto &col : cols)
+        int page_no = rmScan.rid().page_no;
+        auto recs = fh_->get_records(page_no, context);
+        for(auto& [rec, slot_num] : recs)
         {
-            std::memcpy(insert_data.get() + offset, rec->data + col.offset, col.len);
-            offset += col.len;
+            int offset = 0;
+            for (auto &col : cols)
+            {
+                std::memcpy(insert_data.get() + offset, rec->data + col.offset, col.len);
+                offset += col.len;
+            }
+            try
+            {
+                ih->insert_entry(insert_data.get(), {page_no, slot_num}, context->txn_);
+            }
+            catch (IndexEntryAlreadyExistError &) {}
         }
-        try
-        {
-            ih->insert_entry(insert_data.get(), rmScan.rid(), context->txn_);
-        }
-        catch (IndexEntryAlreadyExistError &) {}
     }
 
     ihs_.emplace(index_name, std::move(ih));
