@@ -156,9 +156,9 @@ void *client_handler(void *sock_fd)
                     offset = str.length();
 
                     // 回滚事务
-                    // txn_manager->abort(context->txn_, log_manager.get());
-                    // txn_id = INVALID_TXN_ID;
-                    // std::cout << e.GetInfo() << std::endl;
+                    txn_manager->abort(context.get(), log_manager.get());
+                    txn_id = INVALID_TXN_ID;
+                    std::cout << e.GetInfo() << std::endl;
 
                     std::fstream outfile;
                     outfile.open("output.txt", std::ios::out | std::ios::app);
@@ -182,8 +182,8 @@ void *client_handler(void *sock_fd)
                     outfile.close();
 
                     // // 回滚事务
-                    // txn_manager->abort(context->txn_, log_manager.get());
-                    // txn_id = INVALID_TXN_ID;
+                    txn_manager->abort(context.get(), log_manager.get());
+                    txn_id = INVALID_TXN_ID;
                 }
             }
         }
@@ -214,9 +214,13 @@ void *client_handler(void *sock_fd)
             break;
         }
         // 如果是单条语句，需要按照一个完整的事务来执行，所以执行完当前语句后，自动提交事务
-        if (!context->txn_->get_txn_mode())
+        if(context->txn_->get_state() == TransactionState::ABORTED)
         {
-            txn_manager->commit(context->txn_, context->log_mgr_);
+            delete context->txn_;
+        }
+        else if (!context->txn_->get_txn_mode())
+        {
+            txn_manager->commit(context.get(), context->log_mgr_);
             txn_id = INVALID_TXN_ID;
         }
     }

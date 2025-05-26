@@ -133,8 +133,13 @@ def run_individual_queries(client_path: str, sql_file: str, output_file: str, st
             out_f.write(f"\n=== 阶段: {stage_name} ===\n")
             
             for i, query in enumerate(queries):
-                # 提取表名
-                table_name = query.split()[2] if query.startswith("SELECT") else "unknown"
+                # 准确提取表名
+                if query.startswith("SELECT"):
+                    parts = query.split()
+                    from_index = parts.index("FROM")
+                    table_name = parts[from_index + 1] if from_index + 1 < len(parts) else "unknown"
+                else:
+                    table_name = "unknown"
                 
                 start_time = time.time()
                 
