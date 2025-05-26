@@ -83,13 +83,18 @@ public:
 
     void generate_index_key(char* low_key, char* up_key) {
         std::unordered_map<std::string, int> index_names_map;
+        std::vector<int> index_offsets;
+        index_offsets.reserve(max_match_col_count_);
+        int offset = 0;
         for (int id = 0; id < max_match_col_count_; ++id) {
             const auto &col = index_meta_.cols[id];
             index_names_map.emplace(col.name, id);
+            index_offsets.push_back(offset);
+            offset += col.len;
         }
 
         for (size_t id = 0; id < index_meta_.cols.size(); ++id) {
-            int offset = index_meta_.cols[id].offset;
+            int offset = index_offsets[id];
             int col_len = index_meta_.cols[id].len;
             ColType col_type = index_meta_.cols[id].type;
             inject_max_value(up_key + offset, col_type, col_len);
@@ -103,7 +108,7 @@ public:
                 if (iter == index_names_map.end()) {
                     continue; // 如果条件不涉及索引列，跳过
                 }
-                int offset = index_meta_.cols[iter->second].offset;
+                int offset = index_offsets[iter->second];
                 int col_len = index_meta_.cols[iter->second].len;
                 auto& rhs_val = cond.rhs_val;
                 ColType col_type = index_meta_.cols[iter->second].type;
