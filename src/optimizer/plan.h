@@ -61,22 +61,35 @@ public:
 class ScanPlan : public Plan
 {
 public:
-    ScanPlan(PlanTag tag, SmManager *sm_manager, const std::string &tab_name, const std::vector<Condition> &conds, const IndexMeta &index_meta)
-        : Plan(tag), tab_name_(std::move(tab_name)), conds_(std::move(conds)), index_meta_(index_meta)
+    ScanPlan(PlanTag tag, SmManager *sm_manager, const std::string &tab_name, const std::vector<Condition> &conds)
+        : Plan(tag), tab_name_(std::move(tab_name)), fed_conds_(std::move(conds))
     {
         TabMeta &tab = sm_manager->db_.get_table(tab_name_);
         cols_ = tab.cols;
         len_ = cols_.back().offset + cols_.back().len;
-        fed_conds_ = conds_;
+        // fed_conds_ = conds_;
     }
+
+    ScanPlan(PlanTag tag, SmManager *sm_manager, const std::string &tab_name, const std::vector<Condition> &conds, 
+        const IndexMeta &index_meta, int max_match_col_count)
+        : Plan(tag), tab_name_(std::move(tab_name)), fed_conds_(std::move(conds)), index_meta_(index_meta), 
+        max_match_col_count_(max_match_col_count)
+    {
+        TabMeta &tab = sm_manager->db_.get_table(tab_name_);
+        cols_ = tab.cols;
+        len_ = cols_.back().offset + cols_.back().len;
+        // fed_conds_ = conds_;
+    }
+
     ~ScanPlan() {}
     // 以下变量同ScanExecutor中的变量
     std::string tab_name_;
     std::vector<ColMeta> cols_;
-    std::vector<Condition> conds_;
+    // std::vector<Condition> conds_;
     size_t len_;
     std::vector<Condition> fed_conds_;
     IndexMeta index_meta_;
+    int max_match_col_count_;
 };
 
 class JoinPlan : public Plan

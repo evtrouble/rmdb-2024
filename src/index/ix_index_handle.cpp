@@ -714,6 +714,7 @@ Iid IxIndexHandle::upper_bound(const char *key)
     }
     else
         ret = Iid{.page_no = node.get_page_no(), .slot_no = key_idx};
+    std::cout<<key_idx<<std::endl;
     unlock_shared(node);
     return ret;
 }

@@ -92,29 +92,7 @@ struct Value
             memset(raw->data + str_val.size(), 0, len - str_val.size());
         }
     }
-    void export_val(char *dest, int len)
-    {
-        if (type == TYPE_INT)
-        {
-            assert(len == sizeof(int));
-            *(int *)(dest) = int_val;
-        }
-        else if (type == TYPE_FLOAT)
-        {
-            assert(len == sizeof(float));
-            *(float *)(dest) = std::round(float_val * multiplier) / multiplier;
-        }
-        else if (type == TYPE_STRING)
-        {
-            if (len < (int)str_val.size())
-            {
-                throw StringOverflowError();
-            }
-            memcpy(dest, str_val.c_str(), str_val.size());
-            memset(dest + str_val.size(), 0, len - str_val.size());
-        }
-    }
-
+    
     bool operator<(const Value &other) const
     {
         assert(type == other.type);
@@ -150,24 +128,20 @@ struct Value
         return false;
     }
 
-    bool operator!=(const Value &other) const
-    {
-        return !(*this == other);
+    bool operator>=(const Value &other) const {
+        return !(*this < other);
     }
 
-    bool operator<=(const Value &other) const
-    {
+    bool operator<=(const Value &other) const {
         return (*this < other) || (*this == other);
     }
 
-    bool operator>(const Value &other) const
-    {
+    bool operator>(const Value &other) const {
         return !(*this <= other);
     }
 
-    bool operator>=(const Value &other) const
-    {
-        return !(*this < other);
+    bool operator!=(const Value &other) const {
+        return !(*this == other);
     }
 
     void set_max(ColType type, int len)
@@ -208,7 +182,7 @@ struct Value
             break;
         }
     }
-    Value() {};
+    Value() = default;
 };
 // 在 std 命名空间中特化 hash<Value>
 namespace std

@@ -196,7 +196,7 @@ public:
             //     }
             // }
 
-            return std::make_unique<SeqScanExecutor>(sm_manager_, x->tab_name_, x->conds_, context);
+            return std::make_unique<SeqScanExecutor>(sm_manager_, x->tab_name_, x->fed_conds_, context);
         }
         case PlanTag::T_IndexScan:
         {
@@ -219,7 +219,8 @@ public:
             //         throw RMDBError("Scalar subquery result size is not 1");
             //     }
             // }
-            return std::make_unique<IndexScanExecutor>(sm_manager_, x->tab_name_, x->conds_, x->index_meta_, context);
+            return std::make_unique<IndexScanExecutor>(sm_manager_, x->tab_name_, x->fed_conds_, x->index_meta_, 
+                x->max_match_col_count_, context);
         }
         case PlanTag::T_NestLoop:
         {

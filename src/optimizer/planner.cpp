@@ -30,13 +30,13 @@ static const std::map<CompOp, CompOp> swap_op = {
     {OP_GE, OP_LE},
 };
 // 目前的索引匹配规则为：完全匹配索引字段，且全部为单点查询，不会自动调整where条件的顺序
-IndexMeta *Planner::get_index_cols(const std::string &tab_name, const std::vector<Condition> &curr_conds)
+std::pair<IndexMeta*, int> Planner::get_index_cols(const std::string &tab_name, const std::vector<Condition> &curr_conds)
 {
     // 获取表格对象
     auto &tab = sm_manager_->db_.get_table(tab_name);
     // 如果表格没有索引，返回false
     if (tab.indexes.empty())
-        return nullptr;
+        std::make_pair(nullptr, -1);
 
     // 用于存储条件列的集合
     std::unordered_map<std::string, bool> conds_cols_;
@@ -44,7 +44,7 @@ IndexMeta *Planner::get_index_cols(const std::string &tab_name, const std::vecto
     for (const auto &cond : curr_conds)
     {
         // 如果条件是列与值比较，并且操作符不是不等于，并且列属于当前表格
-        if (cond.is_rhs_val && cond.lhs_col.tab_name == tab_name && cond.op != CompOp::OP_NE)
+        if (cond.is_rhs_val/* && cond.lhs_col.tab_name == tab_name*/ && cond.op != CompOp::OP_NE)
         {
             // 将列名加入集合
             auto iter = conds_cols_.try_emplace(cond.lhs_col.col_name, false).first;
@@ -79,8 +79,8 @@ IndexMeta *Planner::get_index_cols(const std::string &tab_name, const std::vecto
     }
 
     if (matched_index_number != -1)
-        return &tab.indexes[matched_index_number];
-    return nullptr;
+        return std::make_pair(&tab.indexes[matched_index_number], max_match_col_count);
+    return std::make_pair(nullptr, -1);
 }
 
 /**
@@ -99,7 +99,7 @@ std::vector<Condition> pop_conds(std::vector<Condition> &conds, std::string &tab
     auto right = conds.end();
     auto check = [&](const Condition &cond)
     {
-        std::string s = cond.lhs_col.tab_name;
+        // std::string s = cond.lhs_col.tab_name;
         return (tab_names.compare(cond.lhs_col.tab_name) == 0 && cond.is_rhs_val) ||
                (cond.lhs_col.tab_name.compare(cond.rhs_col.tab_name) == 0)/* || (tab_names == cond.lhs_col.tab_name && cond.is_subquery)*/;
     };
@@ -220,16 +220,16 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
     {
         auto curr_conds = pop_conds(query->conds, tables[i]);
         // int index_no = get_indexNo(tables[i], curr_conds);
-        auto index_meta = get_index_cols(tables[i], curr_conds);
+        auto [index_meta, max_match_col_count] = get_index_cols(tables[i], curr_conds);
         if (index_meta == nullptr)
         { // 该表没有索引
             table_scan_executors[i] =
-                std::make_shared<ScanPlan>(T_SeqScan, sm_manager_, tables[i], curr_conds, IndexMeta());
+                std::make_shared<ScanPlan>(T_SeqScan, sm_manager_, tables[i], curr_conds);
         }
         else
         { // 存在索引
             table_scan_executors[i] =
-                std::make_shared<ScanPlan>(T_IndexScan, sm_manager_, tables[i], curr_conds, *index_meta);
+                std::make_shared<ScanPlan>(T_IndexScan, sm_manager_, tables[i], curr_conds, *index_meta, max_match_col_count);
         }
     }
     // 只有一个表，不需要join。
@@ -476,17 +476,17 @@ std::shared_ptr<Plan> Planner::do_planner(std::shared_ptr<Query> query, Context 
         std::shared_ptr<Plan> table_scan_executors;
         // 只有一张表，不需要进行物理优化了
         // int index_no = get_indexNo(x->tab_name, query->conds);
-        auto index_meta = get_index_cols(x->tab_name, query->conds);
+       auto [index_meta, max_match_col_count] = get_index_cols(x->tab_name, query->conds);
 
         if (index_meta == nullptr)
         { // 该表没有索引
             table_scan_executors =
-                std::make_shared<ScanPlan>(T_SeqScan, sm_manager_, x->tab_name, query->conds, IndexMeta());
+                std::make_shared<ScanPlan>(T_SeqScan, sm_manager_, x->tab_name, query->conds);
         }
         else
         { // 存在索引
             table_scan_executors =
-                std::make_shared<ScanPlan>(T_IndexScan, sm_manager_, x->tab_name, query->conds, *index_meta);
+                std::make_shared<ScanPlan>(T_IndexScan, sm_manager_, x->tab_name, query->conds, *index_meta, max_match_col_count);
         }
 
         return std::make_shared<DMLPlan>(T_Delete, table_scan_executors, x->tab_name,
@@ -499,17 +499,17 @@ std::shared_ptr<Plan> Planner::do_planner(std::shared_ptr<Query> query, Context 
         std::shared_ptr<Plan> table_scan_executors;
         // 只有一张表，不需要进行物理优化了
         // int index_no = get_indexNo(x->tab_name, query->conds);
-        auto index_meta = get_index_cols(x->tab_name, query->conds);
+        auto [index_meta, max_match_col_count] = get_index_cols(x->tab_name, query->conds);
 
         if (index_meta == nullptr)
         { // 该表没有索引
             table_scan_executors =
-                std::make_shared<ScanPlan>(T_SeqScan, sm_manager_, x->tab_name, query->conds, IndexMeta());
+                std::make_shared<ScanPlan>(T_SeqScan, sm_manager_, x->tab_name, query->conds);
         }
         else
         { // 存在索引
             table_scan_executors =
-                std::make_shared<ScanPlan>(T_IndexScan, sm_manager_, x->tab_name, query->conds, *index_meta);
+                std::make_shared<ScanPlan>(T_IndexScan, sm_manager_, x->tab_name, query->conds, *index_meta, max_match_col_count);
         }
         return std::make_shared<DMLPlan>(T_Update, table_scan_executors, x->tab_name,
                                          std::vector<Value>(), query->conds,

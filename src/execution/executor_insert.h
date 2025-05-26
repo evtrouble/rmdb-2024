@@ -59,7 +59,7 @@ public:
             if (col.type != val.type) {
                 throw IncompatibleTypeError(coltype2str(col.type), coltype2str(val.type));
             }
-            val.export_val(rec.data + col.offset, col.len);
+            memcpy(rec.data + col.offset, val.raw->data, col.len);
         }
 
         // Insert into record file
