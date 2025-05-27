@@ -208,7 +208,7 @@ public:
                 }
             }
             for (size_t i = 0; i < sel_cols_.size(); ++i) {
-                memcpy(record.data + offset, agg_values[i].raw->data, output_cols_[i].len);
+                agg_values[i].export_val(record.data + offset, output_cols_[i].len);
                 offset += output_cols_[i].len;
             }
             results_.emplace_back(std::move(record));   
