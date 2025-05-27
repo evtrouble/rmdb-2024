@@ -38,17 +38,17 @@ private:
     std::vector<RmRecord>::iterator result_it_; // 结果迭代器
     // 用于跟踪 AVG 聚合的中间状态
     struct AvgState {
-        float sum;// 可能丢失精度
-        int count;
+        double sum = 0.0;// 可能丢失精度
+        int count = 0;
     };
     std::unordered_map<std::string, std::vector<AvgState>> avg_states_; // 分组键 -> AVG状态数组
     std::unordered_map<std::string, std::vector<AvgState>> having_lhs_avg_states_; // HAVING左AVG状态
     std::unordered_map<std::string, std::vector<AvgState>> having_rhs_avg_states_; // HAVING右AVG状态
 
-    void avg_calculate(std::vector<TabCol> sel_cols, std::vector<AvgState> avg_states, std::vector<Value> &agg_values);
+    void avg_calculate(const std::vector<TabCol>& sel_cols, std::vector<AvgState> avg_states, std::vector<Value> &agg_values);
 
-    void init(std::vector<Value> &agg_values, std::vector<TabCol> sel_cols_, const RmRecord &record);
-    void aggregate_values(std::vector<Value> &agg_values, std::vector<AvgState> &avg_states, const std::vector<TabCol> sel_cols_, const std::vector<std::vector<ColMeta>::const_iterator> sel_col_metas_, const RmRecord &record);
+    void init(std::vector<Value> &agg_values, const std::vector<TabCol>& sel_cols_, const RmRecord &record);
+    void aggregate_values(std::vector<Value> &agg_values, std::vector<AvgState> &avg_states, const std::vector<TabCol>& sel_cols_, const std::vector<std::vector<ColMeta>::const_iterator>& sel_col_metas_, const RmRecord &record);
     void aggregate(const RmRecord &record);                             // 聚合计算
     std::string get_group_key(const RmRecord &record);                  // 获取分组键
     bool check_having_conditions(const std::vector<Value> &having_lhs_agg_values, const std::vector<Value> &having_rhs_agg_values);// 判断having
@@ -264,7 +264,7 @@ public:
     ExecutionType type() const override { return ExecutionType::Agg;  }
 };
 
-void AggExecutor::avg_calculate(std::vector<TabCol> sel_cols, std::vector<AvgState> avg_states, std::vector<Value>& agg_values){
+void AggExecutor::avg_calculate(const std::vector<TabCol>& sel_cols, std::vector<AvgState> avg_states, std::vector<Value>& agg_values){
     for (size_t i = 0; i < sel_cols.size(); ++i) {
         if (sel_cols[i].aggFuncType == ast::AggFuncType::AVG) {
             auto &state = avg_states[i];
@@ -276,7 +276,7 @@ void AggExecutor::avg_calculate(std::vector<TabCol> sel_cols, std::vector<AvgSta
     }
 }
 
-void AggExecutor::init(std::vector<Value> &agg_values, const std::vector<TabCol> sel_cols_, const RmRecord &record){
+void AggExecutor::init(std::vector<Value> &agg_values, const std::vector<TabCol>& sel_cols_, const RmRecord &record){
     for (size_t i = 0; i < sel_cols_.size(); ++i) {
         auto agg_type = sel_cols_[i].aggFuncType;
         if (ast::AggFuncType::COUNT == agg_type) {
@@ -321,7 +321,7 @@ void AggExecutor::init(std::vector<Value> &agg_values, const std::vector<TabCol>
     }
 }
 
-void AggExecutor::aggregate_values(std::vector<Value> &agg_values, std::vector<AvgState> &avg_states, const std::vector<TabCol> sel_cols_, const std::vector<std::vector<ColMeta>::const_iterator> sel_col_metas_,const RmRecord &record){
+void AggExecutor::aggregate_values(std::vector<Value> &agg_values, std::vector<AvgState> &avg_states, const std::vector<TabCol>& sel_cols_, const std::vector<std::vector<ColMeta>::const_iterator>& sel_col_metas_,const RmRecord &record){
     for (size_t i = 0; i < sel_cols_.size(); ++i) {
         auto agg_type = sel_cols_[i].aggFuncType;
         // GROUP BY 列不需要更新
@@ -368,9 +368,9 @@ void AggExecutor::aggregate_values(std::vector<Value> &agg_values, std::vector<A
                 break;
             case ast::AggFuncType::AVG:
                 if (TYPE_INT == value.type) {
-                    avg_states[i].sum += static_cast<float>(value.int_val);
+                    avg_states[i].sum += static_cast<double>(value.int_val);
                 } else if (TYPE_FLOAT == value.type) {
-                    avg_states[i].sum += value.float_val;
+                    avg_states[i].sum += static_cast<double>(value.float_val);
                 }
                 ++avg_states[i].count;
                 break;
