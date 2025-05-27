@@ -49,7 +49,8 @@ namespace ast
         SUM,
         COUNT,
         MAX,
-        MIN
+        MIN,
+        AVG
     };
     enum OrderByDir
     {

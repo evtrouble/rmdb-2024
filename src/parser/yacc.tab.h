@@ -35,8 +35,8 @@
    especially those whose name start with YY_ or yy_.  They are
    private implementation details that can be changed or removed.  */
 
-#ifndef YY_YY_HOME_GYL_CPP_DB2025_SRC_PARSER_YACC_TAB_H_INCLUDED
-# define YY_YY_HOME_GYL_CPP_DB2025_SRC_PARSER_YACC_TAB_H_INCLUDED
+#ifndef YY_YY_YACC_TAB_H_INCLUDED
+# define YY_YY_YACC_TAB_H_INCLUDED
 /* Debug traces.  */
 #ifndef YYDEBUG
 # define YYDEBUG 0
@@ -96,17 +96,18 @@ extern int yydebug;
     COUNT = 297,                   /* COUNT  */
     MAX = 298,                     /* MAX  */
     MIN = 299,                     /* MIN  */
-    AS = 300,                      /* AS  */
-    LEQ = 301,                     /* LEQ  */
-    NEQ = 302,                     /* NEQ  */
-    GEQ = 303,                     /* GEQ  */
-    T_EOF = 304,                   /* T_EOF  */
-    IDENTIFIER = 305,              /* IDENTIFIER  */
-    VALUE_STRING = 306,            /* VALUE_STRING  */
-    VALUE_PATH = 307,              /* VALUE_PATH  */
-    VALUE_INT = 308,               /* VALUE_INT  */
-    VALUE_FLOAT = 309,             /* VALUE_FLOAT  */
-    VALUE_BOOL = 310               /* VALUE_BOOL  */
+    AVG = 300,                     /* AVG  */
+    AS = 301,                      /* AS  */
+    LEQ = 302,                     /* LEQ  */
+    NEQ = 303,                     /* NEQ  */
+    GEQ = 304,                     /* GEQ  */
+    T_EOF = 305,                   /* T_EOF  */
+    IDENTIFIER = 306,              /* IDENTIFIER  */
+    VALUE_STRING = 307,            /* VALUE_STRING  */
+    VALUE_PATH = 308,              /* VALUE_PATH  */
+    VALUE_INT = 309,               /* VALUE_INT  */
+    VALUE_FLOAT = 310,             /* VALUE_FLOAT  */
+    VALUE_BOOL = 311               /* VALUE_BOOL  */
   };
   typedef enum yytokentype yytoken_kind_t;
 #endif
@@ -133,4 +134,4 @@ struct YYLTYPE
 int yyparse (void);
 
 
-#endif /* !YY_YY_HOME_GYL_CPP_DB2025_SRC_PARSER_YACC_TAB_H_INCLUDED  */
+#endif /* !YY_YY_YACC_TAB_H_INCLUDED  */

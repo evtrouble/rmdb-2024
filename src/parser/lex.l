@@ -95,6 +95,7 @@ value_path [\.|\/][^ \t]+\.csv
 "COUNT" { return COUNT; }
 "MAX" { return MAX; }
 "MIN" { return MIN; }
+"AVG" { return AVG; }
 "AS" { return AS; }
 "ENABLE_NESTLOOP" { return ENABLE_NESTLOOP; }
 "ENABLE_SORTMERGE" { return ENABLE_SORTMERGE; }

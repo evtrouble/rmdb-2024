@@ -32,7 +32,7 @@ using namespace ast;
 // keywords
 %token SHOW TABLES CREATE TABLE DROP DESC INSERT INTO VALUES DELETE FROM ASC ORDER GROUP BY HAVING
 WHERE UPDATE SET SELECT INT CHAR FLOAT DATETIME INDEX AND JOIN IN NOT EXIT HELP TXN_BEGIN TXN_COMMIT TXN_ABORT TXN_ROLLBACK ORDER_BY ENABLE_NESTLOOP ENABLE_SORTMERGE
-SUM COUNT MAX MIN AS
+SUM COUNT MAX MIN AVG AS
 // non-keywords
 %token LEQ NEQ GEQ T_EOF
 
@@ -326,6 +326,10 @@ aggCol:
     |   MAX '(' col ')'
     {
         $$ = std::make_shared<Col>($3->tab_name, $3->col_name, AggFuncType::MAX);
+    }
+    |   AVG '(' col ')'
+    {
+        $$ = std::make_shared<Col>($3->tab_name, $3->col_name, AggFuncType::AVG);
     }
     |   COUNT '(' col ')'
     {

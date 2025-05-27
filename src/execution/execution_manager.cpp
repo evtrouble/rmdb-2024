@@ -176,6 +176,8 @@ std::string makeAggFuncCaptions(const TabCol &sel_col)
         return "MAX(" + sel_col.col_name + ")";
     case ast::AggFuncType::MIN:
         return "MIN(" + sel_col.col_name + ")";
+    case ast::AggFuncType::AVG:
+        return "AVG(" + sel_col.col_name + ")";
     default:
         throw RMDBError();
     }
