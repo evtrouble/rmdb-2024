@@ -30,7 +30,7 @@ using namespace ast;
 %define parse.error verbose
 
 // keywords
-%token SHOW TABLES CREATE TABLE DROP DESC INSERT INTO VALUES DELETE FROM ASC ORDER GROUP BY HAVING
+%token SHOW TABLES CREATE TABLE DROP DESC INSERT INTO VALUES DELETE FROM ASC ORDER GROUP BY HAVING LIMIT
 WHERE UPDATE SET SELECT INT CHAR FLOAT DATETIME INDEX AND JOIN IN NOT EXIT HELP TXN_BEGIN TXN_COMMIT TXN_ABORT TXN_ROLLBACK ORDER_BY ENABLE_NESTLOOP ENABLE_SORTMERGE
 SUM COUNT MAX MIN AVG AS
 // non-keywords
@@ -60,6 +60,7 @@ SUM COUNT MAX MIN AVG AS
 %type <sv_cond> condition
 %type <sv_conds> whereClause optWhereClause opt_having_clause
 %type <sv_orderby>  order_clause opt_order_clause
+%type <sv_int> opt_limit_clause
 %type <sv_orderby_dir> opt_asc_desc
 %type <sv_setKnobType> set_knob_type
 
@@ -168,9 +169,9 @@ dml:
     {
         $$ = std::make_shared<UpdateStmt>($2, $4, $5);
     }
-    |   SELECT selector FROM tableList optWhereClause opt_groupby_clause opt_having_clause opt_order_clause
+    |   SELECT selector FROM tableList optWhereClause opt_groupby_clause opt_having_clause opt_order_clause opt_limit_clause
     {
-        $$ = std::make_shared<SelectStmt>($2, $4, $5, $6, $7, $8);
+        $$ = std::make_shared<SelectStmt>($2, $4, $5, $6, $7, $8, $9);
     }
     ;
 
@@ -445,6 +446,17 @@ opt_order_clause:
         $$ = $3;
     }
     |   /* epsilon */ { /* ignore*/ }
+    ;
+
+opt_limit_clause:
+    LIMIT VALUE_INT
+    {
+        $$ = $2;
+    }
+    |   /* epsilon */ 
+    {
+        $$ = -1;
+    }
     ;
 
 opt_groupby_clause:

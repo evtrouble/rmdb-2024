@@ -124,12 +124,13 @@ public:
 class SortPlan : public Plan
 {
 public:
-    SortPlan(PlanTag tag, std::shared_ptr<Plan> subplan, const TabCol &sel_col, bool is_desc)
-        : Plan(tag), subplan_(std::move(subplan)), sel_col_(std::move(sel_col)), is_desc_(is_desc) {}
+    SortPlan(PlanTag tag, std::shared_ptr<Plan> subplan, const TabCol &sel_col, bool is_desc, int limit = -1)
+        : Plan(tag), subplan_(std::move(subplan)), sel_col_(std::move(sel_col)), is_desc_(is_desc), limit_(limit){}
     ~SortPlan() {}
     std::shared_ptr<Plan> subplan_;
     TabCol sel_col_;
     bool is_desc_;
+    int limit_;
 };
 
 // dml语句，包括insert; delete; update; select语句　

@@ -91,6 +91,7 @@ value_path [\.|\/][^ \t]+\.csv
 "BY" {  return BY;  }
 "HAVING" { return HAVING; }
 "ASC" { return ASC; }
+"LIMIT" { return LIMIT; }
 "SUM" { return SUM; }
 "COUNT" { return COUNT; }
 "MAX" { return MAX; }

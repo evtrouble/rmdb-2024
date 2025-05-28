@@ -39,6 +39,8 @@ public:
     std::vector<TabCol> groupby;
     // having条件
     std::vector<Condition> having_conds;
+    // limit条件
+    int limit = -1;
     Query() {}
 };
 

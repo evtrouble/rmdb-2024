@@ -349,19 +349,23 @@ namespace ast
         bool has_groupby;
         bool has_having;
         bool has_sort;
+        bool has_limit;
         std::shared_ptr<OrderBy> order;
+        int limit = -1;
 
         SelectStmt(const std::vector<std::shared_ptr<Col>> &cols_,
                    const std::vector<std::string> &tabs_,
                    const std::vector<std::shared_ptr<BinaryExpr>> &conds_,
                    std::vector<std::shared_ptr<Col>> groupby_,
                    std::vector<std::shared_ptr<BinaryExpr>> having_conds_,
-                   std::shared_ptr<OrderBy> order_) : cols(std::move(cols_)), tabs(std::move(tabs_)), conds(std::move(conds_)),
-                                                      groupby(std::move(groupby_)), having_conds(std::move(having_conds_)), order(std::move(order_))
+                   std::shared_ptr<OrderBy> order_,
+                   int limit_ = -1) : cols(std::move(cols_)), tabs(std::move(tabs_)), conds(std::move(conds_)),
+                                                      groupby(std::move(groupby_)), having_conds(std::move(having_conds_)), order(std::move(order_)),limit(limit_)
         {
             has_sort = (bool)order;
             has_groupby = (!groupby.empty());
             has_having = (!having_conds.empty());
+            has_limit = (limit_ != -1);
         }
         TreeNodeType Nodetype() const override { return TreeNodeType::SelectStmt; }
     };

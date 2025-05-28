@@ -20,6 +20,8 @@ private:
     std::unique_ptr<AbstractExecutor> prev_;
     ColMeta cols_;                              // 框架中只支持一个键排序，需要自行修改数据结构支持多个键排序
     bool is_desc_;
+    int limit_;                                 // LIMIT 限制
+    size_t output_count_;                       // 记录已输出的记录数
     std::string temp_dir_;                      // 临时文件目录
     size_t block_size_;                         // 每个块的大小（以字节为单位）
     Context* context_;
@@ -122,7 +124,7 @@ private:
                 }
                 throw RMDBError("Failed to open block file for reading: " + block_file);
             }
-            block_files.push_back(fp);
+            block_files.emplace_back(fp);
         }
 
         // 定义比较器
@@ -152,7 +154,7 @@ private:
 
         // 归并排序
         sorted_tuples_.clear();
-        while (!min_heap.empty()) {
+        while (!min_heap.empty() && (limit_ == -1 || sorted_tuples_.size() < static_cast<size_t>(limit_))) {
             auto top_pair = std::move(const_cast<std::pair<std::unique_ptr<RmRecord>, size_t>&>(min_heap.top()));
             min_heap.pop();
             sorted_tuples_.emplace_back(std::move(top_pair.first));
@@ -184,8 +186,8 @@ private:
 
 public:
     SortExecutor(std::unique_ptr<AbstractExecutor> prev, const TabCol &sel_cols, 
-    bool is_desc, Context* context, size_t block_size = 8192) 
-        : prev_(std::move(prev)), is_desc_(is_desc),block_size_(block_size), context_(context) {
+    bool is_desc, int limit, Context* context, size_t block_size = 8192) 
+        : prev_(std::move(prev)), is_desc_(is_desc), limit_(limit), output_count_(0), block_size_(block_size), context_(context) {
         txn_id_t txn_id = context_->txn_->get_transaction_id();
         temp_dir_ = "/tmp/rmdb_sort_" + std::to_string(txn_id);
         cols_ = *get_col(prev_->cols(), sel_cols);
@@ -196,6 +198,7 @@ public:
     }
 
     void beginTuple() override { 
+        output_count_ = 0;
         current_index_ = 0;
         if (!sorted_tuples_.empty())
             return;
@@ -223,6 +226,9 @@ public:
                         Value val_b = get_col_value(*b, cols_);
                         return is_desc_ ? (val_a >= val_b) : (val_a < val_b);
                     });
+                if (limit_ != -1 && sorted_tuples_.size() > static_cast<size_t>(limit_)) {
+                    sorted_tuples_.resize(limit_);
+                }
             } 
             // 否则需要继续读取剩余数据并切换到外部排序
             else {
@@ -236,6 +242,7 @@ public:
 
     void nextTuple() override {
         if (current_index_ < sorted_tuples_.size()) {
+            ++output_count_;
             ++current_index_;
         }
     }
@@ -249,7 +256,11 @@ public:
 
     Rid &rid() override { return _abstract_rid; }
 
-    bool is_end() const override { return sorted_tuples_.empty() || current_index_ >= sorted_tuples_.size(); }
+    bool is_end() const override {
+        return sorted_tuples_.empty() || 
+               current_index_ >= sorted_tuples_.size() || 
+               (limit_ != -1 && output_count_ >= static_cast<size_t>(limit_));
+        }
     
     const std::vector<ColMeta> &cols() const override { return prev_->cols(); }
 

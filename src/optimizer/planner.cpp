@@ -372,6 +372,7 @@ std::shared_ptr<Plan> Planner::generate_agg_plan(const std::shared_ptr<Query> &q
 }
 std::shared_ptr<Plan> Planner::generate_sort_plan(std::shared_ptr<Query> query, std::shared_ptr<Plan> plan)
 {
+    int limit = -1;
     auto x = std::static_pointer_cast<ast::SelectStmt>(query->parse);
     std::vector<std::string> &tables = query->tables;
     if (!x->has_sort || tables.size() > 1)
@@ -391,8 +392,11 @@ std::shared_ptr<Plan> Planner::generate_sort_plan(std::shared_ptr<Query> query, 
         if (col.name.compare(x->order->cols->col_name) == 0)
             sel_col = TabCol(col.tab_name, col.name);
     }
+    if(x->has_limit){
+        limit = x->limit;
+    }
     return std::make_shared<SortPlan>(T_Sort, std::move(plan), sel_col,
-                                      x->order->orderby_dir == ast::OrderBy_DESC);
+                                      x->order->orderby_dir == ast::OrderBy_DESC, limit);
 }
 
 /**

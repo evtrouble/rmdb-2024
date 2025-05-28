@@ -14,6 +14,7 @@ See the Mulan PSL v2 for more details. */
 #include <unordered_map>
 #include "executor_abstract.h"
 #include "../parser/ast.h"
+#include <iomanip>
 
 class AggExecutor : public AbstractExecutor {
 private:
@@ -269,8 +270,18 @@ void AggExecutor::avg_calculate(const std::vector<TabCol>& sel_cols, std::vector
         if (sel_cols[i].aggFuncType == ast::AggFuncType::AVG) {
             auto &state = avg_states[i];
             if (state.count > 0) {
+                float a = state.sum / state.count;
+                double b = state.sum / state.count;
+                float c = static_cast<float>(b);
+                double rounded = std::round(b * 1e6) / 1e6;
+                float d = static_cast<float>(rounded);
                 agg_values[i].type = TYPE_FLOAT;
                 agg_values[i].set_float(static_cast<float>(state.sum / state.count));
+                std::cout<<std::fixed << std::setprecision(6) <<"float" <<a << std::endl;
+                std::cout<<std::fixed << std::setprecision(6) << "double"<<b << std::endl;
+                std::cout<<std::fixed << std::setprecision(6) << "d->f"<<c << std::endl;
+                std::cout<<std::fixed << std::setprecision(6) << "d四舍五入"<<rounded << std::endl;
+                std::cout<<std::fixed << std::setprecision(6) << "d四舍五入->f"<<d << std::endl;
             }
         }
     }
