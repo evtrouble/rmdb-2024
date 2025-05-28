@@ -124,11 +124,16 @@ public:
 class SortPlan : public Plan
 {
 public:
-    SortPlan(PlanTag tag, std::shared_ptr<Plan> subplan, const TabCol &sel_col, bool is_desc, int limit = -1)
-        : Plan(tag), subplan_(std::move(subplan)), sel_col_(std::move(sel_col)), is_desc_(is_desc), limit_(limit){}
+    SortPlan(PlanTag tag, std::shared_ptr<Plan> subplan, const TabCol& sel_col, bool is_desc, int limit = -1)
+        : Plan(tag), subplan_(std::move(subplan)), is_desc_(is_desc), limit_(limit)
+    {
+        sel_cols_.emplace_back(sel_col);
+    }
+    SortPlan(PlanTag tag, std::shared_ptr<Plan> subplan, const std::vector<TabCol>& sel_cols, bool is_desc, int limit = -1)
+        : Plan(tag), subplan_(std::move(subplan)), sel_cols_(std::move(sel_cols)), is_desc_(is_desc), limit_(limit){}
     ~SortPlan() {}
     std::shared_ptr<Plan> subplan_;
-    TabCol sel_col_;
+    std::vector<TabCol> sel_cols_;
     bool is_desc_;
     int limit_;
 };

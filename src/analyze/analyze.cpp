@@ -177,35 +177,37 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
         }
         // 处理ORDER BY
         if (x->order) {
-            // 检查ORDER BY列是否有效
-            TabCol order_col = {x->order->cols->tab_name, x->order->cols->col_name};
-            order_col = check_column(all_cols, order_col);
-            
-            // 检查ORDER BY列是否在SELECT列表中
-            bool found_in_select = false;
-            for (const auto& sel_col : query->cols) {
-                if (order_col.col_name == sel_col.col_name) {
-                    found_in_select = true;
-                    break;
-                }
-            }
-            if (!found_in_select) {
-                throw RMDBError("ORDER BY column '" + order_col.col_name + 
-                            "' must appear in the SELECT list");
-            }
-
-            // 检查ORDER BY列是否在GROUP BY中（如果有GROUP BY）
-            if (x->has_groupby) {
-                bool found_in_groupby = false;
-                for (const auto& group_col : query->groupby) {
-                    if (order_col.col_name == group_col.col_name) {
-                        found_in_groupby = true;
+            for (auto& col : x->order->cols) {
+                // 检查ORDER BY列是否有效
+                TabCol order_col = {col->tab_name, col->col_name};
+                order_col = check_column(all_cols, order_col);
+                
+                // 检查ORDER BY列是否在SELECT列表中
+                bool found_in_select = false;
+                for (const auto& sel_col : query->cols) {
+                    if (order_col.col_name == sel_col.col_name) {
+                        found_in_select = true;
                         break;
                     }
                 }
-                if (!found_in_groupby) {
+                if (!found_in_select) {
                     throw RMDBError("ORDER BY column '" + order_col.col_name + 
-                                "' must appear in the GROUP BY clause");
+                                "' must appear in the SELECT list");
+                }
+
+                // 检查ORDER BY列是否在GROUP BY中（如果有GROUP BY）
+                if (x->has_groupby) {
+                    bool found_in_groupby = false;
+                    for (const auto& group_col : query->groupby) {
+                        if (order_col.col_name == group_col.col_name) {
+                            found_in_groupby = true;
+                            break;
+                        }
+                    }
+                    if (!found_in_groupby) {
+                        throw RMDBError("ORDER BY column '" + order_col.col_name + 
+                                    "' must appear in the GROUP BY clause");
+                    }
                 }
             }
         }

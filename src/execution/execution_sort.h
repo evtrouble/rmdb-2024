@@ -18,7 +18,7 @@ See the Mulan PSL v2 for more details. */
 class SortExecutor : public AbstractExecutor {
 private:
     std::unique_ptr<AbstractExecutor> prev_;
-    ColMeta cols_;                              // 框架中只支持一个键排序，需要自行修改数据结构支持多个键排序
+    std::vector<ColMeta> sort_cols_;           // 改为存储多个排序列
     bool is_desc_;
     int limit_;                                 // LIMIT 限制
     size_t output_count_;                       // 记录已输出的记录数
@@ -33,6 +33,21 @@ private:
     std::ifstream current_block_stream_;        // 当前块的输入流
     std::unique_ptr<RmRecord> current_block_record_; // 当前块的当前记录
     
+    bool compareRecords(const RmRecord &a, const RmRecord &b) {
+        bool desc = is_desc_;
+        for (size_t i = 0; i < sort_cols_.size(); ++i) {
+            const auto &col_meta = sort_cols_[i];
+            
+            Value val_a = get_col_value(a, col_meta);
+            Value val_b = get_col_value(b, col_meta);
+            
+            if (val_a != val_b) {
+                return desc ? (val_a > val_b) : (val_a < val_b);
+            }
+            // 如果相等，继续比较下一列
+        }
+        return false; // 所有列都相等
+    }
 
     Value get_col_value(const RmRecord &record, const ColMeta &col_meta) {
         Value value;
@@ -86,13 +101,7 @@ private:
     void sortAndWriteBlock(std::vector<std::unique_ptr<RmRecord>> &block) {
         std::sort(block.begin(), block.end(), 
             [this](const std::unique_ptr<RmRecord> &a, const std::unique_ptr<RmRecord> &b) {
-                Value val_a = get_col_value(*a, cols_);
-                Value val_b = get_col_value(*b, cols_);
-                if (is_desc_) {
-                    return val_a >= val_b;
-                } else {
-                    return val_a < val_b;
-                }
+                return compareRecords(*a, *b);
             });
 
         std::string block_file = temp_dir_ + "/block_" + std::to_string(sorted_blocks_.size()) + ".dat";
@@ -130,13 +139,7 @@ private:
         // 定义比较器
         auto comp = [this](const std::pair<std::unique_ptr<RmRecord>, size_t> &a, 
                         const std::pair<std::unique_ptr<RmRecord>, size_t> &b) {
-            Value val_a = get_col_value(*a.first, cols_);
-            Value val_b = get_col_value(*b.first, cols_);
-            if (is_desc_) {
-                return val_a < val_b;
-            } else {
-                return val_a >= val_b;
-            }
+            return !compareRecords(*a.first, *b.first);
         };
 
         // 使用自定义比较器初始化最小堆
@@ -185,12 +188,15 @@ private:
     }
 
 public:
-    SortExecutor(std::unique_ptr<AbstractExecutor> prev, const TabCol &sel_cols, 
+    SortExecutor(std::unique_ptr<AbstractExecutor> prev, const std::vector<TabCol> &sel_cols, 
     bool is_desc, int limit, Context* context, size_t block_size = 8192) 
         : prev_(std::move(prev)), is_desc_(is_desc), limit_(limit), output_count_(0), block_size_(block_size), context_(context) {
         txn_id_t txn_id = context_->txn_->get_transaction_id();
         temp_dir_ = "/tmp/rmdb_sort_" + std::to_string(txn_id);
-        cols_ = *get_col(prev_->cols(), sel_cols);
+        // 获取所有排序列的元数据
+        for (const auto &col : sel_cols) {
+            sort_cols_.emplace_back(*get_col(prev_->cols(), col));
+        }
         record_size = prev_->tupleLen();
         if (mkdir(temp_dir_.c_str(), 0700) != 0 && errno != EEXIST) {
             throw RMDBError("Unable to create temporary sorting directory: " + temp_dir_);
@@ -222,9 +228,7 @@ public:
             if (prev_->is_end()) {
                 std::sort(sorted_tuples_.begin(), sorted_tuples_.end(), 
                     [this](const auto& a, const auto& b) {
-                        Value val_a = get_col_value(*a, cols_);
-                        Value val_b = get_col_value(*b, cols_);
-                        return is_desc_ ? (val_a >= val_b) : (val_a < val_b);
+                        return compareRecords(*a, *b);
                     });
                 if (limit_ != -1 && sorted_tuples_.size() > static_cast<size_t>(limit_)) {
                     sorted_tuples_.resize(limit_);

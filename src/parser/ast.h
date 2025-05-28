@@ -288,9 +288,9 @@ namespace ast
 
     struct OrderBy : public TreeNode
     {
-        std::shared_ptr<Col> cols;
+        std::vector<std::shared_ptr<Col>> cols;
         OrderByDir orderby_dir;
-        OrderBy(std::shared_ptr<Col> cols_, OrderByDir orderby_dir_) : cols(std::move(cols_)), orderby_dir(std::move(orderby_dir_)) {}
+        OrderBy(std::vector<std::shared_ptr<Col>> cols_, OrderByDir orderby_dir_) : cols(std::move(cols_)), orderby_dir(std::move(orderby_dir_)) {}
         TreeNodeType Nodetype() const override { return TreeNodeType::OrderBy; }
     };
 

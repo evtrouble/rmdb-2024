@@ -386,16 +386,29 @@ std::shared_ptr<Plan> Planner::generate_sort_plan(std::shared_ptr<Query> query, 
         const auto &sel_tab_cols = sm_manager_->db_.get_table(sel_tab_name).cols;
         all_cols.insert(all_cols.end(), sel_tab_cols.begin(), sel_tab_cols.end());
     }
-    TabCol sel_col;
-    for (auto &col : all_cols)
-    {
-        if (col.name.compare(x->order->cols->col_name) == 0)
-            sel_col = TabCol(col.tab_name, col.name);
+    // 准备多列排序参数
+    std::vector<TabCol> sort_cols;
+
+    // 遍历所有排序列
+    for (auto &order_col : x->order->cols) {
+        // 查找匹配的列
+        bool found = false;
+        for (auto &col : all_cols) {
+            if (col.name.compare(order_col->col_name) == 0) {
+                sort_cols.emplace_back(col.tab_name, col.name);
+                found = true;
+                break;
+            }
+        }
+        
+        if (!found) {
+            throw RMDBError("Sort column not found: " + order_col->col_name);
+        }
     }
     if(x->has_limit){
         limit = x->limit;
     }
-    return std::make_shared<SortPlan>(T_Sort, std::move(plan), sel_col,
+    return std::make_shared<SortPlan>(T_Sort, std::move(plan), sort_cols,
                                       x->order->orderby_dir == ast::OrderBy_DESC, limit);
 }
 
