@@ -70,7 +70,7 @@ public:
                 col_meta = {col.tab_name, col.col_name, TYPE_INT, sizeof(int), offset, false};
                 sel_col_metas_.emplace_back(output_cols_.begin());
             }else if (ast::AggFuncType::AVG == col.aggFuncType) {
-                col_meta = {col.tab_name, col.col_name, TYPE_FLOAT, sizeof(float), offset, false};
+                col_meta = {col.tab_name, col.col_name, TYPE_STRING, 20, offset, false};
                 auto temp = get_col(child_executor_->cols(), col);
                 sel_col_metas_.emplace_back(temp);
             } else {
@@ -270,18 +270,12 @@ void AggExecutor::avg_calculate(const std::vector<TabCol>& sel_cols, std::vector
         if (sel_cols[i].aggFuncType == ast::AggFuncType::AVG) {
             auto &state = avg_states[i];
             if (state.count > 0) {
-                float a = state.sum / state.count;
                 double b = state.sum / state.count;
-                float c = static_cast<float>(b);
                 double rounded = std::round(b * 1e6) / 1e6;
-                float d = static_cast<float>(rounded);
-                agg_values[i].type = TYPE_FLOAT;
-                agg_values[i].set_float(static_cast<float>(state.sum / state.count));
-                std::cout<<std::fixed << std::setprecision(6) <<"float" <<a << std::endl;
-                std::cout<<std::fixed << std::setprecision(6) << "double"<<b << std::endl;
-                std::cout<<std::fixed << std::setprecision(6) << "d->f"<<c << std::endl;
-                std::cout<<std::fixed << std::setprecision(6) << "d四舍五入"<<rounded << std::endl;
-                std::cout<<std::fixed << std::setprecision(6) << "d四舍五入->f"<<d << std::endl;
+                std::string str = std::to_string(rounded);
+                agg_values[i].type = TYPE_STRING;
+                agg_values[i].set_str(str);
+                std::cout<<"string"<<str<<std::endl;
             }
         }
     }
@@ -292,7 +286,10 @@ void AggExecutor::init(std::vector<Value> &agg_values, const std::vector<TabCol>
         auto agg_type = sel_cols_[i].aggFuncType;
         if (ast::AggFuncType::COUNT == agg_type) {
             agg_values[i].set_int(0);
-        } else if (ast::AggFuncType::SUM == agg_type || ast::AggFuncType::MAX == agg_type || ast::AggFuncType::MIN == agg_type || ast::AggFuncType::AVG == agg_type) {
+        } else if (ast::AggFuncType::AVG == agg_type) {
+            agg_values[i].type = TYPE_STRING;
+            agg_values[i].set_str("0.0");
+        }else if (ast::AggFuncType::SUM == agg_type || ast::AggFuncType::MAX == agg_type || ast::AggFuncType::MIN == agg_type) {
             auto col = get_col(child_executor_->cols(), {sel_cols_[i].tab_name, sel_cols_[i].col_name});
             if (ast::AggFuncType::MIN == agg_type)
                 agg_values[i].set_max(col->type, col->len);
@@ -471,22 +468,40 @@ bool AggExecutor::check_having_conditions(const std::vector<Value> &having_lhs_a
     return true;
 }
 
-bool AggExecutor::compare_values(const Value &lhs_value, const Value &rhs_value, CompOp op)
-{
-    switch (op)
-    {
+bool AggExecutor::compare_values(const Value &lhs_value, const Value &rhs_value, CompOp op) {
+    // 如果其中一个是字符串数值（AVG 结果），转换为 double 进行比较
+    auto convert_to_double = [](const Value &val) -> double {
+        if (val.type == TYPE_STRING) {
+            try {
+                return std::stod(val.str_val);
+            } catch (...) {
+                throw InternalError("Invalid numeric string in AVG comparison");
+            }
+        } else if (val.type == TYPE_INT) {
+            return static_cast<double>(val.int_val);
+        } else if (val.type == TYPE_FLOAT) {
+            return static_cast<double>(val.float_val);
+        } else {
+            throw InternalError("Unsupported type in AVG comparison");
+        }
+    };
+
+    double lhs_num = convert_to_double(lhs_value);
+    double rhs_num = convert_to_double(rhs_value);
+
+    switch (op) {
         case OP_EQ:
-            return lhs_value == rhs_value;
+            return std::abs(lhs_num - rhs_num) < 1e-9;
         case OP_NE:
-            return lhs_value != rhs_value;
+            return std::abs(lhs_num - rhs_num) >= 1e-9;
         case OP_LT:
-            return lhs_value < rhs_value;
+            return lhs_num < rhs_num;
         case OP_LE:
-            return lhs_value <= rhs_value;
+            return lhs_num <= rhs_num;
         case OP_GT:
-            return lhs_value > rhs_value;
+            return lhs_num > rhs_num;
         case OP_GE:
-            return lhs_value >= rhs_value;
+            return lhs_num >= rhs_num;
         default:
             throw InternalError("Unexpected comparison operator");
     }
