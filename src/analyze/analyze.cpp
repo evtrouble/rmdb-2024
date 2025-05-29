@@ -161,18 +161,6 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
                     }
                     if (!is_valid)
                     {
-                        for (const auto &sel_col : query->cols)
-                        {
-                            if (having_cond->lhs->col_name == sel_col.col_name &&
-                                ast::AggFuncType::NO_TYPE != sel_col.aggFuncType)
-                            {
-                                is_valid = true;
-                                break;
-                            }
-                        }
-                    }
-                    if (!is_valid)
-                    {
                         throw RMDBError("Column '" + having_cond->lhs->col_name + "' in HAVING clause must appear in GROUP BY or be used in an aggregate function");
                     }
                 }
