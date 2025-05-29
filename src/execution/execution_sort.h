@@ -277,5 +277,10 @@ public:
         rmdir(temp_dir_.c_str());
     }
 
-    ExecutionType type() const override { return ExecutionType::Sort;  }
+    ExecutionType type() const override { 
+        if (context_->hasAggFlag()){
+            return ExecutionType::Agg_Sort;  
+        }
+        return ExecutionType::Sort;  
+    }
 };

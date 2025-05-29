@@ -32,6 +32,7 @@ static int const_offset = -1;
 struct QueryFlags {
     bool joinFlag = false;
     bool orderbyFlag = false;
+    bool aggFlag = false;
 };
 
 class Context {
@@ -55,6 +56,11 @@ public:
         queryFlags_.orderbyFlag = value;
     }
 
+    // 设置 agg 标志位的接口
+    inline void setAggFlag(bool value) {
+        queryFlags_.aggFlag = value;
+    }
+
     // 判断 join 标志位的接口
     inline bool hasJoinFlag() const {
         return queryFlags_.joinFlag;
@@ -65,9 +71,15 @@ public:
         return queryFlags_.orderbyFlag;
     }
 
+    // 判断 agg 标志位的接口
+    inline bool hasAggFlag() const {
+        return queryFlags_.aggFlag;
+    }
+
     void clearFlags() {
         queryFlags_.joinFlag = false;
         queryFlags_.orderbyFlag = false;
+        queryFlags_.aggFlag = false;
     }
 
     // TransactionManager *txn_mgr_;

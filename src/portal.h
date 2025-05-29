@@ -249,6 +249,7 @@ public:
         case PlanTag::T_Agg:
         {
             auto x = std::static_pointer_cast<AggPlan>(plan);
+            context->setAggFlag(true);
             return std::make_unique<AggExecutor>(convert_plan_executor(x->subplan_, context),
                                                  x->sel_cols_, x->groupby_cols_, x->having_conds_, context);
         }

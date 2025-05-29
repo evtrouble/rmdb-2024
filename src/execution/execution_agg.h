@@ -187,7 +187,10 @@ public:
                 auto agg_type = sel_cols_[i].aggFuncType;
                 if (ast::AggFuncType::COUNT == agg_type) {
                     agg_values[i].set_int(0);
-                } else if (ast::AggFuncType::SUM == agg_type || ast::AggFuncType::MAX == agg_type || ast::AggFuncType::MIN == agg_type || ast::AggFuncType::AVG == agg_type) {
+                } else if (ast::AggFuncType::AVG == agg_type) {
+                    agg_values[i].type = TYPE_STRING;
+                    agg_values[i].set_str("0.000000");
+                }else if (ast::AggFuncType::SUM == agg_type || ast::AggFuncType::MAX == agg_type || ast::AggFuncType::MIN == agg_type) {
                     auto col = get_col(child_executor_->cols(), {sel_cols_[i].tab_name, sel_cols_[i].col_name});
                     if (ast::AggFuncType::MIN == agg_type)
                         agg_values[i].set_max(col->type, col->len);

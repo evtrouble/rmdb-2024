@@ -16,6 +16,7 @@ enum class ExecutionType
 {
         Agg,
         Sort,
+        Agg_Sort,
         Delete,
         IndexScan,
         Insert,
