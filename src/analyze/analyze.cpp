@@ -18,6 +18,7 @@ See the Mulan PSL v2 for more details. */
 std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
 {
     std::shared_ptr<Query> query = std::make_shared<Query>();
+    std::unordered_map<std::string, TabCol> alias_to_col;
     switch (parse->Nodetype())
     {
     case ast::TreeNodeType::SelectStmt:
@@ -38,10 +39,15 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
         query->cols.reserve(x->cols.size());
         for (auto &sv_sel_col : x->cols)
         {
-            query->cols.emplace_back(TabCol(sv_sel_col->tab_name, sv_sel_col->col_name, sv_sel_col->agg_type, sv_sel_col->alias));
+            TabCol col(sv_sel_col->tab_name, sv_sel_col->col_name, sv_sel_col->agg_type, sv_sel_col->alias);
+            query->cols.emplace_back(col);
             if (ast::AggFuncType::NO_TYPE != sv_sel_col->agg_type)
             {
                 x->has_agg = true;
+            }
+            // 记录别名映射
+            if (!sv_sel_col->alias.empty()) {
+                alias_to_col[sv_sel_col->alias] = col;
             }
         }
 
@@ -179,10 +185,21 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
         // 处理ORDER BY
         if (x->order) {
             for (auto& col : x->order->cols) {
+                // 检查是否是别名
+                if (alias_to_col.find(col->col_name) != alias_to_col.end()) {
+                    // 如果是别名，替换为真实列
+                    TabCol real_col = alias_to_col[col->col_name];
+                    col->tab_name = real_col.tab_name;
+                    col->col_name = real_col.col_name;
+                    col->agg_type = real_col.aggFuncType;
+                }
                 // 检查ORDER BY列是否有效
                 TabCol order_col = {col->tab_name, col->col_name};
                 order_col = check_column(all_cols, order_col);
-
+                bool is_agg = false;
+                if (ast::AggFuncType::NO_TYPE != col->agg_type){
+                    is_agg = true;
+                }
                 // 检查ORDER BY列是否在GROUP BY中（如果有GROUP BY）
                 if (x->has_groupby) {
                     bool found_in_groupby = false;
@@ -192,9 +209,9 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
                             break;
                         }
                     }
-                    if (!found_in_groupby) {
+                    if (!found_in_groupby && !is_agg) {
                         throw RMDBError("ORDER BY column '" + order_col.col_name + 
-                                    "' must appear in the GROUP BY clause");
+                                    "'is neither in group by nor an aggregation function");
                     }
                 }
             }
