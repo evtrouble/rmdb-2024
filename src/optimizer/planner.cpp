@@ -388,14 +388,19 @@ std::shared_ptr<Plan> Planner::generate_sort_plan(std::shared_ptr<Query> query, 
     }
     // 准备多列排序参数
     std::vector<TabCol> sort_cols;
+    std::vector<bool> is_desc_orders;  // 每列对应的排序方向
 
-    // 遍历所有排序列
-    for (auto &order_col : x->order->cols) {
+    // 遍历所有排序列及其排序方向
+    for (size_t i = 0; i < x->order->cols.size(); ++i) {
+        auto &order_col = x->order->cols[i];
+        auto &order_dir = x->order->dirs[i];
+        
         // 查找匹配的列
         bool found = false;
         for (auto &col : all_cols) {
             if (col.name.compare(order_col->col_name) == 0) {
                 sort_cols.emplace_back(col.tab_name, col.name);
+                is_desc_orders.emplace_back(order_dir == ast::OrderByDir::OrderBy_DESC);
                 found = true;
                 break;
             }
@@ -408,8 +413,8 @@ std::shared_ptr<Plan> Planner::generate_sort_plan(std::shared_ptr<Query> query, 
     if(x->has_limit){
         limit = x->limit;
     }
-    return std::make_shared<SortPlan>(T_Sort, std::move(plan), sort_cols,
-                                      x->order->orderby_dir == ast::OrderBy_DESC, limit);
+    // 创建排序计划
+    return std::make_shared<SortPlan>(T_Sort, std::move(plan), sort_cols, is_desc_orders, limit);
 }
 
 /**

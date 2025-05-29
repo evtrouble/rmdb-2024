@@ -244,7 +244,7 @@ public:
         {
             auto x = std::static_pointer_cast<SortPlan>(plan);
             return std::make_unique<SortExecutor>(convert_plan_executor(x->subplan_, context),
-                                                  x->sel_cols_, x->is_desc_, x->limit_, context);
+                                                  x->sel_cols_, x->is_desc_orders_, x->limit_, context);
         }
         case PlanTag::T_Agg:
         {

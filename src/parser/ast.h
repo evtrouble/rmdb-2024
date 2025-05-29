@@ -289,9 +289,26 @@ namespace ast
     struct OrderBy : public TreeNode
     {
         std::vector<std::shared_ptr<Col>> cols;
-        OrderByDir orderby_dir;
-        OrderBy(std::vector<std::shared_ptr<Col>> cols_, OrderByDir orderby_dir_) : cols(std::move(cols_)), orderby_dir(std::move(orderby_dir_)) {}
+        std::vector<OrderByDir> dirs;
+        OrderBy() = default;
+        
+        // 添加单个列和方向的构造函数
+        OrderBy(std::shared_ptr<Col> col, OrderByDir dir) {
+            cols.emplace_back(std::move(col));
+            dirs.emplace_back(dir);
+        }
+        
+        // 添加多个列和方向的构造函数
+        OrderBy(std::vector<std::shared_ptr<Col>> cols_, std::vector<OrderByDir> dirs_)
+            : cols(std::move(cols_)), dirs(std::move(dirs_)) {}
+        
         TreeNodeType Nodetype() const override { return TreeNodeType::OrderBy; }
+        
+        // 添加一个列和方向的方法
+        void addItem(std::shared_ptr<Col> col, OrderByDir dir) {
+            cols.emplace_back(std::move(col));
+            dirs.emplace_back(dir);
+        }
     };
 
     struct InsertStmt : public TreeNode
@@ -414,7 +431,7 @@ namespace ast
         std::vector<std::shared_ptr<BinaryExpr>> sv_conds;
 
         std::shared_ptr<OrderBy> sv_orderby;
-
+        std::pair<std::shared_ptr<Col>, OrderByDir> sv_order_item;
         SetKnobType sv_setKnobType;
     };
 

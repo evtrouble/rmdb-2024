@@ -63,7 +63,7 @@ SUM COUNT MAX MIN AVG AS
 %type <sv_int> opt_limit_clause
 %type <sv_orderby_dir> opt_asc_desc
 %type <sv_setKnobType> set_knob_type
-
+%type <sv_order_item> order_item
 %%
 start:
         stmt ';'
@@ -468,9 +468,21 @@ opt_groupby_clause:
     ;
 
 order_clause:
-      colList  opt_asc_desc
+      order_item
     {
-        $$ = std::make_shared<OrderBy>($1, $2);
+        $$ = std::make_shared<OrderBy>($1.first, $1.second);
+    }
+    |   order_clause ',' order_item
+    {
+        $1->addItem($3.first, $3.second);
+        $$ = $1;
+    }
+    ;
+
+order_item:
+      col opt_asc_desc
+    {
+        $$ = std::make_pair($1, $2);
     }
     ;
 

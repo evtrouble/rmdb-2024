@@ -125,17 +125,32 @@ class SortPlan : public Plan
 {
 public:
     SortPlan(PlanTag tag, std::shared_ptr<Plan> subplan, const TabCol& sel_col, bool is_desc, int limit = -1)
-        : Plan(tag), subplan_(std::move(subplan)), is_desc_(is_desc), limit_(limit)
+        : Plan(tag), subplan_(std::move(subplan)), limit_(limit)
     {
         sel_cols_.emplace_back(sel_col);
+        is_desc_orders_.emplace_back(is_desc);
     }
-    SortPlan(PlanTag tag, std::shared_ptr<Plan> subplan, const std::vector<TabCol>& sel_cols, bool is_desc, int limit = -1)
-        : Plan(tag), subplan_(std::move(subplan)), sel_cols_(std::move(sel_cols)), is_desc_(is_desc), limit_(limit){}
+    // 多列排序构造函数（支持每列独立排序方向）
+    SortPlan(PlanTag tag, std::shared_ptr<Plan> subplan, 
+            const std::vector<TabCol>& sel_cols, 
+            const std::vector<bool>& is_desc_orders,
+            int limit = -1)
+        : Plan(tag), 
+          subplan_(std::move(subplan)), 
+          sel_cols_(sel_cols),
+          is_desc_orders_(is_desc_orders),
+          limit_(limit)
+    {
+        if (sel_cols.size() != is_desc_orders.size()) {
+            throw std::invalid_argument("Number of sort columns must match number of sort directions");
+        }
+    }
     ~SortPlan() {}
     std::shared_ptr<Plan> subplan_;
     std::vector<TabCol> sel_cols_;
-    bool is_desc_;
+    std::vector<bool> is_desc_orders_;
     int limit_;
+
 };
 
 // dml语句，包括insert; delete; update; select语句　
