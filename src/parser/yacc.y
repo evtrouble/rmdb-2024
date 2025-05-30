@@ -31,7 +31,7 @@ using namespace ast;
 
 // keywords
 %token SHOW TABLES CREATE TABLE DROP DESC INSERT INTO VALUES DELETE FROM ASC ORDER GROUP BY HAVING LIMIT
-WHERE UPDATE SET SELECT INT CHAR FLOAT DATETIME INDEX AND JOIN IN NOT EXIT HELP TXN_BEGIN TXN_COMMIT TXN_ABORT TXN_ROLLBACK ORDER_BY ENABLE_NESTLOOP ENABLE_SORTMERGE
+WHERE UPDATE SET SELECT INT CHAR FLOAT DATETIME INDEX AND SEMI JOIN ON IN NOT EXIT HELP TXN_BEGIN TXN_COMMIT TXN_ABORT TXN_ROLLBACK ORDER_BY ENABLE_NESTLOOP ENABLE_SORTMERGE
 SUM COUNT MAX MIN AVG AS
 // non-keywords
 %token LEQ NEQ GEQ T_EOF
@@ -52,18 +52,19 @@ SUM COUNT MAX MIN AVG AS
 %type <sv_val> value
 %type <sv_vals> valueList
 %type <sv_str> tbName colName ALIAS
-%type <sv_strs> tableList colNameList
+%type <sv_strs> colNameList
 %type <sv_col> col aggCol
 %type <sv_cols> colList selector opt_groupby_clause
 %type <sv_set_clause> setClause
 %type <sv_set_clauses> setClauses
 %type <sv_cond> condition
-%type <sv_conds> whereClause optWhereClause opt_having_clause
+%type <sv_conds> whereClause optWhereClause opt_having_clause optJoinClause
 %type <sv_orderby>  order_clause opt_order_clause
 %type <sv_int> opt_limit_clause
 %type <sv_orderby_dir> opt_asc_desc
 %type <sv_setKnobType> set_knob_type
 %type <sv_order_item> order_item
+%type <sv_table_list> tableList
 %%
 start:
         stmt ';'
@@ -171,7 +172,16 @@ dml:
     }
     |   SELECT selector FROM tableList optWhereClause opt_groupby_clause opt_having_clause opt_order_clause opt_limit_clause
     {
-        $$ = std::make_shared<SelectStmt>($2, $4, $5, $6, $7, $8, $9);
+        $$= std::make_shared<SelectStmt>(
+            $2,             // selector
+            $4.tables,      // 表列表
+            $4.jointree,    // 连接树
+            $5,             // where条件
+            $6,             // groupby
+            $7,             // having
+            $8,             // order
+            $9              // limit
+    );
     }
     ;
 
@@ -182,7 +192,7 @@ fieldList:
     }
     |   fieldList ',' field
     {
-        $$.push_back($3);
+        $$.emplace_back($3);
     }
     ;
 
@@ -193,7 +203,7 @@ colNameList:
     }
     | colNameList ',' colName
     {
-        $$.push_back($3);
+        $$.emplace_back($3);
     }
     ;
 
@@ -230,7 +240,7 @@ valueList:
     }
     |   valueList ',' value
     {
-        $$.push_back($3);
+        $$.emplace_back($3);
     }
     ;
 
@@ -269,6 +279,14 @@ optWhereClause:
     }
     ;
 
+optJoinClause:
+        /* epsilon */ { /* ignore*/ }
+    |   ON whereClause
+    {
+        $$ = $2;
+    }
+    ;
+
 opt_having_clause:
     /* epsilon */ { /* ignore*/ }
     |   HAVING whereClause
@@ -284,7 +302,7 @@ whereClause:
     }
     |   whereClause AND condition
     {
-        $$.push_back($3);
+        $$.emplace_back($3);
     }
     ;
 
@@ -349,7 +367,7 @@ colList:
     }
     |   colList ',' col
     {
-        $$.push_back($3);
+        $$.emplace_back($3);
     }
     ;
 
@@ -406,7 +424,7 @@ setClauses:
     }
     |   setClauses ',' setClause
     {
-        $$.push_back($3);
+        $$.emplace_back($3);
     }
     ;
 
@@ -428,15 +446,40 @@ selector:
 tableList:
         tbName
     {
-        $$ = std::vector<std::string>{$1};
+        $$.tables = {$1};
+        $$.jointree = {};
     }
     |   tableList ',' tbName
     {
-        $$.push_back($3);
+        $$.tables = $1.tables;
+        $$.tables.emplace_back($3);
+        $$.jointree = $1.jointree;
     }
-    |   tableList JOIN tbName
+    |   tableList JOIN tbName optJoinClause
     {
-        $$.push_back($3);
+        auto join_expr = std::make_shared<JoinExpr>(
+            $1.tables.back(),
+            $3,
+            $4,
+            INNER_JOIN
+        );
+        $$.tables = $1.tables;
+        $$.tables.emplace_back($3);
+        $$.jointree = $1.jointree;
+        $$.jointree.emplace_back(join_expr);
+    }
+    |   tableList SEMI JOIN tbName optJoinClause
+    {
+        auto join_expr = std::make_shared<JoinExpr>(
+            $1.tables.back(),
+            $4,
+            $5, 
+            SEMI_JOIN
+        );
+        $$.tables = $1.tables;
+        $$.tables.emplace_back($4);
+        $$.jointree = $1.jointree;
+        $$.jointree.emplace_back(join_expr);
     }
     ;
 

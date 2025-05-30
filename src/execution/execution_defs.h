@@ -22,6 +22,7 @@ enum class ExecutionType
         Insert,
         MergeJoin,
         NestedLoopJoin,
+        SemiJoin,
         Projection,
         Select,
         SeqScan,

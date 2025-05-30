@@ -246,6 +246,42 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
     {
         scantbl[i] = -1;
     }
+    // 先处理jointree中的SEMI JOIN
+    if (!query->jointree.empty()) {
+        for (auto& join_expr : query->jointree) {
+            if (SEMI_JOIN == join_expr.type) {
+                // 获取左右表的扫描算子
+                auto left_idx = std::distance(tables.begin(), std::find(tables.begin(), tables.end(), join_expr.left));
+                auto right_idx = std::distance(tables.begin(), std::find(tables.begin(), tables.end(), join_expr.right));
+                
+                auto left_plan = table_scan_executors[left_idx];
+                auto right_plan = table_scan_executors[right_idx];
+                
+                // 标记表为已连接
+                scantbl[left_idx] = 1;
+                scantbl[right_idx] = 1;
+                
+                // 创建SEMI JOIN计划
+                auto semi_join_plan = std::make_shared<JoinPlan>(
+                    T_SemiJoin, 
+                    std::move(left_plan),
+                    std::move(right_plan),
+                    join_expr.conds
+                );
+
+                if (!table_join_executors) {
+                    table_join_executors = std::move(semi_join_plan);
+                } else {
+                    table_join_executors = std::make_shared<JoinPlan>(
+                        T_NestLoop,
+                        std::move(table_join_executors),
+                        std::move(semi_join_plan),
+                        std::vector<Condition>()
+                    );
+                }
+            }
+        }
+    }
     // 假设在ast中已经添加了jointree，这里需要修改的逻辑是，先处理jointree，然后再考虑剩下的部分
     if (conds.size() >= 1)
     {
@@ -343,8 +379,10 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
     }
     else
     {
-        table_join_executors = table_scan_executors[0];
-        scantbl[0] = 1;
+        if(!table_join_executors){
+            table_join_executors = table_scan_executors[0];
+            scantbl[0] = 1;
+        }
     }
 
     // 连接剩余表

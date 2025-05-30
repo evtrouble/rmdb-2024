@@ -81,7 +81,9 @@ value_path [\.|\/][^ \t]+\.csv
 "DATETIME" {return DATETIME; }
 "INDEX" { return INDEX; }
 "AND" { return AND; }
+"SEMI" { return SEMI; }
 "JOIN" {return JOIN;}
+"ON" { return ON; }
 "IN" { return IN; }
 "NOT" { return NOT; }
 "EXIT" { return EXIT; }

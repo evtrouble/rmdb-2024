@@ -18,7 +18,8 @@ enum JoinType
     INNER_JOIN,
     LEFT_JOIN,
     RIGHT_JOIN,
-    FULL_JOIN
+    FULL_JOIN,
+    SEMI_JOIN
 };
 namespace ast
 {
@@ -367,21 +368,24 @@ namespace ast
         bool has_having;
         bool has_sort;
         bool has_limit;
+        bool has_join;
         std::shared_ptr<OrderBy> order;
         int limit = -1;
 
         SelectStmt(const std::vector<std::shared_ptr<Col>> &cols_,
                    const std::vector<std::string> &tabs_,
+                   const std::vector<std::shared_ptr<JoinExpr>> &jointree_,
                    const std::vector<std::shared_ptr<BinaryExpr>> &conds_,
                    std::vector<std::shared_ptr<Col>> groupby_,
-                   std::vector<std::shared_ptr<BinaryExpr>> having_conds_,
+                   const std::vector<std::shared_ptr<BinaryExpr>> &having_conds_,
                    std::shared_ptr<OrderBy> order_,
-                   int limit_ = -1) : cols(std::move(cols_)), tabs(std::move(tabs_)), conds(std::move(conds_)),
+                   int limit_ = -1) : cols(std::move(cols_)), tabs(std::move(tabs_)), conds(std::move(conds_)), jointree(std::move(jointree_)),
                                                       groupby(std::move(groupby_)), having_conds(std::move(having_conds_)), order(std::move(order_)),limit(limit_)
         {
             has_sort = (bool)order;
             has_groupby = (!groupby.empty());
             has_having = (!having_conds.empty());
+            has_join = (!jointree.empty());
             has_limit = (limit_ != -1);
         }
         TreeNodeType Nodetype() const override { return TreeNodeType::SelectStmt; }
@@ -433,6 +437,10 @@ namespace ast
         std::shared_ptr<OrderBy> sv_orderby;
         std::pair<std::shared_ptr<Col>, OrderByDir> sv_order_item;
         SetKnobType sv_setKnobType;
+        struct {
+            std::vector<std::string> tables;
+            std::vector<std::shared_ptr<JoinExpr>> jointree;
+        } sv_table_list;
     };
 
     extern std::shared_ptr<ast::TreeNode> parse_tree;

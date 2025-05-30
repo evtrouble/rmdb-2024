@@ -323,3 +323,12 @@ struct SetClause
     TabCol lhs;
     Value rhs;
 };
+
+struct JoinExpr
+{
+    std::string left;
+    std::string right;
+    std::vector<Condition> conds;
+    JoinType type;
+    JoinExpr() = default;
+};

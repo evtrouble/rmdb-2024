@@ -43,6 +43,7 @@ typedef enum PlanTag
     T_IndexScan,
     T_NestLoop,
     T_SortMerge, // sort merge join
+    T_SemiJoin,
     T_Sort,
     T_Agg,
     T_Projection,

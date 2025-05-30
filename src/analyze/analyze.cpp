@@ -68,7 +68,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
             for (auto &sel_col : query->cols)
             {
                 if (sel_col.col_name != "*")                   // 避免count(*)检查
-                    sel_col = check_column(all_cols, sel_col); // 列元数据校验
+                    sel_col = check_column(all_cols, sel_col, x->has_join); // 列元数据校验
             }
         }
         // groupby检查
@@ -131,11 +131,30 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
             for (auto &g : x->groupby)
             {
                 TabCol group_col = {g->tab_name, g->col_name};
-                group_col = check_column(all_cols, group_col);
+                group_col = check_column(all_cols, group_col, false);
                 query->groupby.emplace_back(group_col);
             }
         }
-
+        // join 检查
+        if (x->has_join)
+        {
+            for(auto &joinclause : x->jointree){
+                if(JoinType::SEMI_JOIN == joinclause->type){
+                    for(auto &sv_cols : query->cols){
+                        if(sv_cols.tab_name == joinclause->right){
+                            throw RMDBError("Only columns from the left table can be selected in the SELECT clause.");
+                        }
+                    }
+                }
+                JoinExpr join;
+                join.left = joinclause->left;
+                join.right = joinclause->right;
+                join.type = joinclause->type;
+                get_clause(joinclause->conds, join.conds);
+                check_clause(query->tables, join.conds, false);
+                query->jointree.emplace_back(join);
+            }
+        }
         // having检查
         // having必须与groupby一起使用
         if (x->has_having)
@@ -183,7 +202,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
                 }
                 // 检查ORDER BY列是否有效
                 TabCol order_col = {col->tab_name, col->col_name};
-                order_col = check_column(all_cols, order_col);
+                order_col = check_column(all_cols, order_col, false);
                 bool is_agg = false;
                 if (ast::AggFuncType::NO_TYPE != col->agg_type){
                     is_agg = true;
@@ -243,7 +262,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
             // 设置要更新的列
             TabCol col(x->tab_name, sv_set_clause->col_name);
             // 验证列是否存在
-            col = check_column(all_cols, col);
+            col = check_column(all_cols, col, false);
             set_clause.lhs = col;
 
             // 获取列的类型信息
@@ -334,7 +353,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
     return query;
 }
 
-TabCol Analyze::check_column(const std::vector<ColMeta> &all_cols, TabCol target)
+TabCol Analyze::check_column(const std::vector<ColMeta> &all_cols, TabCol target, bool is_semijoin)
 {
     if (target.tab_name.empty())
     {
@@ -349,6 +368,9 @@ TabCol Analyze::check_column(const std::vector<ColMeta> &all_cols, TabCol target
                     throw AmbiguousColumnError(target.col_name);
                 }
                 tab_name = col.tab_name;
+                if(is_semijoin){
+                    break;
+                }
             }
         }
         if (tab_name.empty())
@@ -449,7 +471,7 @@ void Analyze::check_clause(const std::vector<std::string> &tab_names, std::vecto
 
     for (auto &cond : conds)
     {
-        // 检查 WHERE 子句中是否包含聚合函数
+        // 检查 WHERE、ON 子句中是否包含聚合函数
         if (!is_having && (cond.lhs_col.aggFuncType != ast::AggFuncType::NO_TYPE ||
                            (!cond.is_rhs_val/* && !cond.is_subquery*/ && cond.rhs_col.aggFuncType != ast::AggFuncType::NO_TYPE)))
         {
@@ -459,11 +481,11 @@ void Analyze::check_clause(const std::vector<std::string> &tab_names, std::vecto
         // Infer table name from column name
         if (cond.lhs_col.col_name != "*")
         {
-            cond.lhs_col = check_column(all_cols, cond.lhs_col);
+            cond.lhs_col = check_column(all_cols, cond.lhs_col, false);
         }
         if (!cond.is_rhs_val &&/* !cond.is_subquery &&*/ cond.rhs_col.col_name != "*")
         {
-            cond.rhs_col = check_column(all_cols, cond.rhs_col);
+            cond.rhs_col = check_column(all_cols, cond.rhs_col, false);
         }
         if ((is_having && cond.lhs_col.col_name != "*") || !is_having)
         {
