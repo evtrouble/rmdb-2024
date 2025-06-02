@@ -57,6 +57,7 @@ value_path [\.|\/][^ \t]+\.csv
 {new_line} { /* ignore new line */ }
     /* keywords */
 "SHOW" { return SHOW; }
+"EXPLAIN" { return EXPLAIN; }
 "BEGIN" { return TXN_BEGIN; }
 "COMMIT" { return TXN_COMMIT; }
 "ABORT" { return TXN_ABORT; }

@@ -46,6 +46,7 @@ typedef enum PlanTag
     T_Sort,
     T_Agg,
     T_Projection,
+    T_Explain
     // T_Subquery // 子查询
 } PlanTag;
 
@@ -183,7 +184,16 @@ public:
 
     ~AggPlan() override = default;
 };
-
+class ExplainPlan : public Plan
+{
+public:
+    ExplainPlan(std::shared_ptr<Plan> subplan)
+        : Plan(T_Explain), subplan_(std::move(subplan))
+    {
+    }
+    ~ExplainPlan() {}
+    std::shared_ptr<Plan> subplan_;
+};
 // 子查询计划
 // class SubqueryPlan : public Plan
 // {

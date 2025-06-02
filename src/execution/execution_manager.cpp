@@ -47,7 +47,19 @@ const char *help_info = "Supported SQL syntax:\n"
 // 主要负责执行DDL语句
 void QlManager::run_mutli_query(std::shared_ptr<Plan> plan, Context *context)
 {
-    if (auto x = std::static_pointer_cast<DDLPlan>(plan))
+    if (auto x = std::dynamic_pointer_cast<ExplainPlan>(plan))
+    {
+        // 处理EXPLAIN语句
+        auto explain_executor = std::make_unique<ExplainExecutor>(x->subplan_);
+        auto record = explain_executor->Next();
+        if (record)
+        {
+            std::string result(record->data, record->size);
+            memcpy(context->data_send_ + *(context->offset_), result.c_str(), result.length());
+            *(context->offset_) += result.length();
+        }
+    }
+    else if (auto x = std::dynamic_pointer_cast<DDLPlan>(plan))
     {
         switch (x->tag)
         {

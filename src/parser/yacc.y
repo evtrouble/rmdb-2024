@@ -30,7 +30,7 @@ using namespace ast;
 %define parse.error verbose
 
 // keywords
-%token SHOW TABLES CREATE TABLE DROP DESC INSERT INTO VALUES DELETE FROM ASC ORDER GROUP BY HAVING
+%token SHOW TABLES CREATE TABLE DROP DESC INSERT INTO VALUES DELETE FROM ASC ORDER BY EXPLAIN
 WHERE UPDATE SET SELECT INT CHAR FLOAT DATETIME INDEX AND JOIN IN NOT EXIT HELP TXN_BEGIN TXN_COMMIT TXN_ABORT TXN_ROLLBACK ORDER_BY ENABLE_NESTLOOP ENABLE_SORTMERGE
 SUM COUNT MAX MIN AS
 // non-keywords
@@ -93,6 +93,10 @@ stmt:
     |   dml
     |   txnStmt
     |   setStmt
+    |   EXPLAIN dml
+    {
+        $$ = std::make_shared<ExplainStmt>($2);
+    }
     ;
 
 txnStmt:

@@ -101,7 +101,7 @@ std::vector<Condition> pop_conds(std::vector<Condition> &conds, std::string &tab
     {
         std::string s = cond.lhs_col.tab_name;
         return (tab_names.compare(cond.lhs_col.tab_name) == 0 && cond.is_rhs_val) ||
-               (cond.lhs_col.tab_name.compare(cond.rhs_col.tab_name) == 0)/* || (tab_names == cond.lhs_col.tab_name && cond.is_subquery)*/;
+               (cond.lhs_col.tab_name.compare(cond.rhs_col.tab_name) == 0) /* || (tab_names == cond.lhs_col.tab_name && cond.is_subquery)*/;
     };
     while (left < right)
     {
@@ -183,9 +183,44 @@ std::shared_ptr<Plan> pop_scan(int *scantbl, std::string &table, std::unordered_
 
 std::shared_ptr<Query> Planner::logical_optimization(std::shared_ptr<Query> query, Context *context)
 {
+    if (auto select = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse))
+    {
+        // 1. 收集所有选择条件
+        std::vector<Condition> &all_conds = query->conds;
+        std::vector<Condition> remaining_conds;
 
-    // TODO 实现逻辑优化规则
+        // 2. 对每个选择条件尝试下推
+        for (auto it = all_conds.begin(); it != all_conds.end();)
+        {
+            // 判断是否可以下推(只涉及一个表的条件可以下推)
+            if (it->is_rhs_val || (it->lhs_col.tab_name == it->rhs_col.tab_name))
+            {
+                // 可以下推的条件
+                remaining_conds.push_back(*it);
+                it = all_conds.erase(it);
+            }
+            else
+            {
+                ++it;
+            }
+        }
 
+        // 3. 将可下推的条件添加到对应表的扫描条件中
+        for (auto &cond : remaining_conds)
+        {
+            // 找到条件对应的表
+            std::string tab_name = cond.lhs_col.tab_name;
+            for (auto &table : query->tables)
+            {
+                if (table == tab_name)
+                {
+                    // 将条件添加到该表的扫描条件中
+                    query->conds.push_back(cond);
+                    break;
+                }
+            }
+        }
+    }
     return query;
 }
 
@@ -204,160 +239,152 @@ std::shared_ptr<Plan> Planner::physical_optimization(std::shared_ptr<Query> quer
 
 std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Context *context)
 {
+    auto x = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
     std::vector<std::string> tables = query->tables;
 
-    // 处理where里面的不相关子查询
-    // for (auto &cond : query->conds)
-    // {
-    //     if (!cond.is_subquery || cond.subQuery->stmt == nullptr)
-    //         continue;
-    //     cond.subQuery->plan = do_planner(cond.subQuery->query, context);
-    // }
+    // 新的优化实现
+    // 1. 生成基础表扫描计划
+    std::vector<std::shared_ptr<Plan>> table_scan_executors;
+    std::map<std::string, size_t> table_name_to_idx;
+    std::vector<bool> used_tables(tables.size(), false);
 
-    // // Scan table , 生成表算子列表tab_nodes
-    std::vector<std::shared_ptr<Plan>> table_scan_executors(tables.size());
-    for (size_t i = 0; i < tables.size(); ++i)
+    // 获取每个表的大小信息用于后续优化
+    std::vector<std::pair<size_t, std::string>> table_sizes;
+    for (size_t i = 0; i < tables.size(); i++)
     {
-        auto curr_conds = pop_conds(query->conds, tables[i]);
-        // int index_no = get_indexNo(tables[i], curr_conds);
-        auto index_meta = get_index_cols(tables[i], curr_conds);
+        RmFileHandle *fh = sm_manager_->fhs_.at(tables[i]).get();
+        // 使用文件头中的记录数作为表大小
+        RmFileHdr file_hdr = fh->get_file_hdr();
+        size_t num_pages = file_hdr.num_pages;
+        size_t records_per_page = file_hdr.num_records_per_page;
+        size_t total_records = num_pages * records_per_page;
+        table_sizes.push_back({total_records, tables[i]});
+        table_name_to_idx[tables[i]] = i;
+    }
+
+    // 按表大小排序，从小到大
+    std::sort(table_sizes.begin(), table_sizes.end());
+
+    // 为每个表创建扫描计划
+    for (size_t i = 0; i < tables.size(); i++)
+    {
+        std::string tab_name = tables[i]; // 创建可修改的副本
+        auto curr_conds = pop_conds(query->conds, tab_name);
+
+        // 检查是否可以使用索引
+        auto index_meta = get_index_cols(tab_name, curr_conds);
+        std::shared_ptr<Plan> scan_plan;
         if (index_meta == nullptr)
-        { // 该表没有索引
-            table_scan_executors[i] =
-                std::make_shared<ScanPlan>(T_SeqScan, sm_manager_, tables[i], curr_conds, IndexMeta());
+        {
+            // 使用顺序扫描
+            scan_plan = std::make_shared<ScanPlan>(T_SeqScan, sm_manager_, tab_name, curr_conds, IndexMeta());
         }
         else
-        { // 存在索引
-            table_scan_executors[i] =
-                std::make_shared<ScanPlan>(T_IndexScan, sm_manager_, tables[i], curr_conds, *index_meta);
+        {
+            // 使用索引扫描
+            scan_plan = std::make_shared<ScanPlan>(T_IndexScan, sm_manager_, tab_name, curr_conds, *index_meta);
         }
+
+        table_scan_executors.push_back(scan_plan);
     }
-    // 只有一个表，不需要join。
+
+    // 2. 如果只有一个表，直接返回其扫描计划
     if (tables.size() == 1)
     {
         return table_scan_executors[0];
     }
-    // 获取where条件
-    auto conds = std::move(query->conds);
-    std::shared_ptr<Plan> table_join_executors;
 
-    int scantbl[tables.size()];
-    for (size_t i = 0; i < tables.size(); ++i)
+    // 3. 处理多表连接
+    std::shared_ptr<Plan> join_plan = nullptr;
+
+    // 从最小的表开始构建连接树
+    for (const auto &table_size : table_sizes)
     {
-        scantbl[i] = -1;
-    }
-    // 假设在ast中已经添加了jointree，这里需要修改的逻辑是，先处理jointree，然后再考虑剩下的部分
-    if (conds.size() >= 1)
-    {
-        // 有连接条件
-        // 根据连接条件，生成第一层join
-        std::unordered_set<std::string> joined_tables_set;
-        std::transform(tables.begin(), tables.end(),
-                       std::inserter(joined_tables_set, joined_tables_set.end()),
-                       [](const auto &t)
-                       { return t; });
-        auto it = conds.begin();
-        if (!conds.empty())
+        size_t curr_idx = table_name_to_idx[table_size.second];
+        if (used_tables[curr_idx])
+            continue;
+
+        if (!join_plan)
         {
-            std::shared_ptr<Plan> left, right;
-            left = pop_scan(scantbl, it->lhs_col.tab_name, joined_tables_set, table_scan_executors);
-            right = pop_scan(scantbl, it->rhs_col.tab_name, joined_tables_set, table_scan_executors);
-            std::vector<Condition> join_conds{std::move(*it)};
-            // 建立join
-            //  判断使用哪种join方式
-            if (enable_nestedloop_join && enable_sortmerge_join)
+            // 第一个表
+            join_plan = table_scan_executors[curr_idx];
+            used_tables[curr_idx] = true;
+            continue;
+        }
+
+        // 查找与当前表相关的连接条件
+        std::vector<Condition> join_conds;
+        auto it = query->conds.begin();
+        while (it != query->conds.end())
+        {
+            bool is_join_cond = false;
+            if (it->lhs_col.tab_name == table_size.second)
             {
-                // 默认nested loop join
-                table_join_executors = std::make_shared<JoinPlan>(T_NestLoop, std::move(left), std::move(right), join_conds);
-            }
-            else if (enable_nestedloop_join)
-            {
-                table_join_executors = std::make_shared<JoinPlan>(T_NestLoop, std::move(left), std::move(right), join_conds);
-            }
-            else if (enable_sortmerge_join)
-            {
-                if (left->tag != T_IndexScan)
+                for (size_t i = 0; i < tables.size(); i++)
                 {
-                    left = std::make_shared<SortPlan>(T_Sort, std::move(left), join_conds[0].lhs_col, false);
+                    if (used_tables[i] && it->rhs_col.tab_name == tables[i])
+                    {
+                        is_join_cond = true;
+                        break;
+                    }
                 }
-                if (right->tag != T_IndexScan)
+            }
+            else if (it->rhs_col.tab_name == table_size.second)
+            {
+                for (size_t i = 0; i < tables.size(); i++)
                 {
-                    right = std::make_shared<SortPlan>(T_Sort, std::move(right), join_conds[0].rhs_col, false);
+                    if (used_tables[i] && it->lhs_col.tab_name == tables[i])
+                    {
+                        is_join_cond = true;
+                        break;
+                    }
                 }
-                table_join_executors = std::make_shared<JoinPlan>(T_SortMerge, std::move(left), std::move(right), join_conds);
+            }
+
+            if (is_join_cond)
+            {
+                join_conds.push_back(*it);
+                it = query->conds.erase(it);
             }
             else
             {
-                // error
-                throw RMDBError("No join executor selected!");
+                ++it;
             }
-
-            // table_join_executors = std::make_shared<JoinPlan>(T_NestLoop, std::move(left), std::move(right), join_conds);
-            ++it;
         }
-        // 根据连接条件，生成第2-n层join
-        while (it != conds.end())
+
+        // 创建新的连接节点
+        if (enable_nestedloop_join && enable_sortmerge_join)
         {
-            std::shared_ptr<Plan> left_need_to_join_executors = nullptr;
-            std::shared_ptr<Plan> right_need_to_join_executors = nullptr;
-            bool isneedreverse = false;
-            if (!joined_tables_set.count(it->lhs_col.tab_name))
-            {
-                left_need_to_join_executors = pop_scan(scantbl, it->lhs_col.tab_name, joined_tables_set, table_scan_executors);
-            }
-            if (!joined_tables_set.count(it->rhs_col.tab_name))
-            {
-                right_need_to_join_executors = pop_scan(scantbl, it->rhs_col.tab_name, joined_tables_set, table_scan_executors);
-                isneedreverse = true;
-            }
-
-            if (left_need_to_join_executors != nullptr && right_need_to_join_executors != nullptr)
-            {
-                std::vector<Condition> join_conds{std::move(*it)};
-                std::shared_ptr<Plan> temp_join_executors = std::make_shared<JoinPlan>(T_NestLoop,
-                                                                                       std::move(left_need_to_join_executors),
-                                                                                       std::move(right_need_to_join_executors),
-                                                                                       join_conds);
-                table_join_executors = std::make_shared<JoinPlan>(T_NestLoop, std::move(temp_join_executors),
-                                                                  std::move(table_join_executors),
-                                                                  std::vector<Condition>());
-            }
-            else if (left_need_to_join_executors != nullptr || right_need_to_join_executors != nullptr)
-            {
-                if (isneedreverse)
-                {
-                    std::swap(it->lhs_col, it->rhs_col);
-                    it->op = swap_op.at(it->op);
-                    left_need_to_join_executors = std::move(right_need_to_join_executors);
-                }
-                std::vector<Condition> join_conds{std::move(*it)};
-                table_join_executors = std::make_shared<JoinPlan>(T_NestLoop, std::move(left_need_to_join_executors),
-                                                                  std::move(table_join_executors), join_conds);
-            }
-            else
-            {
-                push_conds(&(*it), table_join_executors);
-            }
-            ++it;
+            join_plan = std::make_shared<JoinPlan>(T_NestLoop, join_plan, table_scan_executors[curr_idx], join_conds);
         }
-    }
-    else
-    {
-        table_join_executors = table_scan_executors[0];
-        scantbl[0] = 1;
-    }
-
-    // 连接剩余表
-    for (size_t i = 0; i < tables.size(); ++i)
-    {
-        if (scantbl[i] == -1)
+        else if (enable_nestedloop_join)
         {
-            table_join_executors = std::make_shared<JoinPlan>(T_NestLoop, std::move(table_scan_executors[i]),
-                                                              std::move(table_join_executors), std::vector<Condition>());
+            join_plan = std::make_shared<JoinPlan>(T_NestLoop, join_plan, table_scan_executors[curr_idx], join_conds);
         }
+        else if (enable_sortmerge_join)
+        {
+            join_plan = std::make_shared<JoinPlan>(T_SortMerge, join_plan, table_scan_executors[curr_idx], join_conds);
+        }
+        else
+        {
+            throw RMDBError("No join executor selected!");
+        }
+
+        used_tables[curr_idx] = true;
     }
 
-    return table_join_executors;
+    // 4. 处理剩余的连接条件
+    if (!query->conds.empty())
+    {
+        auto join = std::dynamic_pointer_cast<JoinPlan>(join_plan);
+        if (join)
+        {
+            join->conds_.insert(join->conds_.end(), query->conds.begin(), query->conds.end());
+        }
+        query->conds.clear();
+    }
+
+    return join_plan;
 }
 std::shared_ptr<Plan> Planner::generate_agg_plan(const std::shared_ptr<Query> &query, std::shared_ptr<Plan> plan)
 {

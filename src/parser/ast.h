@@ -96,7 +96,8 @@ namespace ast
         JoinExpr,
         SelectStmt,
         SetStmt,
-        InExpr
+        InExpr,
+        ExplainStmt
     };
     // Base class for tree nodes
     struct TreeNode
@@ -109,7 +110,12 @@ namespace ast
     {
         TreeNodeType Nodetype() const override { return TreeNodeType::Help; }
     };
+    struct ExplainStmt : public TreeNode
+    {
+        std::shared_ptr<TreeNode> query;
 
+        ExplainStmt(std::shared_ptr<TreeNode> query_) : query(std::move(query_)) {}
+    };
     struct ShowTables : public TreeNode
     {
         TreeNodeType Nodetype() const override { return TreeNodeType::ShowTables; }
