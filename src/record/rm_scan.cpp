@@ -47,6 +47,13 @@ void RmScan::next()
     // rid_.slot_no = RM_NO_SLOT;
 }
 
+void RmScan::next_batch()
+{
+    ++rid_.page_no;
+    if(rid_.page_no >= file_handle_->file_hdr_.num_pages)
+        rid_.page_no = RM_NO_PAGE;
+}
+
 /**
  * @brief ​ 判断是否到达文件末尾
  */

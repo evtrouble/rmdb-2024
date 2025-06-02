@@ -36,6 +36,7 @@ private:
             case ExecutionType::SeqScan:
             case ExecutionType::NestedLoopJoin:
             case ExecutionType::Sort:
+            case ExecutionType::SemiJoin:
                 return cols_; 
             default:
                 return prev_->cols();

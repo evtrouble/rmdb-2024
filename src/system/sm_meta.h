@@ -45,14 +45,14 @@ struct IndexMeta {
     int col_tot_len;                // 索引字段长度总和
     int col_num;                    // 索引字段数量
     std::vector<ColMeta> cols;      // 索引包含的字段
-    std::shared_ptr<char *> max_val;
-    std::shared_ptr<char *> min_val;
+    std::shared_ptr<char> max_val;
+    std::shared_ptr<char> min_val;
 
     IndexMeta() = default;
     IndexMeta(const std::string &tab_name, int col_tot_len, int col_num, const std::vector<ColMeta>& cols)
         : tab_name(std::move(tab_name)), col_tot_len(col_tot_len), col_num(col_num),
         cols(std::move(cols)) {
-        init();
+            init();
     }
 
     friend std::ostream &operator<<(std::ostream &os, const IndexMeta &index)
@@ -79,8 +79,8 @@ struct IndexMeta {
 
     private:
     void init(){
-        max_val = std::make_shared<char *>(new char[col_tot_len]);
-        min_val = std::make_shared<char *>(new char[col_tot_len]);
+        max_val = std::shared_ptr<char>(new char[col_tot_len], array_deleter);
+        min_val = std::shared_ptr<char>(new char[col_tot_len], array_deleter);
         int offset = 0;
         for (auto &col : cols)
         {
@@ -97,13 +97,16 @@ struct IndexMeta {
                 case ColType::TYPE_STRING:
                     std::memset(max_val.get() + offset, 0xff, col.len);
                     std::memset(min_val.get() + offset, 0, col.len);
-                    break;   
+                    break; 
                 case ColType::TYPE_DATETIME:
-                // TODO: 处理日期时间类型
-                    break;
-                }
+                    break;   
+            }
             offset += col.len;
         }
+    }
+
+    static void array_deleter(char* p) {
+        delete[] p;
     }
 };
 

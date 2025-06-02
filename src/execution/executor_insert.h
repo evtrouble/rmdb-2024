@@ -44,9 +44,9 @@ public:
             ihs_.emplace_back(sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get());
             std::vector<int> offsets;
             for (auto &col : index.cols) {
-                offsets.push_back(col.offset);
+                offsets.emplace_back(col.offset);
             }
-            index_col_offsets_.push_back(offsets);
+            index_col_offsets_.emplace_back(offsets);
         }
     };
 
@@ -59,7 +59,7 @@ public:
             if (col.type != val.type) {
                 throw IncompatibleTypeError(coltype2str(col.type), coltype2str(val.type));
             }
-            val.export_val(rec.data + col.offset, col.len);
+            memcpy(rec.data + col.offset, val.raw->data, col.len);
         }
 
         // Insert into record file

@@ -1,5 +1,5 @@
 CMakeFiles/rmdb_client.dir/main.cpp.o: \
- /home/nero/db2024/rmdb/rmdb_client/main.cpp /usr/include/stdc-predef.h \
+ /home/xu/rmdb/rmdb/rmdb_client/main.cpp /usr/include/stdc-predef.h \
  /usr/include/netdb.h /usr/include/features.h \
  /usr/include/features-time64.h \
  /usr/include/x86_64-linux-gnu/bits/wordsize.h \

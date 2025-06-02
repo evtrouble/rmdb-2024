@@ -25,10 +25,6 @@ private:
     RmFileHandle *fh_;                          // 表的数据文件句柄
     std::vector<ColMeta> cols_;                 // 需要读取的字段
     size_t len_;                                // 选取出来的一条记录的长度 
-    // std::vector<Condition> fed_conds_;          // 扫描条件，和conds_字段相同 
-    std::vector<Condition> index_conds_;        // index scan涉及到的条件
-    bool is_con_closed_;                        // 是否闭合区间
-    Condition con_closed_;                      // 闭合区间的条件
 
     IndexMeta index_meta_;                      // index scan涉及到的索引元数据
     Rid rid_;
@@ -38,87 +34,12 @@ private:
     std::vector<std::unique_ptr<RmRecord>> result_cache_;
     mutable bool first_record_ = true;  // 是否是第一次读取记录
     size_t cache_index_ = 0;
-
-    // 筛选可用于索引的条件
-    void filterIndexConditions() {
-        std::vector<Condition> eq_conds;
-        std::vector<Condition> other_conds;
-        std::unordered_set<std::string> used_col_names;  // 记录已经使用的列名
-
-        for (auto &cond : fed_conds_) {
-            if (cond.op == OP_EQ && cond.is_rhs_val) {
-                eq_conds.emplace_back(cond);
-            } else if (cond.op != OP_NE && cond.is_rhs_val) {
-                other_conds.emplace_back(cond);
-            }
-        }
-
-        for (auto &index_col : index_meta_.cols) {
-            bool found = false;
-            for (auto &eq_cond : eq_conds) {
-                if (eq_cond.lhs_col.col_name.compare(index_col.name) == 0) {
-                    found = true;
-                    index_conds_.emplace_back(eq_cond);
-                    used_col_names.insert(eq_cond.lhs_col.col_name);
-                    break;
-                }
-            }
-            if (found) continue;
-            for (auto &other_cond : other_conds) {
-                if (other_cond.lhs_col.col_name.compare(index_col.name) == 0) {
-                    found = true;
-                    index_conds_.emplace_back(other_cond);
-                    used_col_names.insert(other_cond.lhs_col.col_name);
-                    break;
-                }
-            }
-            if (found) {
-                CompOp op = index_conds_.back().op;
-                switch (op) {
-                    case OP_EQ:
-                    case OP_NE:
-                        assert(false);
-                        break;
-                    case OP_LT:
-                        is_con_closed_ = findCondition(OP_LT, other_conds);
-                        break;
-                    case OP_GT:
-                        is_con_closed_ = findCondition(OP_GT, other_conds);
-                        break;
-                    case OP_LE:
-                        is_con_closed_ = findCondition(OP_LE, other_conds);
-                        break;
-                    case OP_GE:
-                        is_con_closed_ = findCondition(OP_GE, other_conds);
-                        break;
-                }
-            }
-            break;
-        }
-
-        // 使用双指针算法移除已经使用的条件
-        auto left = fed_conds_.begin();
-        auto right = fed_conds_.end();
-        auto check = [&](const Condition &cond) {
-            return cond.is_rhs_val && cond.op != CompOp::OP_NE &&
-                   used_col_names.count(cond.lhs_col.col_name);
-        };
-        while (left < right) {
-            if (check(*left)) {
-                // 将右侧非目标元素换到左侧
-                while (left < --right && check(*right));
-                if (left >= right) break;
-                *left = std::move(*right);
-            }
-            ++left;
-        }
-        fed_conds_.erase(left, fed_conds_.end());
-    }
+    int max_match_col_count_;  // 最大匹配列数
 
 public:
     IndexScanExecutor(SmManager *sm_manager, const std::string& tab_name, const std::vector<Condition> &conds, const IndexMeta& index_meta,
-                      Context *context) : AbstractExecutor(context), sm_manager_(sm_manager), 
-        tab_name_(std::move(tab_name)), fed_conds_(std::move(conds)), index_meta_(std::move(index_meta)) {
+                      int max_match_col_count, Context *context) : AbstractExecutor(context), sm_manager_(sm_manager), 
+        tab_name_(std::move(tab_name)), fed_conds_(std::move(conds)), index_meta_(std::move(index_meta)), max_match_col_count_(max_match_col_count) {
 
         // 增加错误检查
         try {
@@ -136,148 +57,210 @@ public:
 
         cols_ = tab_.cols;
         len_ = cols_.back().offset + cols_.back().len;
-        is_con_closed_ = false;
 
         // fed_conds_ = conds_;
-        filterIndexConditions();
-        std::sort(fed_conds_.begin(), fed_conds_.end());
 
         // 加表级意向共享锁
         // context_->lock_mgr_->lock_IS_on_table(context_->txn_, fh_->GetFd());
     }
 
-    /**
-     * @brief 找出otherCondition中匹配符号的条件（第一个即可）
-     * @param  op  操作符
-     * @param  otherConditions  条件组
-     * @return  返回是否找到
-     */
-    bool findCondition(CompOp op, std::vector<Condition> &otherConditions) {
-        switch (op) {
-            case OP_LT:
-            case OP_LE:
-                for (auto &cond : otherConditions) {
-                    if (cond.op == OP_GE || cond.op == OP_GT) {
-                        con_closed_ = cond;
-                        return true;
-                    }
-                }
-                break;
-            case OP_GT:
-            case OP_GE:
-                for (auto &cond : otherConditions) {
-                    if (cond.op == OP_LE || cond.op == OP_LT) {
-                        con_closed_ = cond;
-                        return true;
-                    }
-                }
-                break;
-            default:
-                break;
-        }
-        return false;
+    void setup_scan() {
+        // 生成索引扫描的上下界
+        char low_key[index_meta_.col_tot_len];
+        char up_key[index_meta_.col_tot_len];
+        generate_index_key(low_key, up_key);
+
+        // 获取索引处理器
+        auto index_handle = sm_manager_->ihs_.at(
+            sm_manager_->get_ix_manager()->get_index_name(tab_name_, index_meta_.cols))
+                            .get();
+        // 范围扫描设置边界
+        Iid lower = index_handle->lower_bound(low_key);
+        Iid upper = index_handle->upper_bound(up_key);
+
+        scan_ = std::make_unique<IxScan>(index_handle, lower, upper, sm_manager_->get_bpm());
     }
 
-    /**
-     * @brief 注入查找上界极限key
-     * @param  col_name 字段名称
-     * @param  key     注入key指针
-     * @param  offset  字段偏移量
-     * @param  len     字段长度
-     */
-    void injectHighKey(std::string col_name, char *key, int offset, int len) {
-        int max_int = std::numeric_limits<int>::max();
-        float max_float = std::numeric_limits<float>::max();
-        const char *max_datetime = "9999-12-31 23:59:59";
-        switch (tab_.get_col(col_name)->type) {
-            case TYPE_INT: {
-                memcpy(key + offset, &max_int, len);
-                break;
-            }
-            case TYPE_FLOAT: {
-                memcpy(key + offset, &max_float, len);
-                break;
-            }
-            case TYPE_STRING: {
-                std::fill(key + offset, key + offset + len, 0xff);
-                break;
-            }
-            case TYPE_DATETIME:
-                memcpy(key + offset, max_datetime, len);
-                break;
-        }
-    }
-
-    /**
-     * @brief 注入查找下界极限key
-     * @param  col_name 字段名称
-     * @param  key     注入key指针
-     * @param  offset  字段偏移量
-     * @param  len     字段长度
-     */
-    void injectLowKey(std::string col_name, char *key, int offset, int len) {
-        int min_int = std::numeric_limits<int>::min();
-        float min_float = std::numeric_limits<float>::min();
-        const char *min_datetime = "0000-01-01 00:00:00";
-        switch (tab_.get_col(col_name)->type) {
-            case TYPE_INT: {
-                memcpy(key + offset, &min_int, len);
-                break;
-            }
-            case TYPE_FLOAT: {
-                memcpy(key + offset, &min_float, len);
-                break;
-            }
-            case TYPE_STRING: {
-                std::fill(key + offset, key + offset + len, 0x00);
-                break;
-            }
-            case TYPE_DATETIME:
-                memcpy(key + offset, min_datetime, len);
-                break;
-        }
-    }
-
-    /**
-     * @brief 写入定位索引的上下界key
-     * */
-    void generate_index_key(char *low_key, char *up_key) {
-        size_t i = 0;
+    void generate_index_key(char* low_key, char* up_key) {
+        std::unordered_map<std::string, int> index_names_map;
+        std::vector<int> index_offsets;
+        index_offsets.reserve(max_match_col_count_);
         int offset = 0;
-        for (; i < index_conds_.size(); ++i) {
-            int len = index_meta_.cols[i].len;
-            if (index_conds_[i].op == OP_EQ) {
-                memcpy(low_key + offset, index_conds_[i].rhs_val.raw->data, len);
-                memcpy(up_key + offset, index_conds_[i].rhs_val.raw->data, len);
-                offset += len;
-            } else {
-                if (index_conds_[i].op == OP_LE || index_conds_[i].op == OP_LT) {
-                    memcpy(up_key + offset, index_conds_[i].rhs_val.raw->data, len);
-                    if (is_con_closed_) {
-                        memcpy(low_key + offset, con_closed_.rhs_val.raw->data, len);
-                    } else {
-                        injectLowKey(index_conds_[i].lhs_col.col_name, low_key, offset, len);
-                    }
-                    offset += len;
+        for (int id = 0; id < max_match_col_count_; ++id) {
+            const auto &col = index_meta_.cols[id];
+            index_names_map.emplace(col.name, id);
+            index_offsets.push_back(offset);
+            offset += col.len;
+        }
+
+        // for (size_t id = 0; id < index_meta_.cols.size(); ++id) {
+        //     int offset = index_offsets[id];
+        //     int col_len = index_meta_.cols[id].len;
+        //     ColType col_type = index_meta_.cols[id].type;
+        //     inject_max_value(up_key + offset, col_type, col_len);
+        //     inject_min_value(low_key + offset, col_type, col_len);
+        // }
+        memcpy(low_key, index_meta_.min_val.get(), index_meta_.col_tot_len);
+        memcpy(up_key, index_meta_.max_val.get(), index_meta_.col_tot_len);
+
+        for (auto &cond : fed_conds_) {
+            if(cond.is_rhs_val && cond.op != CompOp::OP_NE) {
+                // 只处理右侧是值的条件
+                auto iter = index_names_map.find(cond.lhs_col.col_name);
+                if (iter == index_names_map.end()) {
+                    continue; // 如果条件不涉及索引列，跳过
                 }
-                if (index_conds_[i].op == OP_GE || index_conds_[i].op == OP_GT) {
-                    memcpy(low_key + offset, index_conds_[i].rhs_val.raw->data, len);
-                    if (is_con_closed_) {
-                        memcpy(up_key + offset, con_closed_.rhs_val.raw->data, len);
-                    } else {
-                        injectHighKey(index_conds_[i].lhs_col.col_name, up_key, offset, len);
+                int offset = index_offsets[iter->second];
+                int col_len = index_meta_.cols[iter->second].len;
+                auto& rhs_val = cond.rhs_val;
+                ColType col_type = index_meta_.cols[iter->second].type;
+
+                switch (cond.op) {
+                    case OP_EQ: {
+                        // 等值条件设置精确边界
+                        memcpy(low_key + offset, rhs_val.raw->data, col_len);
+                        memcpy(up_key + offset, rhs_val.raw->data, col_len);
+                        break;
                     }
-                    offset += len;
+                    case OP_LT: {
+                        // 上界设置为条件值减1
+                        memcpy(up_key + offset, rhs_val.raw->data, col_len);
+                        decrement_key(up_key + offset, col_type, col_len);
+                        break;
+                    }
+                    case OP_LE: {
+                        // 直接使用条件值作为上界
+                        memcpy(up_key + offset, rhs_val.raw->data, col_len);
+                        break;
+                    }
+                    case OP_GT: {
+                        // 下界设置为条件值加1
+                        memcpy(low_key + offset, rhs_val.raw->data, col_len);
+                        increment_key(low_key + offset, col_type, col_len);
+                        break;
+                    }
+                    case OP_GE: {
+                        // 直接使用条件值作为下界
+                        memcpy(low_key + offset, rhs_val.raw->data, col_len);
+                        break;
+                    }
+                    default:
+                        throw InternalError("Unsupported operator for index scan");
                 }
             }
         }
-        for (; i < index_meta_.cols.size(); ++i) {
-            int len = index_meta_.cols[i].len;
-            injectLowKey(index_meta_.cols[i].name, low_key, offset, len);
-            injectHighKey(index_meta_.cols[i].name, up_key, offset, len);
-            offset += len;
+
+        // 使用双指针算法移除已经使用的条件
+        auto left = fed_conds_.begin();
+        auto right = fed_conds_.end();
+        auto check = [&](const Condition &cond) {
+            return cond.is_rhs_val && cond.op != CompOp::OP_NE &&
+                   index_names_map.count(cond.lhs_col.col_name);
+        };
+        while (left < right) {
+            if (check(*left)) {
+                // 将右侧非目标元素换到左侧
+                while (left < --right && check(*right));
+                if (left >= right) break;
+                *left = std::move(*right);
+            }
+            ++left;
+        }
+        fed_conds_.erase(left, fed_conds_.end());
+    }
+
+    // 辅助函数：键值操作
+    // void inject_min_value(char* key, ColType type, int len) {
+    //     switch (type) {
+    //         case TYPE_INT:
+    //             *reinterpret_cast<int*>(key) = std::numeric_limits<int>::min();
+    //             break;
+    //         case TYPE_FLOAT:
+    //             *reinterpret_cast<float*>(key) = -std::numeric_limits<float>::infinity();
+    //             break;
+    //         case TYPE_STRING:
+    //             memset(key, 0, len);
+    //             break;
+    //         case TYPE_DATETIME:
+    //             memcpy(key, "0000-01-01 00:00:00", len);
+    //             break;
+    //     }
+    // }
+
+    // void inject_max_value(char* key, ColType type, int len) {
+    //     switch (type) {
+    //         case TYPE_INT:
+    //             *reinterpret_cast<int*>(key) = std::numeric_limits<int>::max();
+    //             break;
+    //         case TYPE_FLOAT:
+    //             *reinterpret_cast<float*>(key) = std::numeric_limits<float>::infinity();
+    //             break;
+    //         case TYPE_STRING:
+    //             memset(key, 0xFF, len);
+    //             break;
+    //         case TYPE_DATETIME:
+    //             memcpy(key, "9999-12-31 23:59:59", len);
+    //             break;
+    //     }
+    // }
+
+    void increment_key(char* key, ColType type, int len) {
+        switch (type) {
+            case TYPE_INT: {
+                int& val = *reinterpret_cast<int*>(key);
+                val = (val == std::numeric_limits<int>::max()) ? val : val + 1;
+                break;
+            }
+            case TYPE_FLOAT: {
+                float& val = *reinterpret_cast<float*>(key);
+                val = std::nextafter(val, std::numeric_limits<float>::infinity());
+                break;
+            }
+            case TYPE_STRING: {
+                for (int i = len-1; i >= 0; --i) {
+                    if (key[i] < 0xFF) {
+                        ++key[i];
+                        break;
+                    }
+                }
+                break;
+            }
+            case TYPE_DATETIME:
+                // 日期类型不支持自增，保持原值
+                break;
         }
     }
+
+    void decrement_key(char* key, ColType type, int len) {
+        switch (type) {
+            case TYPE_INT: {
+                int& val = *reinterpret_cast<int*>(key);
+                val = (val == std::numeric_limits<int>::min()) ? val : val - 1;
+                break;
+            }
+            case TYPE_FLOAT: {
+                float& val = *reinterpret_cast<float*>(key);
+                val = std::nextafter(val, -std::numeric_limits<float>::infinity());
+                break;
+            }
+            case TYPE_STRING: {
+                for (int i = len-1; i >= 0; --i) {
+                    if (key[i] > 0) {
+                        --key[i];
+                        break;
+                    }
+                }
+                break;
+            }
+            case TYPE_DATETIME:
+                // 日期类型不支持自减，保持原值
+                break;
+        }
+    }
+
+    // bool check_point_query(const char* low_key, const char* up_key) const {
+    //     return memcmp(low_key, up_key, index_meta_.col_tot_len) == 0;
+    // }
 
     /**
      * @brief 检查元组是否满足条件
@@ -336,24 +319,8 @@ public:
      */
     void beginTuple() override {
         if (first_record_) {
-            auto index_handle = sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index_meta_.cols)).get();
-            char low_key[index_meta_.col_tot_len];
-            char up_key[index_meta_.col_tot_len];
-            generate_index_key(low_key, up_key);
-            int offset = 0;
-            int res = 0;
-            for (size_t i = 0; i < index_meta_.cols.size(); ++i) {
-                res = ix_compare(low_key + offset, up_key + offset, index_meta_.cols[i].type, index_meta_.cols[i].len);
-                if (res != 0)
-                    break;
-                offset += index_meta_.cols[i].len;
-            }
-            // 检查区间不为空集
-            if (res > 0) {
-                scan_ = std::make_unique<IxScan>(index_handle, index_handle->leaf_end(), index_handle->leaf_end(), sm_manager_->get_bpm());
-            } else {
-                scan_ = std::make_unique<IxScan>(index_handle, index_handle->lower_bound(low_key), index_handle->upper_bound(up_key), sm_manager_->get_bpm());
-            }
+            setup_scan();
+            std::sort(fed_conds_.begin(), fed_conds_.end());
         } 
         cache_index_ = -1;
         nextTuple();

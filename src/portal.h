@@ -24,6 +24,7 @@ See the Mulan PSL v2 for more details. */
 #include "execution/executor_delete.h"
 #include "execution/execution_sort.h"
 #include "execution/executor_mergejoin.h"
+#include "execution/executor_semijoin.h"
 #include "execution/execution_agg.h"
 #include "common/common.h"
 
@@ -196,7 +197,7 @@ public:
             //     }
             // }
 
-            return std::make_unique<SeqScanExecutor>(sm_manager_, x->tab_name_, x->conds_, context);
+            return std::make_unique<SeqScanExecutor>(sm_manager_, x->tab_name_, x->fed_conds_, context);
         }
         case PlanTag::T_IndexScan:
         {
@@ -219,7 +220,8 @@ public:
             //         throw RMDBError("Scalar subquery result size is not 1");
             //     }
             // }
-            return std::make_unique<IndexScanExecutor>(sm_manager_, x->tab_name_, x->conds_, x->index_meta_, context);
+            return std::make_unique<IndexScanExecutor>(sm_manager_, x->tab_name_, x->fed_conds_, x->index_meta_, 
+                x->max_match_col_count_, context);
         }
         case PlanTag::T_NestLoop:
         {
@@ -239,15 +241,25 @@ public:
             context->setJoinFlag(true); // 设置 join 标志位
             return std::make_unique<MergeJoinExecutor>(std::move(left), std::move(right), std::move(x->conds_));
         }
+        case PlanTag::T_SemiJoin:
+        {
+            auto x = std::static_pointer_cast<JoinPlan>(plan);
+            std::unique_ptr<AbstractExecutor> left = convert_plan_executor(x->left_, context);
+            std::unique_ptr<AbstractExecutor> right = convert_plan_executor(x->right_, context);
+            std::unique_ptr<AbstractExecutor> join;
+            context->setJoinFlag(true); // 设置 join 标志位
+            return std::make_unique<SemiJoinExecutor>(std::move(left), std::move(right), std::move(x->conds_));
+        }
         case PlanTag::T_Sort:
         {
             auto x = std::static_pointer_cast<SortPlan>(plan);
             return std::make_unique<SortExecutor>(convert_plan_executor(x->subplan_, context),
-                                                  x->sel_col_, x->is_desc_);
+                                                  x->sel_cols_, x->is_desc_orders_, x->limit_, context);
         }
         case PlanTag::T_Agg:
         {
             auto x = std::static_pointer_cast<AggPlan>(plan);
+            context->setAggFlag(true);
             return std::make_unique<AggExecutor>(convert_plan_executor(x->subplan_, context),
                                                  x->sel_cols_, x->groupby_cols_, x->having_conds_, context);
         }

@@ -14,6 +14,7 @@ See the Mulan PSL v2 for more details. */
 #include <unordered_map>
 #include "executor_abstract.h"
 #include "../parser/ast.h"
+#include <iomanip>
 
 class AggExecutor : public AbstractExecutor {
 private:
@@ -36,9 +37,19 @@ private:
     size_t current_group_index_; // 当前遍历的分组索引
     std::vector<RmRecord> results_; // 储存结果
     std::vector<RmRecord>::iterator result_it_; // 结果迭代器
+    // 用于跟踪 AVG 聚合的中间状态
+    struct AvgState {
+        double sum = 0.0;// 可能丢失精度
+        int count = 0;
+    };
+    std::unordered_map<std::string, std::vector<AvgState>> avg_states_; // 分组键 -> AVG状态数组
+    std::unordered_map<std::string, std::vector<AvgState>> having_lhs_avg_states_; // HAVING左AVG状态
+    std::unordered_map<std::string, std::vector<AvgState>> having_rhs_avg_states_; // HAVING右AVG状态
 
-    void init(std::vector<Value> &agg_values, std::vector<TabCol> sel_cols_, const RmRecord &record);
-    void aggregate_values(std::vector<Value> &agg_values, const std::vector<TabCol> sel_cols_, const std::vector<std::vector<ColMeta>::const_iterator> sel_col_metas_, const RmRecord &record);
+    void avg_calculate(const std::vector<TabCol>& sel_cols, std::vector<AvgState> avg_states, std::vector<Value> &agg_values);
+
+    void init(std::vector<Value> &agg_values, const std::vector<TabCol>& sel_cols_, const RmRecord &record);
+    void aggregate_values(std::vector<Value> &agg_values, std::vector<AvgState> &avg_states, const std::vector<TabCol>& sel_cols_, const std::vector<std::vector<ColMeta>::const_iterator>& sel_col_metas_, const RmRecord &record);
     void aggregate(const RmRecord &record);                             // 聚合计算
     std::string get_group_key(const RmRecord &record);                  // 获取分组键
     bool check_having_conditions(const std::vector<Value> &having_lhs_agg_values, const std::vector<Value> &having_rhs_agg_values);// 判断having
@@ -57,10 +68,11 @@ public:
             ColMeta col_meta;
             if (ast::AggFuncType::COUNT == col.aggFuncType) {
                 col_meta = {col.tab_name, col.col_name, TYPE_INT, sizeof(int), offset, false};
-                TupleLen += col_meta.len;
-                offset += col_meta.len;
-                output_cols_.emplace_back(std::move(col_meta));
                 sel_col_metas_.emplace_back(output_cols_.begin());
+            }else if (ast::AggFuncType::AVG == col.aggFuncType) {
+                col_meta = {col.tab_name, col.col_name, TYPE_STRING, 20, offset, false};
+                auto temp = get_col(child_executor_->cols(), col);
+                sel_col_metas_.emplace_back(temp);
             } else {
                 if (col.col_name == "*") {
                     throw InvalidAggTypeError("*", std::to_string(col.aggFuncType));
@@ -69,10 +81,10 @@ public:
                 sel_col_metas_.emplace_back(temp);
                 col_meta = *temp;
                 col_meta.offset = offset;
-                TupleLen += col_meta.len;
-                offset += col_meta.len;
-                output_cols_.emplace_back(std::move(col_meta));
             }
+            TupleLen += col_meta.len;
+            offset += col_meta.len;
+            output_cols_.emplace_back(std::move(col_meta));
         }
         // 初始化 GROUP BY 列元数据
         for (const auto &col : group_by_cols_) {
@@ -116,6 +128,11 @@ public:
         agg_groups_.clear();
         having_lhs_agg_groups_.clear();
         having_rhs_agg_groups_.clear();
+
+        // 初始化AVG中间值
+        avg_states_.clear();
+        having_lhs_avg_states_.clear();
+        having_rhs_avg_states_.clear();
     }
 
     size_t tupleLen() const {
@@ -131,6 +148,9 @@ public:
         agg_groups_.clear();
         having_lhs_agg_groups_.clear();
         having_rhs_agg_groups_.clear();
+        avg_states_.clear();
+        having_lhs_avg_states_.clear();
+        having_rhs_avg_states_.clear();
         while (!child_executor_->is_end()) {
             auto record = child_executor_->Next();
             if (record) {
@@ -167,7 +187,10 @@ public:
                 auto agg_type = sel_cols_[i].aggFuncType;
                 if (ast::AggFuncType::COUNT == agg_type) {
                     agg_values[i].set_int(0);
-                } else if (ast::AggFuncType::SUM == agg_type || ast::AggFuncType::MAX == agg_type || ast::AggFuncType::MIN == agg_type) {
+                } else if (ast::AggFuncType::AVG == agg_type) {
+                    agg_values[i].type = TYPE_STRING;
+                    agg_values[i].set_str("0.000000");
+                }else if (ast::AggFuncType::SUM == agg_type || ast::AggFuncType::MAX == agg_type || ast::AggFuncType::MIN == agg_type) {
                     auto col = get_col(child_executor_->cols(), {sel_cols_[i].tab_name, sel_cols_[i].col_name});
                     if (ast::AggFuncType::MIN == agg_type)
                         agg_values[i].set_max(col->type, col->len);
@@ -205,13 +228,20 @@ public:
         auto &having_lhs_agg_values = having_lhs_agg_groups_[group_key];
         auto &having_rhs_agg_values = having_rhs_agg_groups_[group_key];
 
+        auto &avg_states = avg_states_[group_key];
+        auto &having_lhs_avg_states = having_lhs_avg_states_[group_key];
+        auto &having_rhs_avg_states = having_rhs_avg_states_[group_key];
+
+        avg_calculate(sel_cols_, avg_states, agg_values);
+        avg_calculate(having_lhs_cols_, having_lhs_avg_states, having_lhs_agg_values);
+        avg_calculate(having_rhs_cols_, having_rhs_avg_states, having_rhs_agg_values);
+
         // 检查是否满足having条件
         if (!check_having_conditions(having_lhs_agg_values, having_rhs_agg_values))
         {
             ++current_group_index_;
             return addResult(); // 跳过不满足条件的分组
         }
-
         RmRecord record(TupleLen);
         int offset = 0;
 
@@ -238,12 +268,31 @@ public:
     ExecutionType type() const override { return ExecutionType::Agg;  }
 };
 
-void AggExecutor::init(std::vector<Value> &agg_values, const std::vector<TabCol> sel_cols_, const RmRecord &record){
+void AggExecutor::avg_calculate(const std::vector<TabCol>& sel_cols, std::vector<AvgState> avg_states, std::vector<Value>& agg_values){
+    for (size_t i = 0; i < sel_cols.size(); ++i) {
+        if (sel_cols[i].aggFuncType == ast::AggFuncType::AVG) {
+            auto &state = avg_states[i];
+            if (state.count > 0) {
+                double b = state.sum / state.count;
+                double rounded = std::round(b * 1e6) / 1e6;
+                std::string str = std::to_string(rounded);
+                agg_values[i].type = TYPE_STRING;
+                agg_values[i].set_str(str);
+                std::cout<<"string"<<str<<std::endl;
+            }
+        }
+    }
+}
+
+void AggExecutor::init(std::vector<Value> &agg_values, const std::vector<TabCol>& sel_cols_, const RmRecord &record){
     for (size_t i = 0; i < sel_cols_.size(); ++i) {
         auto agg_type = sel_cols_[i].aggFuncType;
         if (ast::AggFuncType::COUNT == agg_type) {
             agg_values[i].set_int(0);
-        } else if (ast::AggFuncType::SUM == agg_type || ast::AggFuncType::MAX == agg_type || ast::AggFuncType::MIN == agg_type) {
+        } else if (ast::AggFuncType::AVG == agg_type) {
+            agg_values[i].type = TYPE_STRING;
+            agg_values[i].set_str("0.0");
+        }else if (ast::AggFuncType::SUM == agg_type || ast::AggFuncType::MAX == agg_type || ast::AggFuncType::MIN == agg_type) {
             auto col = get_col(child_executor_->cols(), {sel_cols_[i].tab_name, sel_cols_[i].col_name});
             if (ast::AggFuncType::MIN == agg_type)
                 agg_values[i].set_max(col->type, col->len);
@@ -283,7 +332,7 @@ void AggExecutor::init(std::vector<Value> &agg_values, const std::vector<TabCol>
     }
 }
 
-void AggExecutor::aggregate_values(std::vector<Value> &agg_values, const std::vector<TabCol> sel_cols_, const std::vector<std::vector<ColMeta>::const_iterator> sel_col_metas_,const RmRecord &record){
+void AggExecutor::aggregate_values(std::vector<Value> &agg_values, std::vector<AvgState> &avg_states, const std::vector<TabCol>& sel_cols_, const std::vector<std::vector<ColMeta>::const_iterator>& sel_col_metas_,const RmRecord &record){
     for (size_t i = 0; i < sel_cols_.size(); ++i) {
         auto agg_type = sel_cols_[i].aggFuncType;
         // GROUP BY 列不需要更新
@@ -328,6 +377,14 @@ void AggExecutor::aggregate_values(std::vector<Value> &agg_values, const std::ve
             case ast::AggFuncType::MIN:
                 agg_values[i] = std::min(agg_values[i], value);
                 break;
+            case ast::AggFuncType::AVG:
+                if (TYPE_INT == value.type) {
+                    avg_states[i].sum += static_cast<double>(value.int_val);
+                } else if (TYPE_FLOAT == value.type) {
+                    avg_states[i].sum += static_cast<double>(value.float_val);
+                }
+                ++avg_states[i].count;
+                break;
             default:
                 break;
         }
@@ -339,18 +396,27 @@ void AggExecutor::aggregate(const RmRecord &record) {
     auto &agg_values = agg_groups_[group_key];
     auto &having_lhs_agg_values = having_lhs_agg_groups_[group_key];
     auto &having_rhs_agg_values = having_rhs_agg_groups_[group_key];
+
+    auto &avg_states = avg_states_[group_key];
+    auto &having_lhs_avg_states = having_lhs_avg_states_[group_key];
+    auto &having_rhs_avg_states = having_rhs_avg_states_[group_key];
     if (agg_values.empty()) {
         insert_order_.emplace_back(group_key); // 记录分组键的插入顺序
         agg_values.resize(sel_cols_.size());
         having_lhs_agg_values.resize(having_lhs_cols_.size());
         having_rhs_agg_values.resize(having_rhs_cols_.size());
+
+        avg_states.resize(sel_cols_.size());
+        having_lhs_avg_states.resize(having_lhs_cols_.size());
+        having_rhs_avg_states.resize(having_rhs_cols_.size());
+        
         init(agg_values, sel_cols_, record);
         init(having_lhs_agg_values, having_lhs_cols_, record);
         init(having_rhs_agg_values, having_rhs_cols_, record);
     }
-    aggregate_values(agg_values, sel_cols_, sel_col_metas_, record);
-    aggregate_values(having_lhs_agg_values, having_lhs_cols_, having_lhs_col_metas_, record);
-    aggregate_values(having_rhs_agg_values, having_rhs_cols_, having_rhs_col_metas_, record);
+    aggregate_values(agg_values, avg_states, sel_cols_, sel_col_metas_, record);
+    aggregate_values(having_lhs_agg_values, having_lhs_avg_states, having_lhs_cols_, having_lhs_col_metas_, record);
+    aggregate_values(having_rhs_agg_values, having_rhs_avg_states, having_rhs_cols_, having_rhs_col_metas_, record);
 }
 
 std::string AggExecutor::get_group_key(const RmRecord &record) {
@@ -405,22 +471,40 @@ bool AggExecutor::check_having_conditions(const std::vector<Value> &having_lhs_a
     return true;
 }
 
-bool AggExecutor::compare_values(const Value &lhs_value, const Value &rhs_value, CompOp op)
-{
-    switch (op)
-    {
+bool AggExecutor::compare_values(const Value &lhs_value, const Value &rhs_value, CompOp op) {
+    // 如果其中一个是字符串数值（AVG 结果），转换为 double 进行比较
+    auto convert_to_double = [](const Value &val) -> double {
+        if (val.type == TYPE_STRING) {
+            try {
+                return std::stod(val.str_val);
+            } catch (...) {
+                throw InternalError("Invalid numeric string in AVG comparison");
+            }
+        } else if (val.type == TYPE_INT) {
+            return static_cast<double>(val.int_val);
+        } else if (val.type == TYPE_FLOAT) {
+            return static_cast<double>(val.float_val);
+        } else {
+            throw InternalError("Unsupported type in AVG comparison");
+        }
+    };
+
+    double lhs_num = convert_to_double(lhs_value);
+    double rhs_num = convert_to_double(rhs_value);
+
+    switch (op) {
         case OP_EQ:
-            return lhs_value == rhs_value;
+            return std::abs(lhs_num - rhs_num) < 1e-9;
         case OP_NE:
-            return lhs_value != rhs_value;
+            return std::abs(lhs_num - rhs_num) >= 1e-9;
         case OP_LT:
-            return lhs_value < rhs_value;
+            return lhs_num < rhs_num;
         case OP_LE:
-            return lhs_value <= rhs_value;
+            return lhs_num <= rhs_num;
         case OP_GT:
-            return lhs_value > rhs_value;
+            return lhs_num > rhs_num;
         case OP_GE:
-            return lhs_value >= rhs_value;
+            return lhs_num >= rhs_num;
         default:
             throw InternalError("Unexpected comparison operator");
     }

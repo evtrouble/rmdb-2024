@@ -39,6 +39,10 @@ public:
     std::vector<TabCol> groupby;
     // having条件
     std::vector<Condition> having_conds;
+    // jointree
+    std::vector<JoinExpr> jointree;
+    // limit条件
+    int limit = -1;
     Query() {}
 };
 
@@ -54,7 +58,7 @@ public:
     std::shared_ptr<Query> do_analyze(std::shared_ptr<ast::TreeNode> root);
 
 private:
-    TabCol check_column(const std::vector<ColMeta> &all_cols, TabCol target);
+    TabCol check_column(const std::vector<ColMeta> &all_cols, TabCol target, bool is_semijoin);
     void get_all_cols(const std::vector<std::string> &tab_names, std::vector<ColMeta> &all_cols);
     void get_clause(const std::vector<std::shared_ptr<ast::BinaryExpr>> &sv_conds, std::vector<Condition> &conds);
     void check_clause(const std::vector<std::string> &tab_names, std::vector<Condition> &conds, bool is_having);

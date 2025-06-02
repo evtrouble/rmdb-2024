@@ -82,7 +82,9 @@ value_path [\.|\/][^ \t]+\.csv
 "DATETIME" {return DATETIME; }
 "INDEX" { return INDEX; }
 "AND" { return AND; }
+"SEMI" { return SEMI; }
 "JOIN" {return JOIN;}
+"ON" { return ON; }
 "IN" { return IN; }
 "NOT" { return NOT; }
 "EXIT" { return EXIT; }
@@ -92,10 +94,12 @@ value_path [\.|\/][^ \t]+\.csv
 "BY" {  return BY;  }
 "HAVING" { return HAVING; }
 "ASC" { return ASC; }
+"LIMIT" { return LIMIT; }
 "SUM" { return SUM; }
 "COUNT" { return COUNT; }
 "MAX" { return MAX; }
 "MIN" { return MIN; }
+"AVG" { return AVG; }
 "AS" { return AS; }
 "ENABLE_NESTLOOP" { return ENABLE_NESTLOOP; }
 "ENABLE_SORTMERGE" { return ENABLE_SORTMERGE; }

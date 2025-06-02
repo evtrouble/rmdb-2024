@@ -55,7 +55,7 @@ private:
     std::shared_ptr<Plan> generate_select_plan(std::shared_ptr<Query> query, Context *context);
 
     // int get_indexNo(std::string tab_name, std::vector<Condition> curr_conds);
-    IndexMeta *get_index_cols(const std::string &tab_name, const std::vector<Condition> &curr_conds);
+    std::pair<IndexMeta*, int> get_index_cols(const std::string &tab_name, const std::vector<Condition> &curr_conds);
 
     ColType interp_sv_type(ast::SvType sv_type)
     {

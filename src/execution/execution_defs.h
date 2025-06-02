@@ -16,11 +16,13 @@ enum class ExecutionType
 {
         Agg,
         Sort,
+        Agg_Sort,
         Delete,
         IndexScan,
         Insert,
         MergeJoin,
         NestedLoopJoin,
+        SemiJoin,
         Projection,
         Select,
         SeqScan,

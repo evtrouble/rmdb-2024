@@ -83,4 +83,8 @@ public:
     virtual bool is_end() const = 0;
 
     virtual Rid rid() const = 0;
+
+    virtual void next_batch() {
+        
+    }
 };

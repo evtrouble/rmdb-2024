@@ -106,7 +106,7 @@ public:
             old_rec = rec;
             // 根据set_clauses_更新记录值
             for (size_t i = 0; i < set_clauses_.size(); ++i) {
-                set_clauses_[i].rhs.export_val(rec.data + set_col_metas[i]->offset, set_col_metas[i]->len);
+                memcpy(rec.data + set_col_metas[i]->offset, set_clauses_[i].rhs.raw->data, set_col_metas[i]->len);
             }
 
             // 更新索引

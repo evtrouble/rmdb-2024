@@ -118,7 +118,6 @@ protected:
                 throw InternalError("Unsupported column type");
             }
         }
-
         switch (op)
         {
         case OP_EQ:

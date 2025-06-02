@@ -15,6 +15,7 @@ See the Mulan PSL v2 for more details. */
 #include <memory>
 #include <string>
 #include <vector>
+#include <cmath>
 #include "defs.h"
 #include "record/rm_defs.h"
 #include "parser/ast.h"
@@ -79,7 +80,7 @@ struct Value
         else if (type == TYPE_FLOAT)
         {
             assert(len == sizeof(float));
-            *(float *)(raw->data) = float_val;
+            *(float *)(raw->data) = std::round(float_val * multiplier) / multiplier;
         }
         else if (type == TYPE_STRING)
         {
@@ -91,6 +92,7 @@ struct Value
             memset(raw->data + str_val.size(), 0, len - str_val.size());
         }
     }
+    
     void export_val(char *dest, int len)
     {
         if (type == TYPE_INT)
@@ -149,24 +151,20 @@ struct Value
         return false;
     }
 
-    bool operator!=(const Value &other) const
-    {
-        return !(*this == other);
+    bool operator>=(const Value &other) const {
+        return !(*this < other);
     }
 
-    bool operator<=(const Value &other) const
-    {
+    bool operator<=(const Value &other) const {
         return (*this < other) || (*this == other);
     }
 
-    bool operator>(const Value &other) const
-    {
+    bool operator>(const Value &other) const {
         return !(*this <= other);
     }
 
-    bool operator>=(const Value &other) const
-    {
-        return !(*this < other);
+    bool operator!=(const Value &other) const {
+        return !(*this == other);
     }
 
     void set_max(ColType type, int len)
@@ -207,7 +205,7 @@ struct Value
             break;
         }
     }
-    Value() {};
+    Value() = default;
 };
 // 在 std 命名空间中特化 hash<Value>
 namespace std
@@ -324,4 +322,13 @@ struct SetClause
 {
     TabCol lhs;
     Value rhs;
+};
+
+struct JoinExpr
+{
+    std::string left;
+    std::string right;
+    std::vector<Condition> conds;
+    JoinType type;
+    JoinExpr() = default;
 };

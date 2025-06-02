@@ -54,6 +54,7 @@ deploy/
 *.pb.h
 *.pb.cc
 .DS_Store
+.vscode
 # cmake
 bin/
 *.pc

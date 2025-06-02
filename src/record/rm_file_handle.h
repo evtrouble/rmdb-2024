@@ -79,6 +79,7 @@ public:
     }
 
     std::unique_ptr<RmRecord> get_record(const Rid &rid, Context *context) const;
+    std::vector<std::pair<std::unique_ptr<RmRecord>, int>> get_records(int page_no, Context *context) const;
 
     Rid insert_record(char *buf, Context *context);
 

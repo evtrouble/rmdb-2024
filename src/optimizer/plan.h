@@ -43,6 +43,7 @@ typedef enum PlanTag
     T_IndexScan,
     T_NestLoop,
     T_SortMerge, // sort merge join
+    T_SemiJoin,
     T_Sort,
     T_Agg,
     T_Projection,
@@ -62,22 +63,35 @@ public:
 class ScanPlan : public Plan
 {
 public:
-    ScanPlan(PlanTag tag, SmManager *sm_manager, const std::string &tab_name, const std::vector<Condition> &conds, const IndexMeta &index_meta)
-        : Plan(tag), tab_name_(std::move(tab_name)), conds_(std::move(conds)), index_meta_(index_meta)
+    ScanPlan(PlanTag tag, SmManager *sm_manager, const std::string &tab_name, const std::vector<Condition> &conds)
+        : Plan(tag), tab_name_(std::move(tab_name)), fed_conds_(std::move(conds))
     {
         TabMeta &tab = sm_manager->db_.get_table(tab_name_);
         cols_ = tab.cols;
         len_ = cols_.back().offset + cols_.back().len;
-        fed_conds_ = conds_;
+        // fed_conds_ = conds_;
     }
+
+    ScanPlan(PlanTag tag, SmManager *sm_manager, const std::string &tab_name, const std::vector<Condition> &conds, 
+        const IndexMeta &index_meta, int max_match_col_count)
+        : Plan(tag), tab_name_(std::move(tab_name)), fed_conds_(std::move(conds)), index_meta_(index_meta), 
+        max_match_col_count_(max_match_col_count)
+    {
+        TabMeta &tab = sm_manager->db_.get_table(tab_name_);
+        cols_ = tab.cols;
+        len_ = cols_.back().offset + cols_.back().len;
+        // fed_conds_ = conds_;
+    }
+
     ~ScanPlan() {}
     // 以下变量同ScanExecutor中的变量
     std::string tab_name_;
     std::vector<ColMeta> cols_;
-    std::vector<Condition> conds_;
+    // std::vector<Condition> conds_;
     size_t len_;
     std::vector<Condition> fed_conds_;
     IndexMeta index_meta_;
+    int max_match_col_count_;
 };
 
 class JoinPlan : public Plan
@@ -112,12 +126,33 @@ public:
 class SortPlan : public Plan
 {
 public:
-    SortPlan(PlanTag tag, std::shared_ptr<Plan> subplan, const TabCol &sel_col, bool is_desc)
-        : Plan(tag), subplan_(std::move(subplan)), sel_col_(std::move(sel_col)), is_desc_(is_desc) {}
+    SortPlan(PlanTag tag, std::shared_ptr<Plan> subplan, const TabCol& sel_col, bool is_desc, int limit = -1)
+        : Plan(tag), subplan_(std::move(subplan)), limit_(limit)
+    {
+        sel_cols_.emplace_back(sel_col);
+        is_desc_orders_.emplace_back(is_desc);
+    }
+    // 多列排序构造函数（支持每列独立排序方向）
+    SortPlan(PlanTag tag, std::shared_ptr<Plan> subplan, 
+            const std::vector<TabCol>& sel_cols, 
+            const std::vector<bool>& is_desc_orders,
+            int limit = -1)
+        : Plan(tag), 
+          subplan_(std::move(subplan)), 
+          sel_cols_(sel_cols),
+          is_desc_orders_(is_desc_orders),
+          limit_(limit)
+    {
+        if (sel_cols.size() != is_desc_orders.size()) {
+            throw std::invalid_argument("Number of sort columns must match number of sort directions");
+        }
+    }
     ~SortPlan() {}
     std::shared_ptr<Plan> subplan_;
-    TabCol sel_col_;
-    bool is_desc_;
+    std::vector<TabCol> sel_cols_;
+    std::vector<bool> is_desc_orders_;
+    int limit_;
+
 };
 
 // dml语句，包括insert; delete; update; select语句　

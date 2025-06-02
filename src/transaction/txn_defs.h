@@ -23,7 +23,7 @@ enum class TransactionState { DEFAULT, GROWING, SHRINKING, COMMITTED, ABORTED };
 enum class IsolationLevel { READ_UNCOMMITTED, REPEATABLE_READ, READ_COMMITTED, SERIALIZABLE };
 
 /* 事务写操作类型，包括插入、删除、更新三种操作 */
-enum class WType { INSERT_TUPLE = 0, DELETE_TUPLE, UPDATE_TUPLE, IX_INSERT_TUPLE, IX_DELETE_TUPLE, IX_UPDATE_TUPLE };
+enum class WType { INSERT_TUPLE = 0, DELETE_TUPLE, UPDATE_TUPLE, IX_INSERT_TUPLE, IX_DELETE_TUPLE };
 
 /**
  * @brief 事务的写操作记录，用于事务的回滚

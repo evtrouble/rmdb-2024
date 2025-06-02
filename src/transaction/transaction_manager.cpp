@@ -22,7 +22,6 @@ std::unordered_map<txn_id_t, Transaction *> TransactionManager::txn_map = {};
  */
 Transaction *TransactionManager::begin(Transaction *txn, LogManager *log_manager)
 {
-    // Todo:
     // 1. 判断传入事务参数是否为空指针
     // 2. 如果为空指针，创建新事务
     // 3. 把开始事务加入到全局事务表中
@@ -55,8 +54,9 @@ Transaction *TransactionManager::begin(Transaction *txn, LogManager *log_manager
  * @param {Transaction*} txn 需要提交的事务
  * @param {LogManager*} log_manager 日志管理器指针
  */
-void TransactionManager::commit(Transaction *txn, LogManager *log_manager)
+void TransactionManager::commit(Context *context, LogManager *log_manager)
 {
+    Transaction *txn = context->txn_;
     // Todo:
     // 1. 如果存在未提交的写操作，提交所有的写操作
     // 2. 释放所有锁
@@ -64,6 +64,10 @@ void TransactionManager::commit(Transaction *txn, LogManager *log_manager)
     // 4. 把事务日志刷入磁盘中
     // 5. 更新事务状态
     // 如果需要支持MVCC请在上述过程中添加代码
+    for(auto write : *txn->get_write_set())
+    {
+        delete write;
+    }
     txn->get_write_set()->clear();
 
     // txn->set_commit_ts(next_timestamp_++); // 设置提交时间戳
@@ -94,7 +98,7 @@ void TransactionManager::commit(Transaction *txn, LogManager *log_manager)
     // 5. 更新事务状态为已提交
     txn->set_state(TransactionState::COMMITTED);
     {
-        std::unique_lock<std::mutex> lock(latch_);
+        std::unique_lock lock(latch_);
         txn_map.erase(txn->get_transaction_id());
     }
     delete txn;
@@ -105,13 +109,66 @@ void TransactionManager::commit(Transaction *txn, LogManager *log_manager)
  * @param {Transaction *} txn 需要回滚的事务
  * @param {LogManager} *log_manager 日志管理器指针
  */
-void TransactionManager::abort(Transaction *txn, LogManager *log_manager)
+void TransactionManager::abort(Context *context, LogManager *log_manager)
 {
-    // Todo:
+    Transaction *txn = context->txn_;
     // 1. 回滚所有写操作
     // 2. 释放所有锁
     // 3. 清空事务相关资源，eg.锁集
     // 4. 把事务日志刷入磁盘中
     // 5. 更新事务状态
     // 如果需要支持MVCC请在上述过程中添加代码
+
+    // 1. 回滚所有写操作
+    auto write_set = txn->get_write_set();
+    while (!write_set->empty())
+    {
+        auto write_record = std::move(write_set->back()); // 获取最后一个写记录
+        write_set->pop_back();                 // 移除最后一个写记录
+        //auto &indexes = sm_manager_->db_.get_table(NameManager::get_name(write_record.fd_))->indexes;
+        // 根据写操作类型进行回滚
+        switch (write_record->GetWriteType())
+        {
+            case WType::INSERT_TUPLE:
+                sm_manager_->fhs_.at(write_record->GetTableName())
+                    ->delete_record(write_record->GetRid(), context);
+                break;
+            case WType::DELETE_TUPLE:
+                sm_manager_->fhs_.at(write_record->GetTableName())
+                    ->insert_record(write_record->GetRecord().data, context);
+                break;
+            case WType::UPDATE_TUPLE:
+                sm_manager_->fhs_.at(write_record->GetTableName())
+                    ->update_record(write_record->GetRid(), write_record->GetRecord().data, context);
+                break;
+            case WType::IX_INSERT_TUPLE:
+                sm_manager_->ihs_.at(write_record->GetTableName())
+                    ->delete_entry(write_record->GetRecord().data, write_record->GetRid(), txn, true);
+                break;
+            case WType::IX_DELETE_TUPLE:
+                sm_manager_->ihs_.at(write_record->GetTableName())
+                    ->insert_entry(write_record->GetRecord().data, write_record->GetRid(), txn, true);
+                break;
+        }
+        delete write_record;
+    }
+    // 2. 释放所有锁
+    auto lock_set = txn->get_lock_set();
+    for (auto &lock_data_id : *lock_set)
+    {
+        lock_manager_->unlock(txn, lock_data_id);
+    }
+    // 3. 清空事务相关资源，eg.锁集
+    lock_set->clear();
+    // 4. 把事务日志刷入磁盘中
+    if (log_manager != nullptr)
+    {
+        log_manager->flush_log_to_disk();
+    }
+    // 5. 更新事务状态
+    txn->set_state(TransactionState::ABORTED);
+    {
+        std::unique_lock lock(latch_);
+        txn_map.erase(txn->get_transaction_id());
+    }
 }

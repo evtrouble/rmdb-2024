@@ -8,7 +8,7 @@ set(CMAKE_DEPENDS_LANGUAGES
 
 # The set of dependency files which are needed:
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
-  "/home/nero/db2024/rmdb/rmdb_client/main.cpp" "CMakeFiles/rmdb_client.dir/main.cpp.o" "gcc" "CMakeFiles/rmdb_client.dir/main.cpp.o.d"
+  "/home/xu/rmdb/rmdb/rmdb_client/main.cpp" "CMakeFiles/rmdb_client.dir/main.cpp.o" "gcc" "CMakeFiles/rmdb_client.dir/main.cpp.o.d"
   )
 
 # Targets to which this target links.

@@ -22,6 +22,8 @@ public:
 
     void next() override;
 
+    void next_batch() override;
+
     bool is_end() const override;
 
     Rid rid() const override;
