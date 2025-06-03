@@ -56,7 +56,7 @@ public:
         for (size_t i = 0; i < values_.size(); ++i) {
             auto &col = tab_.cols[i];
             auto &val = values_[i];
-            if (col.type != val.type) {
+            if (col.type != val.type && (col.type != TYPE_DATETIME || val.type != TYPE_STRING)) {
                 throw IncompatibleTypeError(coltype2str(col.type), coltype2str(val.type));
             }
             memcpy(rec.data + col.offset, val.raw->data, col.len);

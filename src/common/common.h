@@ -62,57 +62,72 @@ struct Value
         float_val = float_val_;
     }
 
-    void set_str(std::string str_val_)
+    void set_str(const std::string& str_val_)
     {
         type = TYPE_STRING;
         str_val = std::move(str_val_);
+    }
+
+    void set_datetime(const std::string& datetime_val_) {
+        type = TYPE_DATETIME;
+        str_val = std::move(datetime_val_);
     }
 
     void init_raw(int len)
     {
         assert(raw == nullptr);
         raw = std::make_shared<RmRecord>(len);
-        if (type == TYPE_INT)
+        switch (type)
         {
+        case TYPE_INT:
             assert(len == sizeof(int));
             *(int *)(raw->data) = int_val;
-        }
-        else if (type == TYPE_FLOAT)
-        {
+            break;
+        case TYPE_FLOAT:
             assert(len == sizeof(float));
             *(float *)(raw->data) = std::round(float_val * multiplier) / multiplier;
-        }
-        else if (type == TYPE_STRING)
-        {
+            break;
+        case TYPE_DATETIME:
+            assert(len == 19);
+        case TYPE_STRING:
             if (len < (int)str_val.size())
             {
                 throw StringOverflowError();
             }
             memcpy(raw->data, str_val.c_str(), str_val.size());
-            memset(raw->data + str_val.size(), 0, len - str_val.size());
+            if(len > (int)str_val.size())
+                memset(raw->data + str_val.size(), 0, len - str_val.size());
+            break;
+        default:
+            throw InternalError("Unsupported value type");
         }
     }
-    
+
     void export_val(char *dest, int len)
     {
-        if (type == TYPE_INT)
+        switch (type)
         {
+        case TYPE_INT:
             assert(len == sizeof(int));
             *(int *)(dest) = int_val;
-        }
-        else if (type == TYPE_FLOAT)
-        {
+            break;
+        case TYPE_FLOAT:
             assert(len == sizeof(float));
-            *(float *)(dest) = float_val;
-        }
-        else if (type == TYPE_STRING)
-        {
+            *(float *)(dest) = std::round(float_val * multiplier) / multiplier;
+            break;
+        case TYPE_DATETIME:
+            assert(len == 19);
+        case TYPE_STRING:
             if (len < (int)str_val.size())
             {
                 throw StringOverflowError();
             }
             memcpy(dest, str_val.c_str(), str_val.size());
-            memset(dest + str_val.size(), 0, len - str_val.size());
+            if(len > (int)str_val.size())
+                memset(dest + str_val.size(), 0, len - str_val.size());
+            break;
+        default:
+            throw InternalError("Unsupported value type");
         }
     }
 
@@ -126,10 +141,8 @@ struct Value
         case TYPE_FLOAT:
             return float_val < other.float_val;
         case TYPE_STRING:
-            return str_val < other.str_val;
         case TYPE_DATETIME:
-            // TODO: Implement datetime comparison
-            break;
+            return str_val < other.str_val;
         }
         return false;
     }
@@ -143,10 +156,8 @@ struct Value
         case TYPE_FLOAT:
             return float_val == other.float_val;
         case TYPE_STRING:
-            return str_val == other.str_val;
         case TYPE_DATETIME:
-            // TODO: Implement datetime equality check
-            break;
+            return str_val == other.str_val;
         }
         return false;
     }
@@ -182,7 +193,7 @@ struct Value
             str_val.append(len, 255);
             break;
         case TYPE_DATETIME:
-            // TODO: Implement datetime max value
+            str_val = "9999-12-31 23:59:59";
             break;
         }
     }
@@ -201,7 +212,7 @@ struct Value
             str_val.append(len, 0);
             break;
         case TYPE_DATETIME:
-            // TODO: Implement datetime min value
+            str_val = "0000-01-01 00:00:00";
             break;
         }
     }
@@ -229,13 +240,11 @@ namespace std
                 h ^= hash<float>()(v.float_val) + 0x9e3779b9 + (h << 6) + (h >> 2);
                 break;
             case TYPE_STRING:
+            case TYPE_DATETIME:
                 // 结合 str_val 的哈希值
                 h ^= hash<string>()(v.str_val) + 0x9e3779b9 + (h << 6) + (h >> 2);
                 break;
                 // 可以添加对其他可能类型的处理
-            case TYPE_DATETIME:
-                // TODO: Implement datetime hash if needed
-                break;
             }
             return h;
         }

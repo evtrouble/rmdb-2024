@@ -278,7 +278,7 @@ void AggExecutor::avg_calculate(const std::vector<TabCol>& sel_cols, std::vector
                 std::string str = std::to_string(rounded);
                 agg_values[i].type = TYPE_STRING;
                 agg_values[i].set_str(str);
-                std::cout<<"string"<<str<<std::endl;
+                // std::cout<<"string"<<str<<std::endl;
             }
         }
     }

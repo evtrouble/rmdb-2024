@@ -99,7 +99,11 @@ struct IndexMeta {
                     std::memset(min_val.get() + offset, 0, col.len);
                     break; 
                 case ColType::TYPE_DATETIME:
-                    break;   
+                    static const char *max_datatime = "9999-12-31 23:59:59";
+                    static const char *min_datatime = "0000-01-01 00:00:00";
+                    std::memcpy(max_val.get() + offset, max_datatime, col.len);
+                    std::memcpy(min_val.get() + offset, min_datatime, col.len);
+                    break;
             }
             offset += col.len;
         }
