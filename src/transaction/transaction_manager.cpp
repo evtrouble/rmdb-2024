@@ -42,7 +42,7 @@ Transaction *TransactionManager::begin(Transaction *txn, LogManager *log_manager
 
     // 将事务加入全局事务表
     {
-        std::unique_lock<std::mutex> lock(latch_);
+        std::unique_lock lock(latch_);
         txn_map.emplace(txn->get_transaction_id(), txn);
     }
 
@@ -153,22 +153,229 @@ void TransactionManager::abort(Context *context, LogManager *log_manager)
         delete write_record;
     }
     // 2. 释放所有锁
-    auto lock_set = txn->get_lock_set();
-    for (auto &lock_data_id : *lock_set)
-    {
-        lock_manager_->unlock(txn, lock_data_id);
-    }
+    // auto lock_set = txn->get_lock_set();
+    // for (auto &lock_data_id : *lock_set)
+    // {
+    //     lock_manager_->unlock(txn, lock_data_id);
+    // }
     // 3. 清空事务相关资源，eg.锁集
-    lock_set->clear();
+    // lock_set->clear();
     // 4. 把事务日志刷入磁盘中
     if (log_manager != nullptr)
     {
         log_manager->flush_log_to_disk();
     }
     // 5. 更新事务状态
+    // txn->set_commit_ts(next_timestamp_++);  // 设置中止时间戳
     txn->set_state(TransactionState::ABORTED);
     {
         std::unique_lock lock(latch_);
         txn_map.erase(txn->get_transaction_id());
     }
+    delete txn;
+}
+
+bool TransactionManager::UpdateUndoLink(int fd, const Rid& rid, std::optional<UndoLink> prev_link,
+                    std::function<bool(std::optional<UndoLink>)>&& check) {
+        // 1. 快速路径：如果不需要更新版本且没有check函数，直接返回
+    if (!prev_link && !check) {
+        return true;
+    }
+    
+    PageId page_id{fd, rid.page_no};
+    std::shared_ptr<PageVersionInfo> page_info;
+    {
+        // 2. 获取页面版本信息 - 使用局部作用域减少全局锁持有时间
+        std::shared_lock<std::shared_mutex> global_lock(version_info_mutex_);
+        auto it = version_info_.find(page_id);
+        if (it != version_info_.end()) {
+            page_info = it->second;
+        }
+    }
+    
+    // 3. 如果需要创建新页面，使用写锁重新检查和创建
+    if (!page_info) {
+        std::unique_lock global_lock(version_info_mutex_);
+        page_info = version_info_.try_emplace(page_id, std::make_shared<PageVersionInfo>()).first->second;
+    }
+    
+    // 4. 更新版本链 - 使用页面级锁
+    std::unique_lock page_lock(page_info->mutex_);
+    
+    // 5. 获取当前版本用于check
+    std::optional<UndoLink> current_version;
+    auto version_it = page_info->prev_version_.find(rid.slot_no);
+    if (version_it != page_info->prev_version_.end()) {
+        current_version = version_it->second;
+    }
+    
+    // 6. 执行check函数
+    if (check && !check(current_version)) {
+        return false;
+    }
+    
+    // 7. 更新版本信息
+    if (current_version) {
+        prev_link->txn_->ModifyUndoLog(prev_link->prev_log_idx_, *current_version);
+    }
+    // 更新或插入新版本
+    page_info->prev_version_.insert_or_assign(rid.slot_no, *prev_link);
+    return true;
+}
+
+std::optional<UndoLog> TransactionManager::GetVisibleRecord(int fd, const Rid& rid, Transaction* current_txn) {
+    if (!current_txn) {
+        return std::nullopt;
+    }
+
+    PageId page_id{fd, rid.page_no};
+    // 获取版本链头
+    std::shared_lock global_lock(version_info_mutex_);
+    auto page_info = version_info_.find(page_id);
+    if (page_info == version_info_.end()) {
+        return std::nullopt;
+    }
+    auto page_info_ptr = page_info->second;
+    global_lock.unlock(); // 释放全局锁以避免长时间持有
+    
+    // 获取记录版本链
+    std::shared_lock lock(page_info_ptr->mutex_);
+    auto it = page_info_ptr->prev_version_.find(rid.slot_no);
+    if (it == page_info_ptr->prev_version_.end()) {
+        return std::nullopt;
+    }
+    auto current = it->second;
+    lock.unlock(); // 释放锁以避免长时间持有
+
+    // 遍历版本链找到可见版本
+    while (current.IsValid()) {
+        auto* version_txn = current.txn_;
+        
+        // 跳过已中止的事务版本
+        if (version_txn->get_state() == TransactionState::ABORTED) {
+            // 获取前一个版本并继续遍历
+            auto undo_log = version_txn->GetUndoLog(current.prev_log_idx_);
+            current = undo_log.prev_version_;
+            continue;
+        }
+
+        // 同一事务的版本可见
+        if (version_txn->get_transaction_id() == current_txn->get_transaction_id()) {
+            return version_txn->GetUndoLog(current.prev_log_idx_);
+        }
+        
+        // 已提交事务的版本根据时间戳判断可见性
+        if (version_txn->get_commit_ts() <= current_txn->get_start_ts()) {
+            return version_txn->GetUndoLog(current.prev_log_idx_);
+        }
+
+        // 获取前一个版本
+        auto undo_log = version_txn->GetUndoLog(current.prev_log_idx_);
+        current = undo_log.prev_version_;
+    }
+    
+    return std::nullopt;
+}
+
+void TransactionManager::TruncateVersionChain(int fd, const Rid& rid, timestamp_t watermark) {
+    // 先用读锁获取page_info
+    PageId page_id{fd, rid.page_no};
+    std::shared_lock global_read_lock(version_info_mutex_);
+    auto page_it = version_info_.find(page_id);
+    if (page_it == version_info_.end()) {
+        return;
+    }
+    auto page_info = page_it->second;
+    global_read_lock.unlock();  // 获取到版本链头后释放全局读锁
+    
+    TruncateVersionChain(page_info, rid, watermark);
+}
+
+void TransactionManager::DeleteVersionChain(int fd, const Rid& rid) {
+    // 先用读锁获取page_info
+    PageId page_id{fd, rid.page_no};
+    std::shared_lock global_read_lock(version_info_mutex_);
+    auto page_it = version_info_.find(page_id);
+    if (page_it == version_info_.end()) {
+        return;
+    }
+    auto page_info = page_it->second;
+    global_read_lock.unlock();
+    
+    DeleteVersionChain(page_info, page_id, rid);
+}
+
+void TransactionManager::DeleteVersionChain(std::shared_ptr<PageVersionInfo> page_info, 
+                                                   const PageId& page_id, const Rid& rid) {
+    // 获取page级别的写锁来保护空检查和删除操作
+    std::unique_lock page_lock(page_info->mutex_);
+    
+    auto version_it = page_info->prev_version_.find(rid.slot_no);
+    if (version_it != page_info->prev_version_.end()) {
+        auto current = version_it->second;
+        page_info->prev_version_.erase(version_it);
+        
+        // 检查是否删除后变为空
+        bool is_empty = page_info->prev_version_.empty();
+        page_lock.unlock();  // 释放页面锁以避免长时间持有
+        if (is_empty) {
+            std::unique_lock global_write_lock(version_info_mutex_);
+            // 二次检查,因为可能在释放页面锁后其他线程添加了记录
+            if (page_info->prev_version_.empty()) {
+                version_info_.erase(page_id);
+            }
+        }
+        
+        // 清理链上所有版本的引用计数
+        while (current.IsValid()) {
+            current.txn_->ReleaseVersionRef();
+            auto undo_log = current.txn_->GetUndoLog(current.prev_log_idx_);
+            current = undo_log.prev_version_;
+        }
+    }
+}
+
+void TransactionManager::TruncateVersionChain(std::shared_ptr<PageVersionInfo> page_info,
+                                                        const Rid &rid, timestamp_t watermark) {
+    // 获取页面级读锁保护版本链遍历
+    std::shared_lock page_lock(page_info->mutex_);
+    auto version_it = page_info->prev_version_.find(rid.slot_no);
+    if (version_it == page_info->prev_version_.end()) {
+        return;
+    }
+    auto current = version_it->second;
+    page_lock.unlock();  // 释放读锁以避免长时间持有，后续操作需要写锁
+   
+    
+    // 遍历版本链找到截断点 - 保持页面级读锁
+    UndoLog undo_log;
+    while (current.IsValid()) {
+        if (current.txn_->get_commit_ts() < watermark) {
+            // 设置截断点的下一个版本为空
+            auto next = current.txn_->GetUndoLog(current.prev_log_idx_).prev_version_;
+
+            current.txn_->ModifyUndoLog(current.prev_log_idx_, UndoLink());
+            
+            // 清理被截断部分的引用计数
+            while (next.IsValid()) {
+                next.txn_->ReleaseVersionRef();
+                undo_log = next.txn_->GetUndoLog(next.prev_log_idx_);
+                next = undo_log.prev_version_;
+            }
+            return;
+        }
+        
+        undo_log = current.txn_->GetUndoLog(current.prev_log_idx_);
+        current = undo_log.prev_version_;
+    }
+}
+
+std::shared_ptr<PageVersionInfo> TransactionManager::GetPageVersionInfo(const PageId& page_id) {
+    // 获取页面版本信息
+    std::shared_lock global_read_lock(version_info_mutex_);
+    auto page_it = version_info_.find(page_id);
+    if (page_it == version_info_.end()) {
+        return nullptr;
+    }
+    return page_it->second;
 }

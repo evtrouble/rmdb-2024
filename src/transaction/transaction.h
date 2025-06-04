@@ -22,23 +22,24 @@ See the Mulan PSL v2 for more details. */
 #include "transaction/txn_defs.h"
 #include "record/rm_defs.h"
 
-/** 表示此tuple的前一个版本的链接 */
+class Transaction;
+/** 表示此tuple的版本链接 */
 struct UndoLink
 {
-  /* 之前的版本可以在其中的事务中找到 */
-  txn_id_t prev_txn_{INVALID_TXN_ID};
-  /* 在 `prev_txn_` 中前一个版本的日志索引 */
+  /* 指向存储版本的事务 */
+  Transaction* txn_{nullptr};
+  /* 在事务中版本的日志索引 */
   int prev_log_idx_{0};
 
   friend auto operator==(const UndoLink &a, const UndoLink &b)
   {
-    return a.prev_txn_ == b.prev_txn_ && a.prev_log_idx_ == b.prev_log_idx_;
+    return a.txn_ == b.txn_ && a.prev_log_idx_ == b.prev_log_idx_;
   }
 
   friend auto operator!=(const UndoLink &a, const UndoLink &b) { return !(a == b); }
 
-  /* Checks if the undo link points to something. */
-  bool IsValid() { return prev_txn_ != INVALID_TXN_ID; }
+  /* 检查撤销链接是否有效 */
+  bool IsValid() { return txn_ != nullptr; }
 };
 
 struct UndoLog
@@ -107,28 +108,49 @@ public:
   /** 修改现有的撤销日志 */
   inline auto ModifyUndoLog(int log_idx, UndoLog new_log)
   {
-    std::scoped_lock<std::mutex> lck(latch_);
+    std::unique_lock lck(latch_);
     undo_logs_[log_idx] = std::move(new_log);
+  }
+
+  inline auto ModifyUndoLog(int log_idx, UndoLink prev_link)
+  {
+    std::unique_lock lck(latch_);
+    undo_logs_[log_idx].prev_version_ = std::move(prev_link);
   }
 
   /** @return 此事务中撤销日志的索引 */
   inline auto AppendUndoLog(UndoLog log) -> UndoLink
   {
-    std::scoped_lock<std::mutex> lck(latch_);
+    std::unique_lock lck(latch_);
     undo_logs_.emplace_back(std::move(log));
-    return {txn_id_, static_cast<int>(undo_logs_.size() - 1)};
+    return {this, static_cast<int>(undo_logs_.size() - 1)};
   }
   inline auto GetUndoLog(size_t log_id) -> UndoLog
   {
-    std::scoped_lock<std::mutex> lck(latch_);
+    std::shared_lock lck(latch_);
     return undo_logs_[log_id];
   }
 
   /** @return 撤销日志的数量 */
   inline auto GetUndoLogNum() -> size_t
   {
-    std::scoped_lock<std::mutex> lck(latch_);
+    std::shared_lock lck(latch_);
     return undo_logs_.size();
+  }
+
+  // 返回false表示事务对象可以删除
+  inline void ReleaseVersionRef()
+  {
+    --version_count_;
+    if(version_count_ == 0)
+    {
+      delete this;
+    }
+  }
+
+  inline size_t GetVersionCount() const
+  {
+    return version_count_.load();
   }
 
 private:
@@ -154,5 +176,7 @@ private:
    */
   std::vector<UndoLog> undo_logs_;
   /** 用于访问事务级撤销日志的锁。 */
-  std::mutex latch_;
+  std::shared_mutex latch_;
+
+  std::atomic<size_t> version_count_{0};  // 记录该事务创建的版本数量
 };
