@@ -9,13 +9,14 @@ MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 See the Mulan PSL v2 for more details. */
 
 #include "analyze.h"
+#include "transaction/transaction_manager.h"
 
 /**
  * @description: 分析器，进行语义分析和查询重写，需要检查不符合语义规定的部分
  * @param {shared_ptr<ast::TreeNode>} parse parser生成的结果集
  * @return {shared_ptr<Query>} Query
  */
-std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
+std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse, Context *context)
 {
     std::shared_ptr<Query> query = std::make_shared<Query>();
     std::unordered_map<std::string, TabCol> alias_to_col;
@@ -314,9 +315,10 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
 
         // 获取表的元数据
         TabMeta &tab = sm_manager_->db_.get_table(x->tab_name);
+        size_t hidden_col_count = context->txn_->get_txn_manager()->get_hidden_column_count();
 
         // 检查插入的值的数量是否与表的列数匹配
-        if (x->vals.size() != tab.cols.size())
+        if (x->vals.size() + hidden_col_count != tab.cols.size())
         {
             throw InvalidValueCountError();
         }
@@ -326,7 +328,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
         for (size_t i = 0; i < x->vals.size(); ++i)
         {
             // 获取当前列的类型信息
-            auto &col = tab.cols[i];
+            auto &col = tab.cols[i + hidden_col_count];
             ColType target_type = col.type;
 
             // 转换值并进行类型检查

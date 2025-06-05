@@ -55,7 +55,7 @@ public:
     Analyze(SmManager *sm_manager) : sm_manager_(sm_manager) {}
     ~Analyze() {}
 
-    std::shared_ptr<Query> do_analyze(std::shared_ptr<ast::TreeNode> root);
+    std::shared_ptr<Query> do_analyze(std::shared_ptr<ast::TreeNode> root, Context *context);
 
 private:
     TabCol check_column(const std::vector<ColMeta> &all_cols, TabCol target, bool is_semijoin);

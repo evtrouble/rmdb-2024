@@ -214,6 +214,10 @@ struct TabMeta {
         }
         return is;
     }
+
+    size_t get_col_num() const {
+        return cols.size();
+    }
 };
 
 // 注意重载了操作符 << 和 >>，这需要更底层同样重载TabMeta、ColMeta的操作符 << 和 >>
