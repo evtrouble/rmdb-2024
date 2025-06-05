@@ -30,7 +30,8 @@ static constexpr int INVALID_PAGE_ID = -1;         // invalid page id
 static constexpr int INVALID_TXN_ID = -1;          // invalid transaction id
 static constexpr int INVALID_TIMESTAMP = -1;       // invalid transaction timestamp
 static constexpr int64_t INVALID_LSN = -1;         // invalid log sequence number
-static constexpr int64_t TXN_START_ID = 1LL << 62; // first txn id
+// static constexpr int64_t TXN_START_ID = 1LL << 62; // first txn id
+static constexpr int64_t TXN_START_ID = 1LL << 30; // first txn id, use a smaller value for testing
 static constexpr int64_t INVALID_TS = -1;          // invalid log sequence number
 static constexpr int HEADER_PAGE_ID = 0;           // the header page id
 static constexpr int PAGE_SIZE = 4096;             // size of a data page in byte  4KB
@@ -42,11 +43,13 @@ static constexpr int MAX_TABLE_NUMBER = 50;
 
 using frame_id_t = int32_t;   // frame id type, 帧页ID, 页在BufferPool中的存储单元称为帧,一帧对应一页
 using page_id_t = int32_t;    // page id type , 页ID
-using txn_id_t = int64_t;     // transaction id type
+// using txn_id_t = int64_t;     // transaction id type
+using txn_id_t = int32_t;     // transaction id type, 事务ID
 using lsn_t = int32_t;        // log sequence number type
 using slot_offset_t = size_t; // slot offset type
 using oid_t = uint16_t;
-using timestamp_t = int64_t; // timestamp type, used for transaction concurrency
+// using timestamp_t = int64_t; // timestamp type, used for transaction concurrency
+using timestamp_t = int32_t; // timestamp type, used for transaction concurrency
 
 // log file
 static const std::string LOG_FILE_NAME = "db.log";

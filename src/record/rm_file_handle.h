@@ -80,7 +80,7 @@ public:
             disk_manager_->destroy_file(file_name);
         }
         else
-            disk_manager_->close_file(fd_);
+            rm_manager_->close_file(this);
     }
 
     RmFileHdr get_file_hdr() const { return file_hdr_; }

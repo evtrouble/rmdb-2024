@@ -67,10 +67,10 @@ public:
         for (const auto &col : sel_cols_) {
             ColMeta col_meta;
             if (ast::AggFuncType::COUNT == col.aggFuncType) {
-                col_meta = {col.tab_name, col.col_name, TYPE_INT, sizeof(int), offset, false};
+                col_meta = {col.tab_name, col.col_name, TYPE_INT, sizeof(int), offset};
                 sel_col_metas_.emplace_back(output_cols_.begin());
             }else if (ast::AggFuncType::AVG == col.aggFuncType) {
-                col_meta = {col.tab_name, col.col_name, TYPE_STRING, 20, offset, false};
+                col_meta = {col.tab_name, col.col_name, TYPE_STRING, 20, offset};
                 auto temp = get_col(child_executor_->cols(), col);
                 sel_col_metas_.emplace_back(temp);
             } else {
@@ -95,7 +95,7 @@ public:
         for (const auto &cond : having_conds_) {
             std::vector<ColMeta> col_metas;
             if (ast::AggFuncType::COUNT == cond.lhs_col.aggFuncType) {
-                ColMeta col_meta = {cond.lhs_col.tab_name, cond.lhs_col.col_name, TYPE_INT, sizeof(int), 0, false};
+                ColMeta col_meta = {cond.lhs_col.tab_name, cond.lhs_col.col_name, TYPE_INT, sizeof(int), 0};
                 having_lhs_cols_.emplace_back(cond.lhs_col);
                 col_metas.emplace_back(std::move(col_meta));
                 having_lhs_col_metas_.emplace_back(col_metas.begin());
@@ -110,7 +110,7 @@ public:
 
             if (!cond.is_rhs_val) {
                 if (ast::AggFuncType::COUNT == cond.rhs_col.aggFuncType) {
-                    ColMeta col_meta = {cond.rhs_col.tab_name, cond.rhs_col.col_name, TYPE_INT, sizeof(int), 0, false};
+                    ColMeta col_meta = {cond.rhs_col.tab_name, cond.rhs_col.col_name, TYPE_INT, sizeof(int), 0};
                     having_lhs_cols_.emplace_back(cond.rhs_col);
                     col_metas.emplace_back(std::move(col_meta));
                     having_lhs_col_metas_.emplace_back(col_metas.begin());

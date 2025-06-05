@@ -118,6 +118,36 @@ public:
     /** 存储表堆中每个元组的先前版本。 */
     std::unordered_map<PageId, std::shared_ptr<PageVersionInfo>, PageIdHash> version_info_;
 
+    // 定义MVCC隐藏字段
+    static constexpr const char* COMMIT_TS_FIELD = "__commit_ts";
+    static constexpr const char* TXN_ID_FIELD = "__txn_id";
+
+    // 获取MVCC所需的隐藏字段定义
+    std::vector<ColDef> get_hidden_columns() const {
+        if (concurrency_mode_ != ConcurrencyMode::MVCC) {
+            return {};
+        }
+        return {
+            {
+                .name = COMMIT_TS_FIELD,
+                .type = TYPE_INT,
+                .len = sizeof(timestamp_t)
+                // .visible = false
+            },
+            {
+                .name = TXN_ID_FIELD,
+                .type = TYPE_INT,
+                .len = sizeof(txn_id_t)
+                // .visible = false
+            }
+        };
+    }
+
+    // 获取隐藏字段数量
+    size_t get_hidden_column_count() const {
+        return (concurrency_mode_ == ConcurrencyMode::MVCC) ? 2 : 0;
+    }
+
 private:
     ConcurrencyMode concurrency_mode_;           // 事务使用的并发控制算法，目前只需要考虑2PL
     std::atomic<txn_id_t> next_txn_id_{0};       // 用于分发事务ID

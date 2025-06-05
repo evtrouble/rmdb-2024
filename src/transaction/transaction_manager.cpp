@@ -32,7 +32,7 @@ Transaction *TransactionManager::begin(Transaction *txn, LogManager *log_manager
         // 生成新的事务ID
         txn_id_t new_txn_id = next_txn_id_++;
         // 创建新事务，使用默认的可串行化隔离级别
-        txn = new Transaction(new_txn_id);
+        txn = new Transaction(new_txn_id, this);
         // 设置事务开始时间戳
         txn->set_start_ts(next_timestamp_++);
     }

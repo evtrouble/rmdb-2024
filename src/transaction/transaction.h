@@ -50,18 +50,20 @@ struct UndoLog
   std::vector<bool> modified_fields_;
   /* 修改后的字段 */
   std::vector<Value> tuple_;
-  RmRecord *tuple_test_;
+  // RmRecord *tuple_test_;
   /* 此撤销日志的时间戳 */
   timestamp_t ts_{INVALID_TS};
   /* 撤销日志的前一个版本 */
   UndoLink prev_version_{};
 };
 
+class TransactionManager;
+
 class Transaction
 {
 public:
-  explicit Transaction(txn_id_t txn_id, IsolationLevel isolation_level = IsolationLevel::SERIALIZABLE)
-      : state_(TransactionState::DEFAULT), isolation_level_(isolation_level), txn_id_(txn_id)
+  explicit Transaction(txn_id_t txn_id, TransactionManager *txn_manager, IsolationLevel isolation_level = IsolationLevel::SERIALIZABLE)
+      : state_(TransactionState::DEFAULT), isolation_level_(isolation_level), txn_id_(txn_id), txn_manager_(txn_manager)
   {
     write_set_ = std::make_shared<std::deque<WriteRecord *>>();
     // lock_set_ = std::make_shared<std::unordered_set<LockDataId>>();
@@ -104,6 +106,7 @@ public:
 
   inline timestamp_t get_read_ts() const { return read_ts_; }
   inline timestamp_t get_commit_ts() const { return commit_ts_; }
+  inline TransactionManager *get_txn_manager() const { return txn_manager_; }
 
   /** 修改现有的撤销日志 */
   inline auto ModifyUndoLog(int log_idx, UndoLog new_log)
@@ -179,4 +182,5 @@ private:
   std::shared_mutex latch_;
 
   std::atomic<size_t> version_count_{0};  // 记录该事务创建的版本数量
+  TransactionManager *txn_manager_{nullptr}; // 事务管理器指针，用于访问全局事务表等资源
 };

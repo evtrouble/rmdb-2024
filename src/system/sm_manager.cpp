@@ -9,6 +9,7 @@ MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 See the Mulan PSL v2 for more details. */
 
 #include "sm_manager.h"
+#include "transaction/transaction_manager.h"
 
 #include <sys/stat.h>
 #include <unistd.h>
@@ -182,7 +183,8 @@ void SmManager::show_tables(Context* context) {
 void SmManager::desc_table(const std::string& tab_name, Context* context) {
     TabMeta &tab = db_.get_table(tab_name);
 
-    std::vector<std::string> captions = {"Field", "Type", "Index"};
+    // std::vector<std::string> captions = {"Field", "Type", "Index"};
+    std::vector<std::string> captions = {"Field", "Type"};
     RecordPrinter printer(captions.size());
     // Print header
     printer.print_separator(context);
@@ -190,7 +192,8 @@ void SmManager::desc_table(const std::string& tab_name, Context* context) {
     printer.print_separator(context);
     // Print fields
     for (auto &col : tab.cols) {
-        std::vector<std::string> field_info = {col.name, coltype2str(col.type), col.index ? "YES" : "NO"};
+        // std::vector<std::string> field_info = {col.name, coltype2str(col.type), col.index ? "YES" : "NO"};
+        std::vector<std::string> field_info = {col.name, coltype2str(col.type)};
         printer.print_record(field_info, context);
     }
     // Print footer
@@ -210,22 +213,45 @@ void SmManager::create_table(const std::string& tab_name, const std::vector<ColD
     // Create table meta
     TabMeta tab;
     tab.name = tab_name;
-    tab.cols.reserve(col_defs.size());
+    
+    // 获取MVCC隐藏字段(如果需要)
+    auto hidden_cols = context->txn_->get_txn_manager()->get_hidden_columns();
+    
+    // 计算总列数(用户列 + 隐藏列)
+    size_t total_cols = col_defs.size() + hidden_cols.size();
+    tab.cols.reserve(total_cols);
+    
     int curr_offset = 0;
-    for (auto &col_def : col_defs)
-    {
-        ColMeta col = {.tab_name = tab_name,
-                       .name = std::move(col_def.name),
-                       .type = col_def.type,
-                       .len = col_def.len,
-                       .offset = curr_offset,
-                       .index = false};
+
+    // 添加隐藏列
+    for (auto &hidden_col : hidden_cols) {
+        ColMeta col = {
+            .tab_name = tab_name,
+            .name = hidden_col.name,
+            .type = hidden_col.type,
+            .len = hidden_col.len,
+            .offset = curr_offset,
+        };
+        curr_offset += hidden_col.len;
+        tab.cols.emplace_back(std::move(col));
+        tab.cols_map.emplace(tab.cols.back().name, tab.cols.size() - 1);
+    }
+    
+    // 添加用户定义的列
+    for (auto &col_def : col_defs) {
+        ColMeta col = {
+            .tab_name = tab_name,
+            .name = std::move(col_def.name),
+            .type = col_def.type,
+            .len = col_def.len,
+            .offset = curr_offset
+        };
         curr_offset += col_def.len;
         tab.cols.emplace_back(std::move(col));
         tab.cols_map.emplace(tab.cols.back().name, tab.cols.size() - 1);
     }
+
     // Create & open record file
-    // record_size就是col meta所占的大小（表的元数据也是以记录的形式进行存储的）
     rm_manager_->create_file(tab_name, curr_offset);
     
     {
