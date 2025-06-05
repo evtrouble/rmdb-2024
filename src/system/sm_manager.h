@@ -31,12 +31,14 @@ class SmManager
 public:
     DbMeta db_;                                                           // 当前打开的数据库的元数据
     std::unordered_map<std::string, std::unique_ptr<RmFileHandle>> fhs_;  // file name -> record file handle, 当前数据库中每张表的数据文件
-    std::unordered_map<std::string, std::unique_ptr<IxIndexHandle>> ihs_; // file name -> index file handle, 当前数据库中每个索引的文件
+    std::unordered_map<std::string, std::shared_ptr<IxIndexHandle>> ihs_; // file name -> index file handle, 当前数据库中每个索引的文件
 private:
     DiskManager *disk_manager_;
     BufferPoolManager *buffer_pool_manager_;
     RmManager *rm_manager_;
     IxManager *ix_manager_;
+    std::shared_mutex fhs_latch_; // 保护fhs_的读写锁，保证对文件句柄的并发访问安全
+    std::shared_mutex ihs_latch_; // 保护ihs_的读写锁，保证对索引句柄的并发访问安全
 
 public:
     SmManager(DiskManager *disk_manager, BufferPoolManager *buffer_pool_manager, RmManager *rm_manager,
@@ -53,6 +55,11 @@ public:
     RmManager *get_rm_manager() { return rm_manager_; }
 
     IxManager *get_ix_manager() { return ix_manager_; }
+
+    inline std::shared_ptr<IxIndexHandle> get_index_handle(const std::string &index_name) {
+        std::shared_lock lock(ihs_latch_);
+        return ihs_.find(index_name) != ihs_.end() ? ihs_[index_name] : nullptr;
+    }
 
     bool is_dir(const std::string &db_name);
 

@@ -71,9 +71,8 @@ public:
         generate_index_key(low_key, up_key);
 
         // 获取索引处理器
-        auto index_handle = sm_manager_->ihs_.at(
-            sm_manager_->get_ix_manager()->get_index_name(tab_name_, index_meta_.cols))
-                            .get();
+        auto index_handle = sm_manager_->get_index_handle(
+            sm_manager_->get_ix_manager()->get_index_name(tab_name_, index_meta_.cols));
         // 范围扫描设置边界
         Iid lower = index_handle->lower_bound(low_key);
         Iid upper = index_handle->upper_bound(up_key);

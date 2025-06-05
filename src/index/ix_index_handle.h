@@ -12,6 +12,7 @@ See the Mulan PSL v2 for more details. */
 
 #include "ix_defs.h"
 #include "transaction/transaction.h"
+#include "ix_manager.h"
 
 enum class Operation { FIND = 0, INSERT, DELETE };  // 三种操作：查找、插入、删除
 
@@ -162,17 +163,29 @@ class IxIndexHandle {
     friend class IxManager;
 
    private:
-    DiskManager *disk_manager_;
-    BufferPoolManager *buffer_pool_manager_;
+    IxManager *ix_manager_;              // 索引管理器
     int fd_;                                    // 存储B+树的文件
     IxFileHdr* file_hdr_;                       // 存了root_page，但其初始化为2（第0页存FILE_HDR_PAGE，第1页存LEAF_HEADER_PAGE）
     std::shared_mutex root_lacth_;
+    bool is_deleted = false;
 
 public:
-    IxIndexHandle(DiskManager *disk_manager, BufferPoolManager *buffer_pool_manager, int fd);
-    ~IxIndexHandle() { delete file_hdr_; }
+    IxIndexHandle(IxManager *ix_manager, int fd);
+    ~IxIndexHandle() { 
+        if(is_deleted) {
+            auto index_name = ix_manager_->disk_manager_->get_file_name(fd_); // 获取文件名
+            ix_manager_->close_index(this);
+            ix_manager_->disk_manager_->destroy_file(index_name); // 删除文件
+        }
+        else
+        {
+            ix_manager_->close_index(this);
+        }
+        delete file_hdr_;
+    }
 
     inline int get_fd() { return fd_; }
+    inline void mark_deleted() { is_deleted = true; }
 
     // for search
     bool get_value(const char *key, std::vector<Rid> *result, Transaction *transaction);

@@ -80,14 +80,14 @@ void TransactionManager::commit(Context *context, LogManager *log_manager)
     // }
 
     // 2. 释放所有锁
-    auto lock_set = txn->get_lock_set();
-    for (auto &lock_data_id : *lock_set)
-    {
-        lock_manager_->unlock(txn, lock_data_id);
-    }
+    // auto lock_set = txn->get_lock_set();
+    // for (auto &lock_data_id : *lock_set)
+    // {
+    //     lock_manager_->unlock(txn, lock_data_id);
+    // }
 
     // 3. 清空事务相关资源
-    lock_set->clear();
+    // lock_set->clear();
 
     // 4. 把事务日志刷入磁盘
     if (log_manager != nullptr)

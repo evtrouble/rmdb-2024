@@ -19,6 +19,8 @@ See the Mulan PSL v2 for more details. */
 #include <iostream>
 #include <string>
 #include <unordered_map>
+#include <mutex>
+#include <shared_mutex>
 
 #include "common/config.h"
 #include "errors.h"
@@ -94,6 +96,7 @@ private:
         // 文件打开列表，用于记录文件是否被打开
         std::unordered_map<std::string, int> path2fd_; //<Page文件磁盘路径,Page fd>哈希表
         std::unordered_map<int, std::string> fd2path_; //<Page fd,Page文件磁盘路径>哈希表
+        std::shared_mutex path2fd_mutex_; // 保护path2fd_和fd2path_的互斥锁
 
         int log_fd_ = -1;                            // WAL日志文件的文件句柄，默认为-1，代表未打开日志文件
         std::atomic<page_id_t> fd2pageno_[MAX_FD]{}; // 文件中已经分配的页面个数，初始值为0

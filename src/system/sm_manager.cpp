@@ -146,10 +146,6 @@ void SmManager::close_db() {
         rm_manager_->close_file(file_handle.second.get());
     }
     fhs_.clear();
-    for (auto &index_handle : ihs_)
-    {
-        ix_manager_->close_index(index_handle.second.get());
-    }
     ihs_.clear();
 
     db_.name_.clear();
@@ -255,8 +251,7 @@ void SmManager::drop_table(const std::string& tab_name, Context* context) {
     auto &tab = db_.get_table(tab_name);
     for(auto& index : tab.indexes) {
         auto index_iter = ihs_.find(ix_manager_->get_index_name(tab_name, index.cols));
-        ix_manager_->close_index(index_iter->second.get());
-        ix_manager_->destroy_index(tab_name, index.cols);
+        index_iter->second->mark_deleted(); // 标记为已删除
         ihs_.erase(index_iter);
     }
     tab.indexes.clear();
@@ -341,8 +336,7 @@ void SmManager::drop_index(const std::string& tab_name, const std::vector<std::s
     if(index_iter == ihs_.end())
         return;
 
-    ix_manager_->close_index(index_iter->second.get());
-    ix_manager_->destroy_index(tab_name, col_names);
+    index_iter->second->mark_deleted(); // 标记为已删除
     ihs_.erase(index_iter);
 
     auto &tab = db_.get_table(tab_name);
@@ -366,8 +360,7 @@ void SmManager::drop_index(const std::string& tab_name, const std::vector<ColMet
     if(index_iter == ihs_.end())
         return;
 
-    ix_manager_->close_index(index_iter->second.get());
-    ix_manager_->destroy_index(tab_name, cols);
+    index_iter->second->mark_deleted(); // 标记为已删除
     ihs_.erase(index_iter);  
 
     auto &tab = db_.get_table(tab_name);
