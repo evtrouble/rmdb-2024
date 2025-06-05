@@ -53,8 +53,8 @@ public:
         
         // 复制用户提供的数据
         TransactionManager *txn_mgr = context_->txn_->get_txn_manager();
-        for (size_t i = txn_mgr->get_hidden_column_count(); i < values_.size(); ++i) {
-            auto &col = tab_.cols[i];
+        for (size_t i = 0; i < values_.size(); ++i) {
+            auto &col = tab_.cols[i + txn_mgr->get_hidden_column_count()];
             auto &val = values_[i];
             if (col.type != val.type && (col.type != TYPE_DATETIME || val.type != TYPE_STRING)) {
                 throw IncompatibleTypeError(coltype2str(col.type), coltype2str(val.type));
@@ -62,16 +62,8 @@ public:
             memcpy(rec.data + col.offset, val.raw->data, col.len);
         }
 
-        txn_id_t txn_id = context_->txn_->get_transaction_id();
-        timestamp_t invalid_ts = INVALID_TIMESTAMP;
-        for (size_t i = 0; i < txn_mgr->get_hidden_column_count(); ++i) {
-            auto &col = tab_.cols[i];
-            if (col.name == TransactionManager::COMMIT_TS_FIELD) {
-                memcpy(rec.data + col.offset, &invalid_ts, sizeof(timestamp_t));
-            } else if (col.name == TransactionManager::TXN_ID_FIELD) {
-                memcpy(rec.data + col.offset, &txn_id, sizeof(txn_id_t));
-            }
-        }
+        txn_mgr->set_record_commit_ts(rec.data, INVALID_TIMESTAMP);
+        txn_mgr->set_record_txn_id(rec.data, context_->txn_->get_transaction_id());
 
         // Insert into record file
         rid_ = fh_->insert_record(rec.data, context_);

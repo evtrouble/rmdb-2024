@@ -113,11 +113,6 @@ public:
 
     RmPageHandle fetch_page_handle(int page_no) const;
 
-    // MVCC相关的函数
-    void rollback_insert(const Rid &rid, Context *context);
-    void rollback_delete(const Rid &rid, char *buf, Context *context); 
-    void rollback_update(const Rid &rid, char *old_buf, Context *context);
-
     // 获取记录的可见版本
     std::unique_ptr<RmRecord> get_record_version(const Rid &rid, Context *context) const;
 
@@ -125,9 +120,4 @@ private:
     RmPageHandle create_page_handle();
 
     void release_page_handle(RmPageHandle &page_handle);
-
-    // 版本控制相关函数
-    bool is_visible(const Rid &rid, Context *context) const;
-    void init_record_version(char *buf, Context *context);
-    bool check_version_visible(char *buf, Context *context) const;
 };

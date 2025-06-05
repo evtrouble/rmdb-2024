@@ -83,14 +83,4 @@ public:
     virtual bool is_end() const = 0;
 
     virtual Rid rid() const = 0;
-
-    virtual void next_batch() {
-        
-    }
-};
-
-struct RecordVersion {
-    timestamp_t commit_ts;    // 提交时间戳 
-    txn_id_t txn_id;         // 事务ID
-    uint64_t tuple_id;       // 元组ID,用于检测槽位重用
 };

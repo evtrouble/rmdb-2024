@@ -175,8 +175,8 @@ void TransactionManager::abort(Context *context, LogManager *log_manager)
     delete txn;
 }
 
-bool TransactionManager::UpdateUndoLink(int fd, const Rid& rid, std::optional<UndoLink> prev_link,
-                    std::function<bool(std::optional<UndoLink>)>&& check) {
+bool TransactionManager::UpdateUndoLink(int fd, const Rid &rid, UndoLog* prev_link,
+                                            std::function<bool(UndoLog*)> &&check) {
         // 1. 快速路径：如果不需要更新版本且没有check函数，直接返回
     if (!prev_link && !check) {
         return true;
@@ -186,7 +186,7 @@ bool TransactionManager::UpdateUndoLink(int fd, const Rid& rid, std::optional<Un
     std::shared_ptr<PageVersionInfo> page_info;
     {
         // 2. 获取页面版本信息 - 使用局部作用域减少全局锁持有时间
-        std::shared_lock<std::shared_mutex> global_lock(version_info_mutex_);
+        std::shared_lock global_lock(version_info_mutex_);
         auto it = version_info_.find(page_id);
         if (it != version_info_.end()) {
             page_info = it->second;
@@ -203,7 +203,7 @@ bool TransactionManager::UpdateUndoLink(int fd, const Rid& rid, std::optional<Un
     std::unique_lock page_lock(page_info->mutex_);
     
     // 5. 获取当前版本用于check
-    std::optional<UndoLink> current_version;
+    UndoLog* current_version;
     auto version_it = page_info->prev_version_.find(rid.slot_no);
     if (version_it != page_info->prev_version_.end()) {
         current_version = version_it->second;
@@ -216,14 +216,14 @@ bool TransactionManager::UpdateUndoLink(int fd, const Rid& rid, std::optional<Un
     
     // 7. 更新版本信息
     if (current_version) {
-        prev_link->txn_->ModifyUndoLog(prev_link->prev_log_idx_, *current_version);
+        prev_link->prev_version_ = current_version;
     }
     // 更新或插入新版本
-    page_info->prev_version_.insert_or_assign(rid.slot_no, *prev_link);
+    page_info->prev_version_.insert_or_assign(rid.slot_no, prev_link);
     return true;
 }
 
-std::optional<UndoLog> TransactionManager::GetVisibleRecord(int fd, const Rid& rid, Transaction* current_txn) {
+std::optional<RmRecord> TransactionManager::GetVisibleRecord(int fd, const Rid& rid, Transaction* current_txn) {
     if (!current_txn) {
         return std::nullopt;
     }
@@ -248,22 +248,17 @@ std::optional<UndoLog> TransactionManager::GetVisibleRecord(int fd, const Rid& r
     lock.unlock(); // 释放锁以避免长时间持有
 
     // 遍历版本链找到可见版本
-    while (current.IsValid()) {
-        auto* version_txn = current.txn_;
-
-        // 同一事务的版本可见
-        if (version_txn->get_transaction_id() == current_txn->get_transaction_id()) {
-            return version_txn->GetUndoLog(current.prev_log_idx_);
-        }
-        
+    while (current) {
         // 已提交事务的版本根据时间戳判断可见性
-        if (version_txn->get_commit_ts() <= current_txn->get_start_ts()) {
-            return version_txn->GetUndoLog(current.prev_log_idx_);
+        if (current->ts_ <= current_txn->get_start_ts()) {
+            if(current->is_deleted_) {
+                return std::nullopt; // 如果是删除标记，直接返回空
+            }
+            return current->tuple_;
         }
 
         // 获取前一个版本
-        auto undo_log = version_txn->GetUndoLog(current.prev_log_idx_);
-        current = undo_log.prev_version_;
+        current = current->prev_version_;
     }
     
     return std::nullopt;
@@ -318,65 +313,13 @@ void TransactionManager::DeleteVersionChain(std::shared_ptr<PageVersionInfo> pag
             }
         }
         
-        // 清理链上所有版本的引用计数
-        while (current.IsValid()) {
-            current.txn_->ReleaseVersionRef();
-            auto undo_log = current.txn_->GetUndoLog(current.prev_log_idx_);
-            current = undo_log.prev_version_;
+        // 清理链上所有版本
+        while (current) {
+            auto tmp = current;
+            current = current->prev_version_;
+            delete tmp;
         }
     }
-}
-
-void TransactionManager::DeleteVersionChainHead(int fd, const Rid& rid) {
-    // 先用读锁获取page_info
-    PageId page_id{fd, rid.page_no};
-    std::shared_lock global_read_lock(version_info_mutex_);
-    auto page_it = version_info_.find(page_id);
-    if (page_it == version_info_.end()) {
-        return;
-    }
-    auto page_info = page_it->second;
-    global_read_lock.unlock();
-    
-    DeleteVersionChainHead(page_info, page_id, rid);
-}
-
-void TransactionManager::DeleteVersionChainHead(std::shared_ptr<PageVersionInfo> page_info,
-                                              const PageId& page_id, const Rid& rid) {
-    // 获取page级别的写锁来保护头节点删除操作
-    std::unique_lock page_lock(page_info->mutex_);
-    
-    auto version_it = page_info->prev_version_.find(rid.slot_no);
-    if (version_it == page_info->prev_version_.end()) {
-        return;
-    }
-
-    // 获取当前版本链头和它的下一个版本
-    auto current = version_it->second;
-    auto next_version = current.txn_->GetUndoLog(current.prev_log_idx_).prev_version_;
-    
-    if (next_version.IsValid()) {
-        // 如果存在后续版本,将版本链头更新为下一个版本
-        page_info->prev_version_.insert_or_assign(rid.slot_no, next_version);
-    } else {
-        // 如果不存在后续版本,直接删除版本链头
-        page_info->prev_version_.erase(version_it);
-        
-        // 检查是否删除后变为空
-        bool is_empty = page_info->prev_version_.empty();
-        page_lock.unlock();  // 释放页面锁以避免长时间持有
-        
-        if (is_empty) {
-            std::unique_lock global_write_lock(version_info_mutex_);
-            // 二次检查,因为可能在释放页面锁后其他线程添加了记录
-            if (page_info->prev_version_.empty()) {
-                version_info_.erase(page_id);
-            }
-        }
-    }
-
-    // 减少被删除版本的引用计数
-    current.txn_->ReleaseVersionRef();
 }
 
 void TransactionManager::TruncateVersionChain(std::shared_ptr<PageVersionInfo> page_info,
@@ -390,27 +333,23 @@ void TransactionManager::TruncateVersionChain(std::shared_ptr<PageVersionInfo> p
     auto current = version_it->second;
     page_lock.unlock();  // 释放读锁以避免长时间持有，后续操作需要写锁
    
-    
     // 遍历版本链找到截断点 - 保持页面级读锁
-    UndoLog undo_log;
-    while (current.IsValid()) {
-        if (current.txn_->get_commit_ts() < watermark) {
+    while (current) {
+        if (current->ts_ < watermark) {
             // 设置截断点的下一个版本为空
-            auto next = current.txn_->GetUndoLog(current.prev_log_idx_).prev_version_;
+            auto next = current->prev_version_;
+            current->prev_version_ = nullptr; // 清除当前版本的前一个版本引用
 
-            current.txn_->ModifyUndoLog(current.prev_log_idx_, UndoLink());
-            
             // 清理被截断部分的引用计数
-            while (next.IsValid()) {
-                next.txn_->ReleaseVersionRef();
-                undo_log = next.txn_->GetUndoLog(next.prev_log_idx_);
-                next = undo_log.prev_version_;
+            while (next) {
+                auto tmp = next;
+                next = next->prev_version_;
+                delete tmp;
             }
             return;
         }
         
-        undo_log = current.txn_->GetUndoLog(current.prev_log_idx_);
-        current = undo_log.prev_version_;
+        current = current->prev_version_;
     }
 }
 

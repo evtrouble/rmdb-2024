@@ -23,24 +23,6 @@ See the Mulan PSL v2 for more details. */
 #include "record/rm_defs.h"
 
 class Transaction;
-/** 表示此tuple的版本链接 */
-struct UndoLink
-{
-  /* 指向存储版本的事务 */
-  Transaction* txn_{nullptr};
-  /* 在事务中版本的日志索引 */
-  int prev_log_idx_{0};
-
-  friend auto operator==(const UndoLink &a, const UndoLink &b)
-  {
-    return a.txn_ == b.txn_ && a.prev_log_idx_ == b.prev_log_idx_;
-  }
-
-  friend auto operator!=(const UndoLink &a, const UndoLink &b) { return !(a == b); }
-
-  /* 检查撤销链接是否有效 */
-  bool IsValid() { return txn_ != nullptr; }
-};
 
 struct UndoLog
 {
@@ -54,7 +36,7 @@ struct UndoLog
   /* 此撤销日志的时间戳 */
   timestamp_t ts_{INVALID_TS};
   /* 撤销日志的前一个版本 */
-  UndoLink prev_version_{};
+  UndoLog* prev_version_{nullptr};
 };
 
 class TransactionManager;
@@ -104,57 +86,9 @@ public:
 
   // inline std::shared_ptr<std::unordered_set<LockDataId>> get_lock_set() { return lock_set_; }
 
-  inline timestamp_t get_read_ts() const { return read_ts_; }
+  // inline timestamp_t get_read_ts() const { return read_ts_; }
   inline timestamp_t get_commit_ts() const { return commit_ts_; }
   inline TransactionManager *get_txn_manager() const { return txn_manager_; }
-
-  /** 修改现有的撤销日志 */
-  inline auto ModifyUndoLog(int log_idx, UndoLog new_log)
-  {
-    std::unique_lock lck(latch_);
-    undo_logs_[log_idx] = std::move(new_log);
-  }
-
-  inline auto ModifyUndoLog(int log_idx, UndoLink prev_link)
-  {
-    std::unique_lock lck(latch_);
-    undo_logs_[log_idx].prev_version_ = std::move(prev_link);
-  }
-
-  /** @return 此事务中撤销日志的索引 */
-  inline auto AppendUndoLog(UndoLog log) -> UndoLink
-  {
-    std::unique_lock lck(latch_);
-    undo_logs_.emplace_back(std::move(log));
-    return {this, static_cast<int>(undo_logs_.size() - 1)};
-  }
-  inline auto GetUndoLog(size_t log_id) -> UndoLog
-  {
-    std::shared_lock lck(latch_);
-    return undo_logs_[log_id];
-  }
-
-  /** @return 撤销日志的数量 */
-  inline auto GetUndoLogNum() -> size_t
-  {
-    std::shared_lock lck(latch_);
-    return undo_logs_.size();
-  }
-
-  // 返回false表示事务对象可以删除
-  inline void ReleaseVersionRef()
-  {
-    --version_count_;
-    if(version_count_ == 0)
-    {
-      delete this;
-    }
-  }
-
-  inline size_t GetVersionCount() const
-  {
-    return version_count_.load();
-  }
 
 private:
   bool txn_mode_;                  // 用于标识当前事务为显式事务还是单条SQL语句的隐式事务
@@ -170,17 +104,12 @@ private:
   std::shared_ptr<std::deque<Page *>> index_latch_page_set_;   // 维护事务执行过程中加锁的索引页面
   std::shared_ptr<std::deque<Page *>> index_deleted_page_set_; // 维护事务执行过程中删除的索引页面
 
-  std::atomic<timestamp_t> read_ts_{0};
+  // std::atomic<timestamp_t> read_ts_{0};
   /** 提交时间戳 */
   std::atomic<timestamp_t> commit_ts_{INVALID_TS};
-  /**
-   * @brief 存储撤销日志。
-   * 其他撤销日志/表堆将存储 (txn_id, index) 对，因此只能向此vector中追加内容或就地更新内容，而不能删除任何内容。
-   */
-  std::vector<UndoLog> undo_logs_;
+
   /** 用于访问事务级撤销日志的锁。 */
   std::shared_mutex latch_;
 
-  std::atomic<size_t> version_count_{0};  // 记录该事务创建的版本数量
   TransactionManager *txn_manager_{nullptr}; // 事务管理器指针，用于访问全局事务表等资源
 };

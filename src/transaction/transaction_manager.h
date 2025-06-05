@@ -37,7 +37,7 @@ struct PageVersionInfo
     /** 存储所有槽的先前版本信息。注意：不要使用 `[x]` 来访问它，因为
      * 即使不存在也会创建新元素。请使用 `find` 来代替。
      */
-    std::unordered_map<slot_offset_t, UndoLink> prev_version_;
+    std::unordered_map<slot_offset_t, UndoLog*> prev_version_;
 };
 
 class TransactionManager
@@ -102,21 +102,16 @@ public:
                                                   const Rid &rid, timestamp_t watermark);
     void TruncateVersionChain(int fd, const Rid &rid, timestamp_t watermark);
 
-    void DeleteVersionChain(int fd, const Rid& rid);
+    void DeleteVersionChain(int fd, const Rid &rid);
     void DeleteVersionChain(std::shared_ptr<PageVersionInfo> page_info, const PageId &page_id, const Rid &rid);
-
-    // 删除页面版本链头,保持后续版本不变
-    void DeleteVersionChainHead(int fd, const Rid &rid);
-    void DeleteVersionChainHead(std::shared_ptr<PageVersionInfo> page_info,
-                              const PageId &page_id, const Rid &rid);
 
     void StartPurgeCleaner();
     void StopPurgeCleaner();
 
-    std::optional<UndoLog> GetVisibleRecord(int fd, const Rid &rid, Transaction *current_txn);
+    std::optional<RmRecord> GetVisibleRecord(int fd, const Rid &rid, Transaction *current_txn);
 
-    bool UpdateUndoLink(int fd, const Rid &rid, std::optional<UndoLink> prev_link,
-                                            std::function<bool(std::optional<UndoLink>)> &&check);
+    bool UpdateUndoLink(int fd, const Rid &rid, UndoLog* prev_link,
+                                            std::function<bool(UndoLog*)> &&check);
     /** 保护版本信息 */
     std::shared_mutex version_info_mutex_;
     /** 存储表堆中每个元组的先前版本。 */
@@ -150,6 +145,62 @@ public:
     // 获取隐藏字段数量
     size_t get_hidden_column_count() const {
         return (concurrency_mode_ == ConcurrencyMode::MVCC) ? 2 : 0;
+    }
+
+    txn_id_t get_record_txn_id(const char* data) const {
+        if (concurrency_mode_ != ConcurrencyMode::MVCC) {
+            return INVALID_TXN_ID;
+        }
+        txn_id_t txn_id;
+        memcpy(&txn_id, data + sizeof(timestamp_t), sizeof(txn_id_t));
+        return txn_id;
+    }
+
+    void set_record_txn_id(char* data, txn_id_t txn_id) const {
+        if (concurrency_mode_ != ConcurrencyMode::MVCC) {
+            return;
+        }
+        memcpy(data + sizeof(timestamp_t), &txn_id, sizeof(txn_id_t));
+    }
+
+    void set_record_commit_ts(char* data, timestamp_t commit_ts) const {
+        if (concurrency_mode_ != ConcurrencyMode::MVCC) {
+            return;
+        }
+        memcpy(data, &commit_ts, sizeof(timestamp_t));
+    }
+
+    /**
+     * @brief 判断记录的可见性和是否需要查找版本链
+     * @return {bool} 如果返回true，表示记录已被删除或当前版本不可见(需要查找版本链)
+     */
+    bool need_find_version_chain(timestamp_t commit_ts, txn_id_t txn_id, Transaction* txn) const {
+        if (concurrency_mode_ != ConcurrencyMode::MVCC) {
+            return false; // 在非MVCC模式下，记录不会被删除或不可见
+        }
+        return false;
+        if (commit_ts == INVALID_TIMESTAMP || commit_ts > txn->get_start_ts())
+        {
+            return true;
+        }
+        return false; // 记录可见且已提交
+    }
+
+    inline bool is_deleted(timestamp_t commit_ts) const
+    {
+        if (concurrency_mode_ != ConcurrencyMode::MVCC) {
+            return false; // 在非MVCC模式下，记录不会被删除或不可见
+        }
+        return commit_ts == TXN_START_ID;
+    }
+
+    timestamp_t get_record_commit_ts(const char* data) const {
+        if (concurrency_mode_ != ConcurrencyMode::MVCC) {
+            return INVALID_TIMESTAMP;
+        }
+        timestamp_t commit_ts;
+        memcpy(&commit_ts, data, sizeof(timestamp_t));
+        return commit_ts;
     }
 
 private:

@@ -28,7 +28,7 @@ private:
     TabMeta tab_;                      // 表的元数据
 
     Rid rid_;
-    std::unique_ptr<RecScan> scan_; // table_iterator
+    std::unique_ptr<RmScan> scan_; // table_iterator
 
     SmManager *sm_manager_;
         // 新增：用于存储扫描结果的缓存
@@ -178,19 +178,20 @@ private:
     void find_next_valid_tuple()
     {
         if (first_record_) {
+            std::unique_ptr<RmRecord> current;
             while (!scan_->is_end())
             {
                 rid_ = scan_->rid();
-                std::unique_ptr<RmRecord> rid_record = fh_->get_record(rid_, context_);
-                if (satisfy_conditions(rid_record.get()))
+                scan_->record(current);
+                if (satisfy_conditions(current.get()))
                 {
                     if(context_->hasJoinFlag() || result_cache_.empty()) {
-                        result_cache_.emplace_back(std::move(rid_record));
+                        result_cache_.emplace_back(std::move(current));
                         ++cache_index_;
                     }
                     else
                     {
-                        result_cache_[0] = std::move(rid_record);
+                        result_cache_[0] = std::move(current);
                     }
                     sm_manager_->get_bpm()->unpin_page({fh_->GetFd(), rid_.page_no}, false);
                     // context_->lock_mgr_->lock_shared_on_record(context_->txn_, rid_, fh_->GetFd());
@@ -221,7 +222,7 @@ public:
     void beginTuple() override
     {
         if (first_record_) {
-            scan_ = std::make_unique<RmScan>(fh_);
+            scan_ = std::make_unique<RmScan>(fh_, context_);
         }
         cache_index_ = -1;
         find_next_valid_tuple();
