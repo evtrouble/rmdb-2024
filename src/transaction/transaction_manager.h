@@ -102,9 +102,13 @@ public:
                                                   const Rid &rid, timestamp_t watermark);
     void TruncateVersionChain(int fd, const Rid &rid, timestamp_t watermark);
 
+    void DeleteVersionChain(int fd, const Rid& rid);
     void DeleteVersionChain(std::shared_ptr<PageVersionInfo> page_info, const PageId &page_id, const Rid &rid);
 
-    void DeleteVersionChain(int fd, const Rid &rid);
+    // 删除页面版本链头,保持后续版本不变
+    void DeleteVersionChainHead(int fd, const Rid &rid);
+    void DeleteVersionChainHead(std::shared_ptr<PageVersionInfo> page_info,
+                              const PageId &page_id, const Rid &rid);
 
     void StartPurgeCleaner();
     void StopPurgeCleaner();

@@ -13,11 +13,11 @@ See the Mulan PSL v2 for more details. */
 
 /**
  * @brief 初始化file_handle和rid
- * @param file_handle
+ * @param file_handle 文件句柄
+ * @param context 事务上下文
  */
-RmScan::RmScan(std::shared_ptr<RmFileHandle> file_handle) : file_handle_(file_handle)
-{
-    // 初始化file_handle和rid（指向第一个存放了记录的位置）
+RmScan::RmScan(std::shared_ptr<RmFileHandle> file_handle, Context *context) 
+    : file_handle_(file_handle), context_(context) {
     rid_.page_no = RM_FILE_HDR_PAGE + 1; // 从第一个数据页开始
     rid_.slot_no = -1;
     next(); // 找到第一个有效的记录位置
@@ -26,23 +26,35 @@ RmScan::RmScan(std::shared_ptr<RmFileHandle> file_handle) : file_handle_(file_ha
 /**
  * @brief 找到文件中下一个存放了记录的位置
  */
-void RmScan::next()
-{
+void RmScan::next() {
     BufferPoolManager *bpm = file_handle_->get_buffer_pool_manager();
-    while (rid_.page_no < file_handle_->file_hdr_.num_pages)
-    {
+    while (rid_.page_no < file_handle_->file_hdr_.num_pages) {
         RmPageHandle page_handle = file_handle_->fetch_page_handle(rid_.page_no);
-        int next_slot = Bitmap::next_bit(true, page_handle.bitmap, file_handle_->file_hdr_.num_records_per_page, rid_.slot_no);
-        bpm->unpin_page({file_handle_->fd_, rid_.page_no}, false);
-        if (next_slot < file_handle_->file_hdr_.num_records_per_page)
-        {
+        
+        // 在当前页中查找下一个已使用的槽位
+        while (true) {
+            int next_slot = Bitmap::next_bit(true, page_handle.bitmap, 
+                file_handle_->file_hdr_.num_records_per_page, rid_.slot_no);
+            
+            if (next_slot >= file_handle_->file_hdr_.num_records_per_page) {
+                break; // 当前页没有更多记录，移动到下一页
+            }
+            
             rid_.slot_no = next_slot;
-            return;
+            
+            // MVCC可见性检查
+            if (file_handle_->is_visible(rid_, context_)) {
+                bpm->unpin_page({file_handle_->fd_, rid_.page_no}, false);
+                return; // 找到一个可见的记录
+            }
         }
+        
+        bpm->unpin_page({file_handle_->fd_, rid_.page_no}, false);
         // 移动到下一页
         ++rid_.page_no;
         rid_.slot_no = -1;
     }
+    
     // 如果没有找到有效的记录，设置为文件结束
     rid_.page_no = RM_NO_PAGE;
     // rid_.slot_no = RM_NO_SLOT;

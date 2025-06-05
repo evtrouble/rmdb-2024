@@ -250,14 +250,6 @@ std::optional<UndoLog> TransactionManager::GetVisibleRecord(int fd, const Rid& r
     // 遍历版本链找到可见版本
     while (current.IsValid()) {
         auto* version_txn = current.txn_;
-        
-        // 跳过已中止的事务版本
-        if (version_txn->get_state() == TransactionState::ABORTED) {
-            // 获取前一个版本并继续遍历
-            auto undo_log = version_txn->GetUndoLog(current.prev_log_idx_);
-            current = undo_log.prev_version_;
-            continue;
-        }
 
         // 同一事务的版本可见
         if (version_txn->get_transaction_id() == current_txn->get_transaction_id()) {
@@ -333,6 +325,58 @@ void TransactionManager::DeleteVersionChain(std::shared_ptr<PageVersionInfo> pag
             current = undo_log.prev_version_;
         }
     }
+}
+
+void TransactionManager::DeleteVersionChainHead(int fd, const Rid& rid) {
+    // 先用读锁获取page_info
+    PageId page_id{fd, rid.page_no};
+    std::shared_lock global_read_lock(version_info_mutex_);
+    auto page_it = version_info_.find(page_id);
+    if (page_it == version_info_.end()) {
+        return;
+    }
+    auto page_info = page_it->second;
+    global_read_lock.unlock();
+    
+    DeleteVersionChainHead(page_info, page_id, rid);
+}
+
+void TransactionManager::DeleteVersionChainHead(std::shared_ptr<PageVersionInfo> page_info,
+                                              const PageId& page_id, const Rid& rid) {
+    // 获取page级别的写锁来保护头节点删除操作
+    std::unique_lock page_lock(page_info->mutex_);
+    
+    auto version_it = page_info->prev_version_.find(rid.slot_no);
+    if (version_it == page_info->prev_version_.end()) {
+        return;
+    }
+
+    // 获取当前版本链头和它的下一个版本
+    auto current = version_it->second;
+    auto next_version = current.txn_->GetUndoLog(current.prev_log_idx_).prev_version_;
+    
+    if (next_version.IsValid()) {
+        // 如果存在后续版本,将版本链头更新为下一个版本
+        page_info->prev_version_.insert_or_assign(rid.slot_no, next_version);
+    } else {
+        // 如果不存在后续版本,直接删除版本链头
+        page_info->prev_version_.erase(version_it);
+        
+        // 检查是否删除后变为空
+        bool is_empty = page_info->prev_version_.empty();
+        page_lock.unlock();  // 释放页面锁以避免长时间持有
+        
+        if (is_empty) {
+            std::unique_lock global_write_lock(version_info_mutex_);
+            // 二次检查,因为可能在释放页面锁后其他线程添加了记录
+            if (page_info->prev_version_.empty()) {
+                version_info_.erase(page_id);
+            }
+        }
+    }
+
+    // 减少被删除版本的引用计数
+    current.txn_->ReleaseVersionRef();
 }
 
 void TransactionManager::TruncateVersionChain(std::shared_ptr<PageVersionInfo> page_info,

@@ -9,6 +9,7 @@ MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 See the Mulan PSL v2 for more details. */
 
 #include "rm_file_handle.h"
+#include "transaction/transaction_manager.h"
 
 /**
  * @description: 获取当前表中记录号为rid的记录
@@ -213,6 +214,94 @@ void RmFileHandle::update_record(const Rid &rid, char *buf, Context *context)
 }
 
 /**
+ * @description: 获取记录的可见版本(MVCC)
+ * @param {Rid&} rid 记录ID
+ * @param {Context*} context 事务上下文
+ * @return {unique_ptr<RmRecord>} 记录的可见版本
+ */
+// std::unique_ptr<RmRecord> RmFileHandle::get_record_version(const Rid &rid, Context *context) const {
+//     if (context->txn_mgr_->get_concurrency_mode() != ConcurrencyMode::MVCC) {
+//         return get_record(rid, context);
+//     }
+
+//     // 获取磁盘上的版本
+//     auto record = get_record(rid, context);
+//     if (!record) return nullptr;
+
+//     // 检查版本可见性
+//     auto visible_version = context->txn_mgr_->GetVisibleRecord(fd_, rid, context->txn_);
+//     if (!visible_version) {
+//         return record;  // 如果没有可见的历史版本,返回当前版本
+//     }
+
+//     // 返回找到的可见版本
+//     auto visible_record = std::make_unique<RmRecord>(file_hdr_.record_size);
+//     memcpy(visible_record->data, visible_version->tuple_.data(), file_hdr_.record_size);
+//     return visible_record;
+// }
+
+/**
+ * @description: 回滚插入操作(MVCC)
+ * @param {Rid&} rid 要回滚的记录ID
+ * @param {Context*} context 事务上下文
+ */
+void RmFileHandle::rollback_insert(const Rid &rid, Context *context) {
+    return delete_record(rid, context);
+}
+
+/**
+ * @description: 回滚删除操作(MVCC)
+ * @param {Rid&} rid 要回滚的记录ID
+ * @param {RmRecord&} record 原始记录数据
+ * @param {Context*} context 事务上下文
+ */
+void RmFileHandle::rollback_delete(const Rid &rid, char *buf, Context *context) {
+    TransactionManager *txn_mgr = context->txn_->get_txn_manager();
+    if (txn_mgr->get_concurrency_mode() != ConcurrencyMode::MVCC) {
+        insert_record(rid, buf);
+        return;
+    }
+
+    // 获取页面句柄
+    RmPageHandle page_handle = fetch_page_handle(rid.page_no);
+    std::unique_lock lock(page_handle.page->latch_);
+
+    // 恢复记录数据
+    char *slot = page_handle.get_slot(rid.slot_no);
+    memcpy(slot, buf, file_hdr_.record_size);
+
+    txn_mgr->DeleteVersionChainHead(fd_, rid);
+
+    rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);
+}
+
+/**
+ * @description: 回滚更新操作(MVCC)
+ * @param {Rid&} rid 要回滚的记录ID
+ * @param {RmRecord&} record 原始记录数据
+ * @param {Context*} context 事务上下文
+ */
+void RmFileHandle::rollback_update(const Rid &rid, char *old_buf, Context *context) {
+    TransactionManager *txn_mgr = context->txn_->get_txn_manager();
+    if (txn_mgr->get_concurrency_mode() != ConcurrencyMode::MVCC) {
+        update_record(rid, old_buf, context);
+        return;
+    }
+
+    // 获取页面句柄
+    RmPageHandle page_handle = fetch_page_handle(rid.page_no);
+    std::unique_lock lock(page_handle.page->latch_);
+
+    // 恢复记录数据
+    char *slot = page_handle.get_slot(rid.slot_no);
+    memcpy(slot, old_buf, file_hdr_.record_size);
+
+    txn_mgr->DeleteVersionChainHead(fd_, rid);
+
+    rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);
+}
+
+/**
  * 以下函数为辅助函数，仅提供参考，可以选择完成如下函数，也可以删除如下函数，在单元测试中不涉及如下函数接口的直接调用
  */
 /**
@@ -305,4 +394,92 @@ void RmFileHandle::release_page_handle(RmPageHandle &page_handle)
     // 2. 让这个页面指向原来的第一个空闲页面
     page_handle.page_hdr->next_free_page_no = file_hdr_.first_free_page_no;
     file_hdr_.first_free_page_no = page_handle.page->get_page_id().page_no;
+}
+
+/**
+ * @brief 初始化记录版本信息
+ * @param buf 记录所在的缓冲区
+ * @param context 事务上下文
+ */  
+void RmFileHandle::init_record_version(char *buf, Context *context) {
+    if (!context || context->txn == nullptr) return;
+    
+    auto *record_version = reinterpret_cast<RecordVersion *>(buf + file_hdr_.record_size - sizeof(RecordVersion));
+    record_version->txn_id = context->txn->getTxnId();
+    record_version->commit_ts = INVALID_TS;  // 初始设置为无效时间戳
+    record_version->tuple_id = context->txn->next_tuple_id_++; // 分配新的tuple_id
+}
+
+/**
+ * @brief 检查记录版本是否对当前事务可见
+ * @param buf 记录所在的缓冲区
+ * @param context 事务上下文
+ * @return 如果可见返回true
+ */ 
+bool RmFileHandle::check_version_visible(char *buf, Context *context) const {
+    if (!context || context->txn == nullptr) return true;
+
+    auto *record_version = reinterpret_cast<RecordVersion *>(buf + file_hdr_.record_size - sizeof(RecordVersion));
+    txn_id_t current_txn = context->txn->getTxnId();
+
+    // 如果是当前事务写入的版本
+    if (record_version->txn_id == current_txn) {
+        return true;
+    }
+
+    // 检查版本可见性规则
+    timestamp_t read_ts = context->txn->getStartTs();
+    if (record_version->commit_ts == INVALID_TS) {
+        // 未提交版本对其他事务不可见
+        return false;
+    }
+    
+    // 根据时间戳判断版本可见性
+    return record_version->commit_ts <= read_ts;
+}
+
+/**
+ * @brief 检查记录是否对当前事务可见
+ * @param rid 记录ID
+ * @param context 事务上下文
+ * @return 如果可见返回true
+ */
+bool RmFileHandle::is_visible(const Rid &rid, Context *context) const {
+    if (!context || context->txn == nullptr) return true;
+    
+    TransactionManager *txn_mgr = context->txn->get_txn_manager();
+    if (txn_mgr->get_concurrency_mode() != ConcurrencyMode::MVCC) {
+        return true;
+    }
+    
+    // 1. 获取记录的最新版本
+    RmPageHandle page_handle = fetch_page_handle(rid.page_no);
+    char *slot = page_handle.get_slot(rid.slot_no);
+    
+    // 2. 检查当前槽位是否有效
+    if (!Bitmap::is_set(page_handle.bitmap, rid.slot_no)) {
+        rm_manager_->buffer_pool_manager_->unpin_page({fd_, rid.page_no}, false);
+        return false;
+    }
+
+    // 3. 先检查当前版本是否可见
+    if (check_version_visible(slot, context)) {
+        rm_manager_->buffer_pool_manager_->unpin_page({fd_, rid.page_no}, false);
+        return true;
+    }
+
+    // 4. 如果当前版本不可见,获取版本链上的可见版本
+    auto visible_version = txn_mgr->GetVisibleRecord(fd_, rid, context->txn_);
+    if (!visible_version) {
+        // 如果没有可见的历史版本，则记录对当前事务不可见
+        rm_manager_->buffer_pool_manager_->unpin_page({fd_, rid.page_no}, false);
+        return false;
+    }
+
+    // 5. 比较当前记录的TupleId和历史版本的是否一致，避免槽位重用
+    auto *record_version = reinterpret_cast<RecordVersion *>(slot + file_hdr_.record_size - sizeof(RecordVersion));
+    bool is_same_tuple = (record_version->tuple_id == visible_version->tuple_id);
+
+    rm_manager_->buffer_pool_manager_->unpin_page({fd_, rid.page_no}, false);
+    return is_same_tuple;
 }

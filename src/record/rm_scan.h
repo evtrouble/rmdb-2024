@@ -11,20 +11,20 @@ See the Mulan PSL v2 for more details. */
 #pragma once
 
 #include "rm_defs.h"
+#include "common/context.h"
 
 class RmFileHandle;
 
-class RmScan : public RecScan {
+class RmScan {
+private:
     std::shared_ptr<RmFileHandle> file_handle_;
     Rid rid_;
+    Context* context_;  // 添加事务上下文
+
 public:
-    RmScan(std::shared_ptr<RmFileHandle> file_handle);
-
-    void next() override;
-
-    void next_batch() override;
-
-    bool is_end() const override;
-
-    Rid rid() const override;
+    RmScan(std::shared_ptr<RmFileHandle> file_handle, Context* context);
+    void next();
+    void next_batch(); // 跳过当前页，移动到下一页
+    bool is_end() const;
+    Rid rid() const;
 };
