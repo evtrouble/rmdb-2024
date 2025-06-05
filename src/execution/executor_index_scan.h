@@ -21,8 +21,8 @@ private:
     SmManager *sm_manager_;
     std::string tab_name_;                      // 表名称
     TabMeta tab_;                               // 表的元数据
-    std::vector<Condition> fed_conds_;              // 扫描条件
-    RmFileHandle *fh_;                          // 表的数据文件句柄
+    std::vector<Condition> fed_conds_;          // 扫描条件
+    std::shared_ptr<RmFileHandle> fh_;          // 表的数据文件句柄
     std::vector<ColMeta> cols_;                 // 需要读取的字段
     size_t len_;                                // 选取出来的一条记录的长度 
 
@@ -49,11 +49,7 @@ public:
         }
 
         // 增加错误检查
-        try {
-            fh_ = sm_manager_->fhs_.at(tab_name_).get();
-        } catch (const std::out_of_range &e) {
-            throw InternalError("Failed to get file handle: " + std::string(e.what()));
-        }
+        fh_ = sm_manager_->get_table_handle(tab_name_);
 
         cols_ = tab_.cols;
         len_ = cols_.back().offset + cols_.back().len;

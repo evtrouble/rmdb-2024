@@ -14,11 +14,13 @@ See the Mulan PSL v2 for more details. */
 
 #include "bitmap.h"
 #include "rm_defs.h"
-#include "rm_file_handle.h"
+
+class RmFileHandle;
 
 /* 记录管理器，用于管理表的数据文件，进行文件的创建、打开、删除、关闭 */
 class RmManager
 {
+    friend class RmFileHandle;
 private:
     DiskManager *disk_manager_;
     BufferPoolManager *buffer_pool_manager_;
@@ -69,21 +71,10 @@ public:
      * @param {string&} filename 要打开的文件名称
      * @return {unique_ptr<RmFileHandle>} 文件句柄的指针
      */
-    std::unique_ptr<RmFileHandle> open_file(const std::string &filename)
-    {
-        int fd = disk_manager_->open_file(filename);
-        return std::make_unique<RmFileHandle>(disk_manager_, buffer_pool_manager_, fd);
-    }
+    std::shared_ptr<RmFileHandle> open_file(const std::string &filename);
     /**
      * @description: 关闭表的数据文件
      * @param {RmFileHandle*} file_handle 要关闭文件的句柄
      */
-    void close_file(const RmFileHandle *file_handle)
-    {
-        disk_manager_->write_page(file_handle->fd_, RM_FILE_HDR_PAGE, (char *)&file_handle->file_hdr_,
-                                  sizeof(file_handle->file_hdr_));
-        // 缓冲区的所有页刷到磁盘，注意这句话必须写在close_file前面
-        buffer_pool_manager_->flush_all_pages(file_handle->fd_);
-        disk_manager_->close_file(file_handle->fd_);
-    }
+    void close_file(const RmFileHandle *file_handle);
 };

@@ -21,7 +21,7 @@ class SeqScanExecutor : public AbstractExecutor
 private:
     std::string tab_name_;             // 表的名称
     // std::vector<Condition> conds_;     // scan的条件
-    RmFileHandle *fh_;                 // 表的数据文件句柄
+    std::shared_ptr<RmFileHandle> fh_;                 // 表的数据文件句柄
     std::vector<ColMeta> cols_;        // scan后生成的记录的字段
     size_t len_;                       // scan后生成的每条记录的长度
     std::vector<Condition> fed_conds_; // 同conds_，两个字段相同
@@ -210,14 +210,8 @@ public:
                                         fed_conds_(std::move(conds)), sm_manager_(sm_manager)
     {
         // 检查文件句柄是否存在
-        auto fh_iter = sm_manager_->fhs_.find(tab_name_);
-        if (fh_iter == sm_manager_->fhs_.end())
-        {
-            throw std::runtime_error("File handle for table " + tab_name_ + " not found");
-        }
-
         tab_ = sm_manager_->db_.get_table(tab_name_);
-        fh_ = fh_iter->second.get();
+        fh_ = sm_manager_->get_table_handle(tab_name_);
         cols_ = tab_.cols;
         len_ = tab_.cols.back().offset + tab_.cols.back().len;
 

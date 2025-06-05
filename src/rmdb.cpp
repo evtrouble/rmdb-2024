@@ -309,6 +309,8 @@ void start_server()
     {
         printf("%s\n", strerror(errno));
     }
+
+    txn_manager->StopPurgeCleaner();
     //    assert(ret != -1);
     sm_manager->close_db();
     std::cout << " DB has been closed.\n";
@@ -353,6 +355,8 @@ int main(int argc, char **argv)
         recovery->redo();
         recovery->undo();
 
+        txn_manager->set_concurrency_mode(ConcurrencyMode::MVCC);
+        txn_manager->StartPurgeCleaner();
         // 开启服务端，开始接受客户端连接
         start_server();
     }

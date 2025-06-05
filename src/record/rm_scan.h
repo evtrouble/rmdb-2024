@@ -15,10 +15,10 @@ See the Mulan PSL v2 for more details. */
 class RmFileHandle;
 
 class RmScan : public RecScan {
-    const RmFileHandle *file_handle_;
+    std::shared_ptr<RmFileHandle> file_handle_;
     Rid rid_;
 public:
-    RmScan(const RmFileHandle *file_handle);
+    RmScan(std::shared_ptr<RmFileHandle> file_handle);
 
     void next() override;
 

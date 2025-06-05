@@ -15,7 +15,7 @@ See the Mulan PSL v2 for more details. */
  * @brief 初始化file_handle和rid
  * @param file_handle
  */
-RmScan::RmScan(const RmFileHandle *file_handle) : file_handle_(file_handle)
+RmScan::RmScan(std::shared_ptr<RmFileHandle> file_handle) : file_handle_(file_handle)
 {
     // 初始化file_handle和rid（指向第一个存放了记录的位置）
     rid_.page_no = RM_FILE_HDR_PAGE + 1; // 从第一个数据页开始
@@ -28,11 +28,12 @@ RmScan::RmScan(const RmFileHandle *file_handle) : file_handle_(file_handle)
  */
 void RmScan::next()
 {
+    BufferPoolManager *bpm = file_handle_->get_buffer_pool_manager();
     while (rid_.page_no < file_handle_->file_hdr_.num_pages)
     {
         RmPageHandle page_handle = file_handle_->fetch_page_handle(rid_.page_no);
         int next_slot = Bitmap::next_bit(true, page_handle.bitmap, file_handle_->file_hdr_.num_records_per_page, rid_.slot_no);
-        file_handle_->buffer_pool_manager_->unpin_page({file_handle_->fd_, rid_.page_no}, false);
+        bpm->unpin_page({file_handle_->fd_, rid_.page_no}, false);
         if (next_slot < file_handle_->file_hdr_.num_records_per_page)
         {
             rid_.slot_no = next_slot;

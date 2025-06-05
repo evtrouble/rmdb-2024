@@ -141,10 +141,6 @@ void SmManager::close_db() {
     // 刷新元数据到磁盘
     flush_meta();
     // 清空数据库元数据
-    for (auto &file_handle : fhs_)
-    {
-        rm_manager_->close_file(file_handle.second.get());
-    }
     fhs_.clear();
     ihs_.clear();
 
@@ -232,7 +228,10 @@ void SmManager::create_table(const std::string& tab_name, const std::vector<ColD
     // record_size就是col meta所占的大小（表的元数据也是以记录的形式进行存储的）
     rm_manager_->create_file(tab_name, curr_offset);
     
-    fhs_.emplace(tab_name, rm_manager_->open_file(tab_name));
+    {
+        std::unique_lock lock(fhs_latch_);
+        fhs_.emplace(tab_name, rm_manager_->open_file(tab_name));
+    }
     db_.tabs_.emplace(std::move(tab_name), std::move(tab));
     
     flush_meta();
@@ -249,21 +248,28 @@ void SmManager::drop_table(const std::string& tab_name, Context* context) {
 
     // delete index file
     auto &tab = db_.get_table(tab_name);
-    for(auto& index : tab.indexes) {
-        auto index_iter = ihs_.find(ix_manager_->get_index_name(tab_name, index.cols));
-        index_iter->second->mark_deleted(); // 标记为已删除
-        ihs_.erase(index_iter);
+
+    {
+        std::unique_lock lock(ihs_latch_);
+        for(auto& index : tab.indexes) {
+            auto index_iter = ihs_.find(ix_manager_->get_index_name(tab_name, index.cols));
+            index_iter->second->mark_deleted(); // 标记为已删除
+            ihs_.erase(index_iter);
+        }
     }
     tab.indexes.clear();
 
     // delete record file
     auto record_iter = fhs_.find(tab_name);
-    rm_manager_->close_file(record_iter->second.get());
-    rm_manager_->destroy_file(tab_name);
+    record_iter->second->mark_deleted(); // 标记为已删除
 
     db_.tabs_.erase(tab_name);
-    fhs_.erase(record_iter);
 
+    {
+        std::unique_lock lock(fhs_latch_);
+        fhs_.erase(record_iter);
+    }
+    
     flush_meta();
 }
 
@@ -291,7 +297,7 @@ void SmManager::create_index(const std::string& tab_name, const std::vector<std:
     ix_manager_->create_index(tab_name, cols);
     auto ih = ix_manager_->open_index(tab_name, cols);
 
-    auto fh_ = fhs_.at(tab_name).get();
+    auto fh_ = get_table_handle(tab_name);
 
     // 向索引中插入表中已有数据
     auto insert_data = std::make_unique<char[]>(tot_col_len);
@@ -315,7 +321,11 @@ void SmManager::create_index(const std::string& tab_name, const std::vector<std:
         }
     }
 
-    ihs_.emplace(index_name, std::move(ih));
+    {
+        std::unique_lock lock(ihs_latch_);
+        ihs_.emplace(index_name, std::move(ih));
+    }
+    
     tab.indexes.emplace_back(tab_name, tot_col_len, static_cast<int>(cols.size()), cols);
 
     flush_meta();
@@ -337,8 +347,12 @@ void SmManager::drop_index(const std::string& tab_name, const std::vector<std::s
         return;
 
     index_iter->second->mark_deleted(); // 标记为已删除
-    ihs_.erase(index_iter);
 
+    {
+        std::unique_lock lock(ihs_latch_);
+        ihs_.erase(index_iter);
+    }
+    
     auto &tab = db_.get_table(tab_name);
     tab.indexes.erase(tab.get_index_meta(col_names));
 

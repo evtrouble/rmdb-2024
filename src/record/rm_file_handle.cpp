@@ -61,7 +61,7 @@ std::vector<std::pair<std::unique_ptr<RmRecord>, int>> RmFileHandle::get_records
         memcpy(record->data, page_handle.get_slot(slot_no), file_hdr_.record_size);
         records.emplace_back(std::make_pair(std::move(record), slot_no));
     }
-    buffer_pool_manager_->unpin_page({fd_, page_no}, false);
+    rm_manager_->buffer_pool_manager_->unpin_page({fd_, page_no}, false);
 
     return records;
 }
@@ -126,7 +126,7 @@ Rid RmFileHandle::insert_record(char *buf, Context *context)
     Rid rid{page_handle.page->get_page_id().page_no, slot_no};
 
     // 7. 解除页面固定
-    buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);
+    rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);
 
     return rid;
 }
@@ -161,7 +161,7 @@ void RmFileHandle::insert_record(const Rid &rid, char *buf)
         if (page_handle.page_hdr->num_records == 1 && file_hdr_.first_free_page_no == rid.page_no)
             file_hdr_.first_free_page_no = page_handle.page_hdr->next_free_page_no;
     }
-    buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);
+    rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);
 }
 
 /**
@@ -186,7 +186,7 @@ void RmFileHandle::delete_record(const Rid &rid, Context *context)
     // 4. 如果页面从满状态变为未满状态，需要更新空闲页面链表
     if (page_handle.page_hdr->num_records == file_hdr_.num_records_per_page - 1)
         release_page_handle(page_handle);
-    buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);
+    rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);
 }
 
 /**
@@ -209,7 +209,7 @@ void RmFileHandle::update_record(const Rid &rid, char *buf, Context *context)
 
     // 3. 更新记录数据
     memcpy(page_handle.get_slot(rid.slot_no), buf, file_hdr_.record_size);
-    buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);
+    rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);
 }
 
 /**
@@ -229,7 +229,7 @@ RmPageHandle RmFileHandle::fetch_page_handle(int page_no) const
     }
 
     // 使用缓冲池获取指定页面
-    Page *page = buffer_pool_manager_->fetch_page(PageId{fd_, page_no});
+    Page *page = rm_manager_->buffer_pool_manager_->fetch_page(PageId{fd_, page_no});
     if (page == nullptr)
     {
         throw PageNotExistError(std::string("Record File"), page_no);
@@ -247,7 +247,7 @@ RmPageHandle RmFileHandle::create_new_page_handle()
 {
     // 1.使用缓冲池来创建一个新page
     PageId new_page_id = {fd_, static_cast<int>(file_hdr_.num_pages)};
-    Page *page = buffer_pool_manager_->new_page(&new_page_id);
+    Page *page = rm_manager_->buffer_pool_manager_->new_page(&new_page_id);
     if (page == nullptr)
     {
         throw std::runtime_error("Failed to create new page");

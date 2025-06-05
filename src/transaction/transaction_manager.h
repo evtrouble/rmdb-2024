@@ -51,7 +51,14 @@ public:
         concurrency_mode_ = concurrency_mode;
     }
 
-    ~TransactionManager() = default;
+    ~TransactionManager() {
+        if(!terminate_purge_cleaner_) {
+            terminate_purge_cleaner_ = true;
+            if (purgeCleaner.joinable()) {
+                purgeCleaner.join();
+            }
+        }
+    }
 
     Transaction *begin(Transaction *txn, LogManager *log_manager);
 
@@ -99,6 +106,9 @@ public:
 
     void DeleteVersionChain(int fd, const Rid &rid);
 
+    void StartPurgeCleaner();
+    void StopPurgeCleaner();
+
     std::optional<UndoLog> GetVisibleRecord(int fd, const Rid &rid, Transaction *current_txn);
 
     bool UpdateUndoLink(int fd, const Rid &rid, std::optional<UndoLink> prev_link,
@@ -115,6 +125,8 @@ private:
     std::mutex latch_;                           // 用于txn_map的并发
     SmManager *sm_manager_;
     LockManager *lock_manager_;
+    std::thread purgeCleaner;
+    bool terminate_purge_cleaner_{false}; // 用于终止清理线程
 
     std::atomic<timestamp_t> last_commit_ts_{0}; // 最后提交的时间戳,仅用于MVCC
     Watermark running_txns_{0};                  // 存储所有正在运行事务的读取时间戳，以便于垃圾回收，仅用于MVCC

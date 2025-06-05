@@ -379,3 +379,17 @@ std::shared_ptr<PageVersionInfo> TransactionManager::GetPageVersionInfo(const Pa
     }
     return page_it->second;
 }
+
+void TransactionManager::StartPurgeCleaner()
+{
+    if(concurrency_mode_ == ConcurrencyMode::MVCC)
+    {
+        
+    }
+    // sm_manager_->
+}
+
+void TransactionManager::StopPurgeCleaner()
+{
+    // sm_manager_->
+}

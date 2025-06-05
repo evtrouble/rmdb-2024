@@ -17,6 +17,7 @@ See the Mulan PSL v2 for more details. */
 #include "bitmap.h"
 #include "common/context.h"
 #include "rm_defs.h"
+#include "rm_manager.h"
 
 class RmManager;
 
@@ -50,16 +51,17 @@ class RmFileHandle
     friend class RmManager;
 
 private:
-    DiskManager *disk_manager_;
-    BufferPoolManager *buffer_pool_manager_;
+    RmManager *rm_manager_; // 记录管理器，用于管理表的数据文件
     int fd_;             // 打开文件后产生的文件句柄
     RmFileHdr file_hdr_; // 文件头，维护当前表文件的元数据
     std::mutex lock_;    // 锁，用于保护文件头的读写操作
+    bool is_deleted_ = false; // 标记文件是否被删除
 
 public:
-    RmFileHandle(DiskManager *disk_manager, BufferPoolManager *buffer_pool_manager, int fd)
-        : disk_manager_(disk_manager), buffer_pool_manager_(buffer_pool_manager), fd_(fd)
+    RmFileHandle(RmManager *rm_manager, int fd)
+        : rm_manager_(rm_manager), fd_(fd)
     {
+        DiskManager *disk_manager_ = rm_manager_->disk_manager_;
         // 注意：这里从磁盘中读出文件描述符为fd的文件的file_hdr，读到内存中
         // 这里实际就是初始化file_hdr，只不过是从磁盘中读出进行初始化
         // init file_hdr_
@@ -68,8 +70,26 @@ public:
         disk_manager_->set_fd2pageno(fd, file_hdr_.num_pages);
     }
 
+    ~RmFileHandle()
+    {
+        DiskManager *disk_manager_ = rm_manager_->disk_manager_;
+        if(is_deleted_) {
+            std::string file_name = disk_manager_->get_file_name(fd_);
+            // 如果文件被标记为已删除，则不需要写回file_hdr到磁盘
+            rm_manager_->close_file(this);
+            disk_manager_->destroy_file(file_name);
+        }
+        else
+            disk_manager_->close_file(fd_);
+    }
+
     RmFileHdr get_file_hdr() const { return file_hdr_; }
     int GetFd() { return fd_; }
+    inline void mark_deleted() { is_deleted_ = true; } // 标记文件为已删除
+    inline BufferPoolManager *get_buffer_pool_manager() const
+    {
+        return rm_manager_->buffer_pool_manager_;
+    }
 
     /* 判断指定位置上是否已经存在一条记录，通过Bitmap来判断 */
     bool is_record(const Rid &rid) const

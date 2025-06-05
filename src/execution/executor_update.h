@@ -19,14 +19,14 @@ class UpdateExecutor : public AbstractExecutor
 {
 private:
     TabMeta tab_;
-    RmFileHandle *fh_;
+    std::shared_ptr<RmFileHandle> fh_;
     std::vector<Rid> rids_;
     std::string tab_name_;
     std::vector<SetClause> set_clauses_;
     SmManager *sm_manager_;
     std::unordered_set<int> changes;
     std::vector<ColMeta*> set_col_metas; // 缓存set_clauses对应的列元数据
-    std::vector<std::pair<IxIndexHandle *, IndexMeta &>> ihs; // 缓存需要更新的索引信息
+    std::vector<std::pair<std::shared_ptr<IxIndexHandle>, IndexMeta &>> ihs; // 缓存需要更新的索引信息
     std::vector<std::unique_ptr<char[]>> datas; // 缓存索引键数据
 
     // 初始化需要更新的索引信息和列元数据
@@ -43,7 +43,7 @@ private:
         for (auto &index : tab_.indexes) {
             for (int i = 0; i < index.col_num; ++i) {
                 if (changes.count(index.cols[i].offset)) {
-                    ihs.emplace_back(sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get(), index);
+                    ihs.emplace_back(sm_manager_->get_index_handle(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)), index);
                     datas.emplace_back(new char[index.col_tot_len]);
                     break;
                 }
@@ -81,7 +81,7 @@ public:
               tab_name_(std::move(tab_name)), set_clauses_(std::move(set_clauses)),
               sm_manager_(sm_manager) {
         tab_ = sm_manager_->db_.get_table(tab_name_);
-        fh_ = sm_manager_->fhs_.at(tab_name_).get();
+        fh_ = sm_manager_->get_table_handle(tab_name_);
         for (auto &set_clause : set_clauses_) {
             // 找到要更新的列的元数据
             auto col = tab_.get_col(set_clause.lhs.col_name);

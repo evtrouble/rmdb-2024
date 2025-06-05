@@ -21,11 +21,11 @@ class InsertExecutor : public AbstractExecutor {
 private:
     TabMeta tab_;               // 表的元数据
     std::vector<Value> values_; // 需要插入的数据
-    RmFileHandle *fh_;          // 表的数据文件句柄
+    std::shared_ptr<RmFileHandle> fh_;          // 表的数据文件句柄
     std::string tab_name_;      // 表名称
     Rid rid_;                   // 插入的位置，由于系统默认插入时不指定位置，因此当前rid_在插入后才赋值
     SmManager *sm_manager_;
-    std::vector<IxIndexHandle *> ihs_;
+    std::vector<std::shared_ptr<IxIndexHandle>> ihs_;
     std::vector<std::vector<int>> index_col_offsets_; // 每个索引的列偏移量
 
 public:
@@ -36,12 +36,12 @@ public:
         if (values.size() != tab_.cols.size()) {
             throw InvalidValueCountError();
         }
-        fh_ = sm_manager_->fhs_.at(tab_name_).get();
+        fh_ = sm_manager_->get_table_handle(tab_name_);
 
         ihs_.reserve(tab_.indexes.size());
         index_col_offsets_.reserve(tab_.indexes.size());
         for (auto &index : tab_.indexes) {
-            ihs_.emplace_back(sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get());
+            ihs_.emplace_back(sm_manager_->get_index_handle(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)));
             std::vector<int> offsets;
             for (auto &col : index.cols) {
                 offsets.emplace_back(col.offset);
