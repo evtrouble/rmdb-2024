@@ -614,12 +614,13 @@ std::shared_ptr<Plan> Planner::generate_select_plan(std::shared_ptr<Query> query
     }
 
     // 确保query对象包含条件信息
-    if (query->conds.empty() && !select_stmt->conds.empty())
+    if (query->conds.empty())
     {
         std::cout << "[Debug] 处理SELECT语句中的条件" << std::endl;
 
         // 首先建立表名到别名的映射
         std::map<std::string, std::string> tab_aliases;
+        std::map<std::string, std::string> alias_to_table; // 别名到表名的映射
         for (size_t i = 0; i < select_stmt->tabs.size(); ++i)
         {
             if (i < select_stmt->tab_aliases.size() && !select_stmt->tab_aliases[i].empty())
@@ -627,26 +628,104 @@ std::shared_ptr<Plan> Planner::generate_select_plan(std::shared_ptr<Query> query
                 std::cout << "[Debug] 表别名映射: " << select_stmt->tabs[i]
                           << " -> " << select_stmt->tab_aliases[i] << std::endl;
                 tab_aliases[select_stmt->tab_aliases[i]] = select_stmt->tabs[i];
+                alias_to_table[select_stmt->tab_aliases[i]] = select_stmt->tabs[i];
             }
         }
 
+        // 处理 JOIN 条件
+        std::cout << "[Debug] 处理 JOIN 条件" << std::endl;
+        for (const auto &join_expr : select_stmt->jointree)
+        {
+            std::cout << "[Debug] 处理 JOIN 表达式: " << join_expr->left << " JOIN " << join_expr->right << std::endl;
+
+            // 处理 JOIN 表达式中的所有条件
+            for (const auto &join_cond : join_expr->conds)
+            {
+                auto lhs_col = std::dynamic_pointer_cast<ast::Col>(join_cond->lhs);
+                auto rhs_col = std::dynamic_pointer_cast<ast::Col>(join_cond->rhs);
+
+                if (!lhs_col || !rhs_col)
+                {
+                    throw RMDBError("JOIN condition must be between two columns");
+                }
+
+                std::cout << "[Debug] 处理 JOIN 条件: " << lhs_col->col_name << std::endl;
+
+                Condition condition;
+
+                // 处理左侧列的表名
+                if (lhs_col->tab_name.empty())
+                {
+                    // 如果列没有指定表名，使用 JOIN 表达式的左表名或其别名
+                    condition.lhs_col.tab_name = join_expr->left_alias.empty() ? join_expr->left : join_expr->left_alias;
+                }
+                else
+                {
+                    // 如果使用了别名，查找实际的表名
+                    auto it = alias_to_table.find(lhs_col->tab_name);
+                    if (it != alias_to_table.end())
+                    {
+                        condition.lhs_col.tab_name = it->second;
+                    }
+                    else
+                    {
+                        condition.lhs_col.tab_name = lhs_col->tab_name;
+                    }
+                }
+                condition.lhs_col.col_name = lhs_col->col_name;
+
+                // JOIN 条件总是等值连接
+                condition.op = CompOp::OP_EQ;
+                condition.is_rhs_val = false;
+
+                // 处理右侧列的表名
+                if (rhs_col->tab_name.empty())
+                {
+                    // 如果列没有指定表名，使用 JOIN 表达式的右表名或其别名
+                    condition.rhs_col.tab_name = join_expr->right_alias.empty() ? join_expr->right : join_expr->right_alias;
+                }
+                else
+                {
+                    auto it = alias_to_table.find(rhs_col->tab_name);
+                    if (it != alias_to_table.end())
+                    {
+                        condition.rhs_col.tab_name = it->second;
+                    }
+                    else
+                    {
+                        condition.rhs_col.tab_name = rhs_col->tab_name;
+                    }
+                }
+                condition.rhs_col.col_name = rhs_col->col_name;
+
+                std::cout << "[Debug] 添加 JOIN 条件: "
+                          << condition.lhs_col.tab_name << "." << condition.lhs_col.col_name
+                          << " = "
+                          << condition.rhs_col.tab_name << "." << condition.rhs_col.col_name
+                          << std::endl;
+
+                query->conds.push_back(condition);
+            }
+        }
+
+        // 处理 WHERE 条件
+        std::cout << "[Debug] 处理 WHERE 条件" << std::endl;
         for (const auto &cond : select_stmt->conds)
         {
-            std::cout << "[Debug] 处理条件: " << cond->lhs->col_name << std::endl;
+            std::cout << "[Debug] 处理 WHERE 条件: " << cond->lhs->col_name << std::endl;
 
             Condition condition;
 
             // 处理左侧列的表名
             if (cond->lhs->tab_name.empty())
             {
-                // 如果没有指定表名，使用第一个表
                 condition.lhs_col.tab_name = query->tables[0];
             }
             else
             {
                 // 如果使用了别名，查找实际的表名
-                auto it = tab_aliases.find(cond->lhs->tab_name);
-                if (it != tab_aliases.end())
+                auto it = alias_to_table.find(cond->lhs->tab_name);
+                if (it != alias_to_table.end())
                 {
                     condition.lhs_col.tab_name = it->second;
                 }
@@ -656,9 +735,6 @@ std::shared_ptr<Plan> Planner::generate_select_plan(std::shared_ptr<Query> query
                 }
             }
             condition.lhs_col.col_name = cond->lhs->col_name;
-
-            std::cout << "[Debug] 左侧列: " << condition.lhs_col.tab_name
-                      << "." << condition.lhs_col.col_name << std::endl;
 
             switch (cond->op)
             {
@@ -690,14 +766,12 @@ std::shared_ptr<Plan> Planner::generate_select_plan(std::shared_ptr<Query> query
                 // 处理右侧列的表名
                 if (col->tab_name.empty())
                 {
-                    // 如果没有指定表名，使用第一个表
                     condition.rhs_col.tab_name = query->tables[0];
                 }
                 else
                 {
-                    // 如果使用了别名，查找实际的表名
-                    auto it = tab_aliases.find(col->tab_name);
-                    if (it != tab_aliases.end())
+                    auto it = alias_to_table.find(col->tab_name);
+                    if (it != alias_to_table.end())
                     {
                         condition.rhs_col.tab_name = it->second;
                     }
@@ -708,29 +782,41 @@ std::shared_ptr<Plan> Planner::generate_select_plan(std::shared_ptr<Query> query
                 }
                 condition.rhs_col.col_name = col->col_name;
 
-                std::cout << "[Debug] 右侧列: " << condition.rhs_col.tab_name
-                          << "." << condition.rhs_col.col_name << std::endl;
+                std::cout << "[Debug] WHERE 条件: "
+                          << condition.lhs_col.tab_name << "." << condition.lhs_col.col_name
+                          << " " << get_op_string(condition.op) << " "
+                          << condition.rhs_col.tab_name << "." << condition.rhs_col.col_name
+                          << std::endl;
             }
             else if (auto int_lit = std::dynamic_pointer_cast<ast::IntLit>(cond->rhs))
             {
                 condition.is_rhs_val = true;
                 condition.rhs_val.type = TYPE_INT;
                 condition.rhs_val.int_val = int_lit->val;
-                std::cout << "[Debug] 右侧值: " << int_lit->val << " (INT)" << std::endl;
+                std::cout << "[Debug] WHERE 条件: "
+                          << condition.lhs_col.tab_name << "." << condition.lhs_col.col_name
+                          << " " << get_op_string(condition.op) << " "
+                          << int_lit->val << " (INT)" << std::endl;
             }
             else if (auto float_lit = std::dynamic_pointer_cast<ast::FloatLit>(cond->rhs))
             {
                 condition.is_rhs_val = true;
                 condition.rhs_val.type = TYPE_FLOAT;
                 condition.rhs_val.float_val = float_lit->val;
-                std::cout << "[Debug] 右侧值: " << float_lit->val << " (FLOAT)" << std::endl;
+                std::cout << "[Debug] WHERE 条件: "
+                          << condition.lhs_col.tab_name << "." << condition.lhs_col.col_name
+                          << " " << get_op_string(condition.op) << " "
+                          << float_lit->val << " (FLOAT)" << std::endl;
             }
             else if (auto str_lit = std::dynamic_pointer_cast<ast::StringLit>(cond->rhs))
             {
                 condition.is_rhs_val = true;
                 condition.rhs_val.type = TYPE_STRING;
                 condition.rhs_val.str_val = str_lit->val;
-                std::cout << "[Debug] 右侧值: " << str_lit->val << " (STRING)" << std::endl;
+                std::cout << "[Debug] WHERE 条件: "
+                          << condition.lhs_col.tab_name << "." << condition.lhs_col.col_name
+                          << " " << get_op_string(condition.op) << " "
+                          << str_lit->val << " (STRING)" << std::endl;
             }
             else
             {

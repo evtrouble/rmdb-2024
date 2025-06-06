@@ -195,7 +195,7 @@ private:
             }
             std::sort(conditions.begin(), conditions.end()); // 按字典序排序连接条件
 
-            // 修复格式化问题：移除多余的方括号
+            // 修复格式化问题：使用正确的格式
             result = indent_str + (plan->tag == T_NestLoop ? "Join" : "SortMergeJoin") +
                      "(tables=[" + format_list(tables) + "]" +
                      (conditions.empty() ? "" : ",condition=[" + format_list(conditions) + "]") +
@@ -464,14 +464,12 @@ public:
         std::vector<std::string> sorted_items = items;
         std::sort(sorted_items.begin(), sorted_items.end());
         std::stringstream ss;
-        ss << "[";
         for (size_t i = 0; i < sorted_items.size(); ++i)
         {
             if (i > 0)
                 ss << ",";
             ss << sorted_items[i];
         }
-        ss << "]";
         return ss.str();
     }
 
