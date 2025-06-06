@@ -77,6 +77,7 @@ public:
         case PlanTag::T_CreateIndex:
         case PlanTag::T_DropIndex:
         case PlanTag::T_ShowIndex:
+        case PlanTag::T_Explain:
             return std::make_shared<PortalStmt>(PORTAL_MULTI_QUERY, std::vector<TabCol>(), std::unique_ptr<AbstractExecutor>(), plan);
         case T_select:
         {
@@ -220,8 +221,8 @@ public:
             //         throw RMDBError("Scalar subquery result size is not 1");
             //     }
             // }
-            return std::make_unique<IndexScanExecutor>(sm_manager_, x->tab_name_, x->fed_conds_, x->index_meta_, 
-                x->max_match_col_count_, context);
+            return std::make_unique<IndexScanExecutor>(sm_manager_, x->tab_name_, x->fed_conds_, x->index_meta_,
+                                                       x->max_match_col_count_, context);
         }
         case PlanTag::T_NestLoop:
         {

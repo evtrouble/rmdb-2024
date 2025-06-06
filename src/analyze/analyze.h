@@ -15,6 +15,7 @@ See the Mulan PSL v2 for more details. */
 #include <memory>
 #include <string>
 #include <vector>
+#include <map>
 
 #include "parser/parser.h"
 #include "system/sm.h"
@@ -27,6 +28,8 @@ public:
     // TODO jointree
     // where条件
     std::vector<Condition> conds;
+    // 按表分组的条件
+    std::map<std::string, std::vector<Condition>> tab_conds;
     // 投影列
     std::vector<TabCol> cols;
     // 表名

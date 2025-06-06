@@ -117,6 +117,7 @@ namespace ast
         std::shared_ptr<TreeNode> query;
 
         ExplainStmt(std::shared_ptr<TreeNode> query_) : query(std::move(query_)) {}
+        TreeNodeType Nodetype() const override { return TreeNodeType::ExplainStmt; }
     };
     struct ShowTables : public TreeNode
     {
@@ -298,21 +299,23 @@ namespace ast
         std::vector<std::shared_ptr<Col>> cols;
         std::vector<OrderByDir> dirs;
         OrderBy() = default;
-        
+
         // 添加单个列和方向的构造函数
-        OrderBy(std::shared_ptr<Col> col, OrderByDir dir) {
+        OrderBy(std::shared_ptr<Col> col, OrderByDir dir)
+        {
             cols.emplace_back(std::move(col));
             dirs.emplace_back(dir);
         }
-        
+
         // 添加多个列和方向的构造函数
         OrderBy(std::vector<std::shared_ptr<Col>> cols_, std::vector<OrderByDir> dirs_)
             : cols(std::move(cols_)), dirs(std::move(dirs_)) {}
-        
+
         TreeNodeType Nodetype() const override { return TreeNodeType::OrderBy; }
-        
+
         // 添加一个列和方向的方法
-        void addItem(std::shared_ptr<Col> col, OrderByDir dir) {
+        void addItem(std::shared_ptr<Col> col, OrderByDir dir)
+        {
             cols.emplace_back(std::move(col));
             dirs.emplace_back(dir);
         }
@@ -352,11 +355,27 @@ namespace ast
     {
         std::string left;
         std::string right;
+        std::string left_alias;  // 左表别名
+        std::string right_alias; // 右表别名
         std::vector<std::shared_ptr<BinaryExpr>> conds;
         JoinType type;
 
+        // 添加默认构造函数
+        JoinExpr() : type(INNER_JOIN) {}
+
         JoinExpr(const std::string &left_, const std::string &right_,
-                 const std::vector<std::shared_ptr<BinaryExpr>> &conds_, JoinType type_) : left(std::move(left_)), right(std::move(right_)), conds(std::move(conds_)), type(type_) {}
+                 const std::vector<std::shared_ptr<BinaryExpr>> &conds_, JoinType type_,
+                 const std::string &left_alias_ = "", const std::string &right_alias_ = "")
+            : left(std::move(left_)), right(std::move(right_)),
+              left_alias(std::move(left_alias_)), right_alias(std::move(right_alias_)),
+              conds(std::move(conds_)), type(type_) {}
+
+        // 获取左表实际使用的名称（如果有别名则返回别名，否则返回原表名）
+        std::string get_left_name() const { return left_alias.empty() ? left : left_alias; }
+
+        // 获取右表实际使用的名称（如果有别名则返回别名，否则返回原表名）
+        std::string get_right_name() const { return right_alias.empty() ? right : right_alias; }
+
         TreeNodeType Nodetype() const override { return TreeNodeType::JoinExpr; }
     };
 
@@ -368,6 +387,9 @@ namespace ast
         std::vector<std::shared_ptr<JoinExpr>> jointree;
         std::vector<std::shared_ptr<Col>> groupby;
         std::vector<std::shared_ptr<BinaryExpr>> having_conds;
+        std::shared_ptr<OrderBy> order;
+        int limit = -1;
+        std::vector<std::string> tab_aliases; // 存储表的别名
 
         bool has_agg = false;
         bool has_groupby;
@@ -375,8 +397,6 @@ namespace ast
         bool has_sort;
         bool has_limit;
         bool has_join;
-        std::shared_ptr<OrderBy> order;
-        int limit = -1;
 
         SelectStmt(const std::vector<std::shared_ptr<Col>> &cols_,
                    const std::vector<std::string> &tabs_,
@@ -385,15 +405,48 @@ namespace ast
                    std::vector<std::shared_ptr<Col>> groupby_,
                    const std::vector<std::shared_ptr<BinaryExpr>> &having_conds_,
                    std::shared_ptr<OrderBy> order_,
-                   int limit_ = -1) : cols(std::move(cols_)), tabs(std::move(tabs_)), conds(std::move(conds_)), jointree(std::move(jointree_)),
-                                                      groupby(std::move(groupby_)), having_conds(std::move(having_conds_)), order(std::move(order_)),limit(limit_)
+                   int limit_ = -1,
+                   const std::vector<std::string> &tab_aliases_ = {})
+            : cols(std::move(cols_)), tabs(std::move(tabs_)),
+              conds(std::move(conds_)), jointree(std::move(jointree_)),
+              groupby(std::move(groupby_)), having_conds(std::move(having_conds_)),
+              order(std::move(order_)), limit(limit_),
+              tab_aliases(std::move(tab_aliases_))
         {
             has_sort = (bool)order;
             has_groupby = (!groupby.empty());
             has_having = (!having_conds.empty());
             has_join = (!jointree.empty());
             has_limit = (limit_ != -1);
+
+            // 确保 tab_aliases 的大小与 tabs 相同
+            if (tab_aliases.size() < tabs.size())
+            {
+                tab_aliases.resize(tabs.size());
+            }
         }
+
+        // 获取表的实际使用名称（如果有别名则返回别名，否则返回原表名）
+        std::string get_table_name(size_t index) const
+        {
+            if (index >= tabs.size())
+                return "";
+            return tab_aliases[index].empty() ? tabs[index] : tab_aliases[index];
+        }
+
+        // 根据原表名查找其别名（如果有的话）
+        std::string find_alias(const std::string &table_name) const
+        {
+            for (size_t i = 0; i < tabs.size(); ++i)
+            {
+                if (tabs[i] == table_name && i < tab_aliases.size() && !tab_aliases[i].empty())
+                {
+                    return tab_aliases[i];
+                }
+            }
+            return table_name; // 如果没有别名，返回原表名
+        }
+
         TreeNodeType Nodetype() const override { return TreeNodeType::SelectStmt; }
     };
 
@@ -416,6 +469,7 @@ namespace ast
         bool sv_bool;
         OrderByDir sv_orderby_dir;
         std::vector<std::string> sv_strs;
+        std::vector<std::string> sv_aliases;
 
         std::shared_ptr<TreeNode> sv_node;
 
@@ -443,8 +497,10 @@ namespace ast
         std::shared_ptr<OrderBy> sv_orderby;
         std::pair<std::shared_ptr<Col>, OrderByDir> sv_order_item;
         SetKnobType sv_setKnobType;
-        struct {
+        struct
+        {
             std::vector<std::string> tables;
+            std::vector<std::string> aliases;
             std::vector<std::shared_ptr<JoinExpr>> jointree;
         } sv_table_list;
     };

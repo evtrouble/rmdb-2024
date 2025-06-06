@@ -65,7 +65,7 @@ public:
             auto query_copy = std::make_shared<Query>();
             query_copy->parse = x->query;
             auto subplan = plan_query(query_copy, context);
-            return std::make_shared<ExplainPlan>(subplan);
+            return std::make_shared<ExplainPlan>(T_Explain, subplan);
         }
         default:
             return planner_->do_planner(query, context);

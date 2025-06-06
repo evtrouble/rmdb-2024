@@ -92,7 +92,7 @@ struct Value
             memset(raw->data + str_val.size(), 0, len - str_val.size());
         }
     }
-    
+
     void export_val(char *dest, int len)
     {
         if (type == TYPE_INT)
@@ -151,19 +151,23 @@ struct Value
         return false;
     }
 
-    bool operator>=(const Value &other) const {
+    bool operator>=(const Value &other) const
+    {
         return !(*this < other);
     }
 
-    bool operator<=(const Value &other) const {
+    bool operator<=(const Value &other) const
+    {
         return (*this < other) || (*this == other);
     }
 
-    bool operator>(const Value &other) const {
+    bool operator>(const Value &other) const
+    {
         return !(*this <= other);
     }
 
-    bool operator!=(const Value &other) const {
+    bool operator!=(const Value &other) const
+    {
         return !(*this == other);
     }
 

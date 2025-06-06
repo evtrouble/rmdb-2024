@@ -17,6 +17,7 @@ See the Mulan PSL v2 for more details. */
 #include "executor_projection.h"
 #include "executor_seq_scan.h"
 #include "executor_update.h"
+#include "executor_explain.h"
 #include "index/ix.h"
 #include "record_printer.h"
 
@@ -49,15 +50,16 @@ void QlManager::run_mutli_query(std::shared_ptr<Plan> plan, Context *context)
 {
     if (auto x = std::dynamic_pointer_cast<ExplainPlan>(plan))
     {
-        // 处理EXPLAIN语句
-        auto explain_executor = std::make_unique<ExplainExecutor>(x->subplan_);
-        auto record = explain_executor->Next();
-        if (record)
-        {
-            std::string result(record->data, record->size);
-            memcpy(context->data_send_ + *(context->offset_), result.c_str(), result.length());
-            *(context->offset_) += result.length();
-        }
+        // 创建ExplainExecutor来处理EXPLAIN语句
+        ExplainExecutor executor(x);
+        executor.init();
+
+        // 获取执行计划的字符串表示
+        std::string result = executor.get_result();
+
+        // 将结果写入context
+        memcpy(context->data_send_ + *(context->offset_), result.c_str(), result.length());
+        *(context->offset_) += result.length();
     }
     else if (auto x = std::dynamic_pointer_cast<DDLPlan>(plan))
     {
@@ -155,12 +157,12 @@ void QlManager::run_cmd_utility(std::shared_ptr<Plan> plan, txn_id_t *txn_id, Co
         {
         case ast::SetKnobType::EnableNestLoop:
         {
-            planner_->set_enable_nestedloop_join(x->bool_value_);
+            planner_->set_enable_nestedloop_join(x->bool_val_);
             break;
         }
         case ast::SetKnobType::EnableSortMerge:
         {
-            planner_->set_enable_sortmerge_join(x->bool_value_);
+            planner_->set_enable_sortmerge_join(x->bool_val_);
             break;
         }
         default:

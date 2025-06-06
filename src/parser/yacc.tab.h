@@ -35,8 +35,8 @@
    especially those whose name start with YY_ or yy_.  They are
    private implementation details that can be changed or removed.  */
 
-#ifndef YY_YY_YACC_TAB_H_INCLUDED
-# define YY_YY_YACC_TAB_H_INCLUDED
+#ifndef YY_YY_HOME_NERO_DIFF_DB2025_SRC_PARSER_YACC_TAB_H_INCLUDED
+# define YY_YY_HOME_NERO_DIFF_DB2025_SRC_PARSER_YACC_TAB_H_INCLUDED
 /* Debug traces.  */
 #ifndef YYDEBUG
 # define YYDEBUG 0
@@ -67,50 +67,51 @@ extern int yydebug;
     FROM = 268,                    /* FROM  */
     ASC = 269,                     /* ASC  */
     ORDER = 270,                   /* ORDER  */
-    GROUP = 271,                   /* GROUP  */
-    BY = 272,                      /* BY  */
-    HAVING = 273,                  /* HAVING  */
-    LIMIT = 274,                   /* LIMIT  */
-    WHERE = 275,                   /* WHERE  */
-    UPDATE = 276,                  /* UPDATE  */
-    SET = 277,                     /* SET  */
-    SELECT = 278,                  /* SELECT  */
-    INT = 279,                     /* INT  */
-    CHAR = 280,                    /* CHAR  */
-    FLOAT = 281,                   /* FLOAT  */
-    DATETIME = 282,                /* DATETIME  */
-    INDEX = 283,                   /* INDEX  */
-    AND = 284,                     /* AND  */
-    SEMI = 285,                    /* SEMI  */
-    JOIN = 286,                    /* JOIN  */
-    ON = 287,                      /* ON  */
-    IN = 288,                      /* IN  */
-    NOT = 289,                     /* NOT  */
-    EXIT = 290,                    /* EXIT  */
-    HELP = 291,                    /* HELP  */
-    TXN_BEGIN = 292,               /* TXN_BEGIN  */
-    TXN_COMMIT = 293,              /* TXN_COMMIT  */
-    TXN_ABORT = 294,               /* TXN_ABORT  */
-    TXN_ROLLBACK = 295,            /* TXN_ROLLBACK  */
-    ORDER_BY = 296,                /* ORDER_BY  */
-    ENABLE_NESTLOOP = 297,         /* ENABLE_NESTLOOP  */
-    ENABLE_SORTMERGE = 298,        /* ENABLE_SORTMERGE  */
-    SUM = 299,                     /* SUM  */
-    COUNT = 300,                   /* COUNT  */
-    MAX = 301,                     /* MAX  */
-    MIN = 302,                     /* MIN  */
-    AVG = 303,                     /* AVG  */
-    AS = 304,                      /* AS  */
-    LEQ = 305,                     /* LEQ  */
-    NEQ = 306,                     /* NEQ  */
-    GEQ = 307,                     /* GEQ  */
-    T_EOF = 308,                   /* T_EOF  */
-    IDENTIFIER = 309,              /* IDENTIFIER  */
-    VALUE_STRING = 310,            /* VALUE_STRING  */
-    VALUE_PATH = 311,              /* VALUE_PATH  */
-    VALUE_INT = 312,               /* VALUE_INT  */
-    VALUE_FLOAT = 313,             /* VALUE_FLOAT  */
-    VALUE_BOOL = 314               /* VALUE_BOOL  */
+    BY = 271,                      /* BY  */
+    EXPLAIN = 272,                 /* EXPLAIN  */
+    LIMIT = 273,                   /* LIMIT  */
+    HAVING = 274,                  /* HAVING  */
+    GROUP = 275,                   /* GROUP  */
+    WHERE = 276,                   /* WHERE  */
+    UPDATE = 277,                  /* UPDATE  */
+    SET = 278,                     /* SET  */
+    SELECT = 279,                  /* SELECT  */
+    INT = 280,                     /* INT  */
+    CHAR = 281,                    /* CHAR  */
+    FLOAT = 282,                   /* FLOAT  */
+    DATETIME = 283,                /* DATETIME  */
+    INDEX = 284,                   /* INDEX  */
+    AND = 285,                     /* AND  */
+    SEMI = 286,                    /* SEMI  */
+    JOIN = 287,                    /* JOIN  */
+    ON = 288,                      /* ON  */
+    IN = 289,                      /* IN  */
+    NOT = 290,                     /* NOT  */
+    EXIT = 291,                    /* EXIT  */
+    HELP = 292,                    /* HELP  */
+    TXN_BEGIN = 293,               /* TXN_BEGIN  */
+    TXN_COMMIT = 294,              /* TXN_COMMIT  */
+    TXN_ABORT = 295,               /* TXN_ABORT  */
+    TXN_ROLLBACK = 296,            /* TXN_ROLLBACK  */
+    ORDER_BY = 297,                /* ORDER_BY  */
+    ENABLE_NESTLOOP = 298,         /* ENABLE_NESTLOOP  */
+    ENABLE_SORTMERGE = 299,        /* ENABLE_SORTMERGE  */
+    SUM = 300,                     /* SUM  */
+    COUNT = 301,                   /* COUNT  */
+    MAX = 302,                     /* MAX  */
+    MIN = 303,                     /* MIN  */
+    AVG = 304,                     /* AVG  */
+    AS = 305,                      /* AS  */
+    LEQ = 306,                     /* LEQ  */
+    NEQ = 307,                     /* NEQ  */
+    GEQ = 308,                     /* GEQ  */
+    T_EOF = 309,                   /* T_EOF  */
+    IDENTIFIER = 310,              /* IDENTIFIER  */
+    VALUE_STRING = 311,            /* VALUE_STRING  */
+    VALUE_PATH = 312,              /* VALUE_PATH  */
+    VALUE_INT = 313,               /* VALUE_INT  */
+    VALUE_FLOAT = 314,             /* VALUE_FLOAT  */
+    VALUE_BOOL = 315               /* VALUE_BOOL  */
   };
   typedef enum yytokentype yytoken_kind_t;
 #endif
@@ -137,4 +138,4 @@ struct YYLTYPE
 int yyparse (void);
 
 
-#endif /* !YY_YY_YACC_TAB_H_INCLUDED  */
+#endif /* !YY_YY_HOME_NERO_DIFF_DB2025_SRC_PARSER_YACC_TAB_H_INCLUDED  */
