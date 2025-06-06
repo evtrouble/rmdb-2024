@@ -186,39 +186,60 @@ std::shared_ptr<Query> Planner::logical_optimization(std::shared_ptr<Query> quer
 {
     if (auto select = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse))
     {
+        std::cout << "[Debug] 开始逻辑优化..." << std::endl;
+
         // 1. 收集所有选择条件
         std::vector<Condition> &all_conds = query->conds;
+        std::cout << "[Debug] 总条件数: " << all_conds.size() << std::endl;
+
         std::vector<Condition> remaining_conds;
         std::vector<Condition> join_conds;
 
         // 2. 对每个选择条件进行分类和下推
         for (auto it = all_conds.begin(); it != all_conds.end();)
         {
+            std::cout << "[Debug] 处理条件: " << it->lhs_col.tab_name << "."
+                      << it->lhs_col.col_name;
+            if (!it->is_rhs_val)
+            {
+                std::cout << " = " << it->rhs_col.tab_name << "."
+                          << it->rhs_col.col_name << std::endl;
+            }
+            else
+            {
+                std::cout << " (与值比较)" << std::endl;
+            }
+
             // 判断是否可以下推(只涉及一个表的条件可以下推)
             if (it->is_rhs_val)
             {
-                // 单表条件，可以下推
+                std::cout << "[Debug] 单表条件，可以下推" << std::endl;
                 remaining_conds.push_back(*it);
                 it = all_conds.erase(it);
             }
             else if (it->lhs_col.tab_name == it->rhs_col.tab_name)
             {
-                // 同一表的多列条件，也可以下推
+                std::cout << "[Debug] 同一表的多列条件，可以下推" << std::endl;
                 remaining_conds.push_back(*it);
                 it = all_conds.erase(it);
             }
             else
             {
-                // 多表连接条件，保留在join节点
+                std::cout << "[Debug] 多表连接条件，保留在join节点" << std::endl;
                 join_conds.push_back(*it);
                 it = all_conds.erase(it);
             }
         }
 
+        std::cout << "[Debug] 分类结果:" << std::endl;
+        std::cout << "  - 连接条件数: " << join_conds.size() << std::endl;
+        std::cout << "  - 可下推条件数: " << remaining_conds.size() << std::endl;
+
         // 3. 按表分组条件
         std::map<std::string, std::vector<Condition>> table_conds;
         for (const auto &cond : remaining_conds)
         {
+            std::cout << "[Debug] 将条件分配给表 " << cond.lhs_col.tab_name << std::endl;
             table_conds[cond.lhs_col.tab_name].push_back(cond);
         }
 
@@ -226,9 +247,14 @@ std::shared_ptr<Query> Planner::logical_optimization(std::shared_ptr<Query> quer
         query->conds = join_conds;      // 保存连接条件
         query->tab_conds = table_conds; // 保存下推的单表条件
 
+        std::cout << "[Debug] 逻辑优化完成" << std::endl;
+        std::cout << "  - 最终连接条件数: " << query->conds.size() << std::endl;
+        std::cout << "  - 最终表条件数: " << table_conds.size() << std::endl;
+
         // 5. 如果是单表查询，将所有条件放回conds中
         if (query->tables.size() == 1)
         {
+            std::cout << "[Debug] 单表查询，所有条件放回conds" << std::endl;
             query->conds = remaining_conds;
         }
     }
@@ -250,12 +276,12 @@ std::shared_ptr<Plan> Planner::physical_optimization(std::shared_ptr<Query> quer
 
 std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Context *context)
 {
+    std::cout << "[Debug] 开始生成物理计划..." << std::endl;
+
     // 存储每个表的扫描计划
     std::vector<std::shared_ptr<Plan>> table_scan_executors;
     // 存储每个表的大小（用于连接顺序优化）
     std::vector<std::pair<std::string, size_t>> table_sizes;
-    // 标记表是否已经被使用
-    std::vector<bool> used_tables;
 
     // 检查是否有表需要处理
     if (query->tables.empty())
@@ -263,55 +289,34 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
         throw RMDBError("No tables in query");
     }
 
-    std::cout << "[Debug] Starting analysis" << std::endl;
-    std::cout << "[Debug] make_one_rel: Number of conditions: " << query->conds.size() << std::endl;
+    std::cout << "[Debug] 处理的表数量: " << query->tables.size() << std::endl;
 
     // 为每个表创建扫描计划
     for (const auto &table_name : query->tables)
     {
-        // 获取表的元数据和文件句柄
-        auto &tab = sm_manager_->db_.get_table(table_name);
-        auto fh = sm_manager_->fhs_.at(table_name).get();
+        std::cout << "[Debug] 处理表: " << table_name << std::endl;
 
-        // 计算表中的记录总数
-        size_t total_records = 0;
-        for (int page_no = 1; page_no < fh->get_file_hdr().num_pages; page_no++)
-        {
-            auto page_handle = fh->fetch_page_handle(page_no);
-            total_records += page_handle.page_hdr->num_records;
-            sm_manager_->get_bpm()->unpin_page({fh->GetFd(), page_no}, false);
-        }
-
-        table_sizes.push_back(std::make_pair(table_name, total_records));
-
-        // 获取该表的条件
+        // 获取表的条件
         std::vector<Condition> table_conditions;
-        if (query->tables.size() == 1)
+        if (query->tab_conds.find(table_name) != query->tab_conds.end())
         {
-            // 单表查询，使用所有条件
-            std::cout << "[Debug] Single table query, using all conditions" << std::endl;
-            table_conditions = query->conds;
+            table_conditions = query->tab_conds[table_name];
         }
-        else
-        {
-            // 多表查询，使用下推的条件
-            std::cout << "[Debug] Multi-table query, using pushed down conditions" << std::endl;
-            auto it = query->tab_conds.find(table_name);
-            if (it != query->tab_conds.end())
-            {
-                table_conditions = it->second;
-            }
-        }
+        std::cout << "[Debug] 表 " << table_name << " 的条件数: "
+                  << table_conditions.size() << std::endl;
 
-        std::cout << "[Debug] Table " << table_name << " has " << table_conditions.size() << " conditions" << std::endl;
+        // 获取表的大小
+        size_t table_size = get_table_cardinality(table_name);
+        table_sizes.emplace_back(table_name, table_size);
+        std::cout << "[Debug] 表 " << table_name << " 的大小: " << table_size << std::endl;
 
         // 检查是否可以使用索引
         auto [index_meta, max_match_col_count] = get_index_cols(table_name, table_conditions);
-
-        // 创建扫描计划，包含下推的条件
         std::shared_ptr<Plan> scan_plan;
+
         if (index_meta != nullptr)
         {
+            std::cout << "[Debug] 使用索引扫描" << std::endl;
             scan_plan = std::make_shared<ScanPlan>(PlanTag::T_IndexScan,
                                                    sm_manager_,
                                                    table_name,
@@ -321,27 +326,25 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
         }
         else
         {
+            std::cout << "[Debug] 使用顺序扫描" << std::endl;
             scan_plan = std::make_shared<ScanPlan>(PlanTag::T_SeqScan,
                                                    sm_manager_,
                                                    table_name,
                                                    table_conditions);
         }
+
         table_scan_executors.push_back(scan_plan);
     }
-
-    // 检查是否成功创建了扫描计划
-    if (table_scan_executors.empty())
-    {
-        throw RMDBError("Failed to create scan plans for tables");
-    }
-
-    used_tables.resize(table_scan_executors.size(), false);
 
     // 如果只有一个表，直接返回扫描计划
     if (table_scan_executors.size() == 1)
     {
+        std::cout << "[Debug] 单表查询，直接返回扫描计划" << std::endl;
         return table_scan_executors[0];
     }
+
+    std::cout << "[Debug] 开始处理多表连接..." << std::endl;
+    std::cout << "[Debug] 连接条件数: " << query->conds.size() << std::endl;
 
     // 按表大小排序
     std::sort(table_sizes.begin(), table_sizes.end(),
@@ -351,9 +354,9 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
     // 从最小的两个表开始连接
     std::shared_ptr<Plan> join_plan;
     std::vector<Condition> join_conds;
-    size_t curr_idx = 0;
 
     // 找到第一个表的索引
+    size_t curr_idx = 0;
     for (size_t i = 0; i < table_scan_executors.size(); i++)
     {
         auto scan = std::static_pointer_cast<ScanPlan>(table_scan_executors[i]);
@@ -363,7 +366,6 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
             break;
         }
     }
-    used_tables[curr_idx] = true;
 
     // 找到第二个表的索引
     size_t next_idx = 0;
@@ -376,21 +378,26 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
             break;
         }
     }
-    used_tables[next_idx] = true;
+
+    std::cout << "[Debug] 初始连接: " << table_sizes[0].first
+              << " 和 " << table_sizes[1].first << std::endl;
 
     // 收集这两个表之间的连接条件
-    for (auto it = query->conds.begin(); it != query->conds.end();)
+    for (const auto &cond : query->conds)
     {
-        if (!it->is_rhs_val &&
-            ((it->lhs_col.tab_name == table_sizes[0].first && it->rhs_col.tab_name == table_sizes[1].first) ||
-             (it->lhs_col.tab_name == table_sizes[1].first && it->rhs_col.tab_name == table_sizes[0].first)))
+        if (!cond.is_rhs_val)
         {
-            join_conds.push_back(*it);
-            it = query->conds.erase(it);
-        }
-        else
-        {
-            ++it;
+            if ((cond.lhs_col.tab_name == table_sizes[0].first &&
+                 cond.rhs_col.tab_name == table_sizes[1].first) ||
+                (cond.lhs_col.tab_name == table_sizes[1].first &&
+                 cond.rhs_col.tab_name == table_sizes[0].first))
+            {
+                std::cout << "[Debug] 添加连接条件: " << cond.lhs_col.tab_name
+                          << "." << cond.lhs_col.col_name << " = "
+                          << cond.rhs_col.tab_name << "."
+                          << cond.rhs_col.col_name << std::endl;
+                join_conds.push_back(cond);
+            }
         }
     }
 
@@ -403,6 +410,8 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
     // 依次加入剩余的表
     for (size_t i = 2; i < table_sizes.size(); i++)
     {
+        std::cout << "[Debug] 添加表: " << table_sizes[i].first << std::endl;
+
         // 找到下一个要连接的表
         for (size_t j = 0; j < table_scan_executors.size(); j++)
         {
@@ -416,15 +425,17 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
 
         // 收集与新表相关的连接条件
         join_conds.clear();
-        for (auto it = query->conds.begin(); it != query->conds.end();)
+        for (const auto &cond : query->conds)
         {
-            if (!it->is_rhs_val)
+            if (!cond.is_rhs_val)
             {
                 bool is_join_cond = false;
                 for (size_t j = 0; j < i; j++)
                 {
-                    if ((it->lhs_col.tab_name == table_sizes[j].first && it->rhs_col.tab_name == table_sizes[i].first) ||
-                        (it->lhs_col.tab_name == table_sizes[i].first && it->rhs_col.tab_name == table_sizes[j].first))
+                    if ((cond.lhs_col.tab_name == table_sizes[j].first &&
+                         cond.rhs_col.tab_name == table_sizes[i].first) ||
+                        (cond.lhs_col.tab_name == table_sizes[i].first &&
+                         cond.rhs_col.tab_name == table_sizes[j].first))
                     {
                         is_join_cond = true;
                         break;
@@ -432,12 +443,13 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
                 }
                 if (is_join_cond)
                 {
-                    join_conds.push_back(*it);
-                    it = query->conds.erase(it);
-                    continue;
+                    std::cout << "[Debug] 添加连接条件: " << cond.lhs_col.tab_name
+                              << "." << cond.lhs_col.col_name << " = "
+                              << cond.rhs_col.tab_name << "."
+                              << cond.rhs_col.col_name << std::endl;
+                    join_conds.push_back(cond);
                 }
             }
-            ++it;
         }
 
         // 创建新的连接计划
@@ -445,9 +457,9 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
                                                join_plan,
                                                table_scan_executors[curr_idx],
                                                join_conds);
-        used_tables[curr_idx] = true;
     }
 
+    std::cout << "[Debug] 物理计划生成完成" << std::endl;
     return join_plan;
 }
 
@@ -877,8 +889,10 @@ std::shared_ptr<Plan> Planner::do_planner(std::shared_ptr<Query> query, Context 
         std::shared_ptr<plannerInfo> root = std::make_shared<plannerInfo>(x);
         // 生成select语句的查询执行计划
         std::shared_ptr<Plan> projection = generate_select_plan(std::move(query), context);
-        return std::make_shared<DMLPlan>(T_select, projection, std::string(), std::vector<Value>(),
-                                         std::vector<Condition>(), std::vector<SetClause>());
+        auto dml_plan = std::make_shared<DMLPlan>(T_select, projection, std::string(), std::vector<Value>(),
+                                                  std::vector<Condition>(), std::vector<SetClause>());
+        dml_plan->parse = x; // 设置parse成员
+        return dml_plan;
     }
     default:
         throw InternalError("Unexpected AST root");

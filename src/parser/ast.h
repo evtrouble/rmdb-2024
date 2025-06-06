@@ -389,7 +389,7 @@ namespace ast
         std::vector<std::shared_ptr<BinaryExpr>> having_conds;
         std::shared_ptr<OrderBy> order;
         int limit = -1;
-        std::vector<std::string> tab_aliases; // 存储表的别名
+        std::vector<std::string> tab_aliases;
 
         bool has_agg = false;
         bool has_groupby;
@@ -424,6 +424,16 @@ namespace ast
             {
                 tab_aliases.resize(tabs.size());
             }
+
+            // 检查列中是否包含聚合函数
+            for (const auto &col : cols)
+            {
+                if (col->agg_type != NO_TYPE)
+                {
+                    has_agg = true;
+                    break;
+                }
+            }
         }
 
         // 获取表的实际使用名称（如果有别名则返回别名，否则返回原表名）
@@ -432,6 +442,28 @@ namespace ast
             if (index >= tabs.size())
                 return "";
             return tab_aliases[index].empty() ? tabs[index] : tab_aliases[index];
+        }
+
+        // 根据原表名或别名查找其对应的原表名
+        std::string find_original_table(const std::string &name) const
+        {
+            // 先检查是否是原表名
+            for (size_t i = 0; i < tabs.size(); ++i)
+            {
+                if (tabs[i] == name)
+                {
+                    return name;
+                }
+            }
+            // 再检查是否是别名
+            for (size_t i = 0; i < tab_aliases.size(); ++i)
+            {
+                if (tab_aliases[i] == name)
+                {
+                    return tabs[i];
+                }
+            }
+            return name; // 如果都找不到，返回原名
         }
 
         // 根据原表名查找其别名（如果有的话）

@@ -176,7 +176,7 @@ dml:
     }
     |   SELECT selector FROM tableList optWhereClause opt_groupby_clause opt_having_clause opt_order_clause opt_limit_clause
     {
-        $$= std::make_shared<SelectStmt>(
+        $$ = std::make_shared<SelectStmt>(
             $2,             // selector
             $4.tables,      // 表列表
             $4.jointree,    // 连接树
@@ -184,8 +184,9 @@ dml:
             $6,             // groupby
             $7,             // having
             $8,             // order
-            $9              // limit
-    );
+            $9,             // limit
+            $4.aliases      // 表别名
+        );
     }
     ;
 
@@ -451,12 +452,29 @@ tableList:
         tbName
     {
         $$.tables = {$1};
+        $$.aliases = {""};
+        $$.jointree = {};
+    }
+    |   tbName ALIAS
+    {
+        $$.tables = {$1};
+        $$.aliases = {$2};
         $$.jointree = {};
     }
     |   tableList ',' tbName
     {
         $$.tables = $1.tables;
+        $$.aliases = $1.aliases;
         $$.tables.emplace_back($3);
+        $$.aliases.emplace_back("");
+        $$.jointree = $1.jointree;
+    }
+    |   tableList ',' tbName ALIAS
+    {
+        $$.tables = $1.tables;
+        $$.aliases = $1.aliases;
+        $$.tables.emplace_back($3);
+        $$.aliases.emplace_back($4);
         $$.jointree = $1.jointree;
     }
     |   tableList JOIN tbName optJoinClause
@@ -468,7 +486,24 @@ tableList:
             INNER_JOIN
         );
         $$.tables = $1.tables;
+        $$.aliases = $1.aliases;
         $$.tables.emplace_back($3);
+        $$.aliases.emplace_back("");
+        $$.jointree = $1.jointree;
+        $$.jointree.emplace_back(join_expr);
+    }
+    |   tableList JOIN tbName ALIAS optJoinClause
+    {
+        auto join_expr = std::make_shared<JoinExpr>(
+            $1.tables.back(),
+            $3,
+            $5,
+            INNER_JOIN
+        );
+        $$.tables = $1.tables;
+        $$.aliases = $1.aliases;
+        $$.tables.emplace_back($3);
+        $$.aliases.emplace_back($4);
         $$.jointree = $1.jointree;
         $$.jointree.emplace_back(join_expr);
     }
@@ -481,7 +516,24 @@ tableList:
             SEMI_JOIN
         );
         $$.tables = $1.tables;
+        $$.aliases = $1.aliases;
         $$.tables.emplace_back($4);
+        $$.aliases.emplace_back("");
+        $$.jointree = $1.jointree;
+        $$.jointree.emplace_back(join_expr);
+    }
+    |   tableList SEMI JOIN tbName ALIAS optJoinClause
+    {
+        auto join_expr = std::make_shared<JoinExpr>(
+            $1.tables.back(),
+            $4,
+            $6,
+            SEMI_JOIN
+        );
+        $$.tables = $1.tables;
+        $$.aliases = $1.aliases;
+        $$.tables.emplace_back($4);
+        $$.aliases.emplace_back($5);
         $$.jointree = $1.jointree;
         $$.jointree.emplace_back(join_expr);
     }

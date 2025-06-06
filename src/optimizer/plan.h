@@ -47,7 +47,8 @@ typedef enum PlanTag
     T_Sort,
     T_Agg,
     T_Projection,
-    T_Explain
+    T_Explain,
+    T_Filter
     // T_Subquery // 子查询
 } PlanTag;
 
@@ -171,6 +172,7 @@ public:
     std::vector<Value> values_;
     std::vector<Condition> conds_;
     std::vector<SetClause> set_clauses_;
+    std::shared_ptr<ast::TreeNode> parse;
 };
 
 // ddl语句, 包括create/drop table; create/drop index;
