@@ -148,7 +148,7 @@ private:
                 if (!conditions.empty())
                 {
                     std::sort(conditions.begin(), conditions.end()); // 按字典序排序条件
-                    result += indent_str + "Filter(condition=" + format_list(conditions) + ")\n";
+                    result += indent_str + "Filter(condition=[" + format_list(conditions) + "])\n";
                     result += indent_str + "\t" + (plan->tag == T_SeqScan ? "Scan" : "IndexScan") + "(table=" + tab_name + ")\n";
                 }
                 else
@@ -196,8 +196,7 @@ private:
             std::sort(conditions.begin(), conditions.end()); // 按字典序排序连接条件
 
             // 修复格式化问题：使用正确的格式
-            result = indent_str + (plan->tag == T_NestLoop ? "Join" : "SortMergeJoin") +
-                     "(tables=[" + format_list(tables) + "]" +
+            result = indent_str + "Join(tables=[" + format_list(tables) + "]" +
                      (conditions.empty() ? "" : ",condition=[" + format_list(conditions) + "]") +
                      ")\n";
 
@@ -276,6 +275,12 @@ private:
         {
             auto scan_plan = std::static_pointer_cast<ScanPlan>(plan);
             table_set.insert(scan_plan->tab_name_);
+            break;
+        }
+        case T_Projection:
+        {
+            auto proj_plan = std::static_pointer_cast<ProjectionPlan>(plan);
+            collect_tables(proj_plan->subplan_, table_set);
             break;
         }
         case T_NestLoop:
