@@ -38,6 +38,28 @@ private:
     bool enable_nestedloop_join = true;
     bool enable_sortmerge_join = false;
 
+    // 辅助函数：将操作符转换为字符串
+    std::string get_op_string(CompOp op)
+    {
+        switch (op)
+        {
+        case CompOp::OP_EQ:
+            return "=";
+        case CompOp::OP_NE:
+            return "!=";
+        case CompOp::OP_LT:
+            return "<";
+        case CompOp::OP_GT:
+            return ">";
+        case CompOp::OP_LE:
+            return "<=";
+        case CompOp::OP_GE:
+            return ">=";
+        default:
+            return "unknown";
+        }
+    }
+
 public:
     Planner(SmManager *sm_manager) : sm_manager_(sm_manager) {}
 
@@ -90,7 +112,12 @@ private:
         }
         std::cout << "  is_rhs_val: " << (cond.is_rhs_val ? "true" : "false") << std::endl;
 
-        bool result = !cond.is_rhs_val && cond.lhs_col.tab_name != cond.rhs_col.tab_name;
+        // 修改判断逻辑：不仅要检查表名不同，还要检查是否为值比较
+        bool result = !cond.is_rhs_val &&
+                      (cond.lhs_col.tab_name != cond.rhs_col.tab_name ||  // 不同表
+                       (cond.lhs_col.tab_name == cond.rhs_col.tab_name && // 同表但是别名不同
+                        cond.lhs_col.tab_name.find('.') != std::string::npos));
+
         std::cout << "  Is join condition: " << (result ? "true" : "false") << std::endl;
         return result;
     }
@@ -99,40 +126,42 @@ private:
     std::pair<std::vector<Condition>, std::vector<Condition>>
     split_conditions(const std::vector<Condition> &conditions)
     {
-        std::cout << "[Debug] Splitting conditions, total conditions: "
-                  << conditions.size() << std::endl;
+        std::cout << "[Debug] 开始分离条件..." << std::endl;
+        std::cout << "[Debug] 总条件数: " << conditions.size() << std::endl;
 
         std::vector<Condition> join_conds, select_conds;
         for (const auto &cond : conditions)
         {
-            std::cout << "[Debug] Processing condition:" << std::endl;
-            std::cout << "  Left: " << cond.lhs_col.tab_name << "."
-                      << cond.lhs_col.col_name << std::endl;
+            std::cout << "[Debug] 处理条件: " << std::endl;
+            std::cout << "  左表: " << cond.lhs_col.tab_name
+                      << " 左列: " << cond.lhs_col.col_name << std::endl;
+
             if (!cond.is_rhs_val)
             {
-                std::cout << "  Right: " << cond.rhs_col.tab_name << "."
-                          << cond.rhs_col.col_name << std::endl;
+                std::cout << "  右表: " << cond.rhs_col.tab_name
+                          << " 右列: " << cond.rhs_col.col_name << std::endl;
+
+                // 检查是否为连接条件
+                if (is_join_condition(cond))
+                {
+                    std::cout << "  -> 添加到连接条件" << std::endl;
+                    join_conds.push_back(cond);
+                    continue;
+                }
             }
             else
             {
-                std::cout << "  Right: value" << std::endl;
+                std::cout << "  右侧为值比较" << std::endl;
             }
 
-            if (is_join_condition(cond))
-            {
-                std::cout << "  -> Adding to join conditions" << std::endl;
-                join_conds.push_back(cond);
-            }
-            else
-            {
-                std::cout << "  -> Adding to select conditions" << std::endl;
-                select_conds.push_back(cond);
-            }
+            // 如果不是连接条件，就是选择条件
+            std::cout << "  -> 添加到选择条件" << std::endl;
+            select_conds.push_back(cond);
         }
 
-        std::cout << "[Debug] Split result:" << std::endl;
-        std::cout << "  Join conditions: " << join_conds.size() << std::endl;
-        std::cout << "  Select conditions: " << select_conds.size() << std::endl;
+        std::cout << "[Debug] 分离结果:" << std::endl;
+        std::cout << "  连接条件数: " << join_conds.size() << std::endl;
+        std::cout << "  选择条件数: " << select_conds.size() << std::endl;
 
         return {join_conds, select_conds};
     }

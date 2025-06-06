@@ -195,25 +195,21 @@ private:
             }
             std::sort(conditions.begin(), conditions.end()); // 按字典序排序连接条件
 
-            result = indent_str + "Join(tables=[" + format_list(tables) +
-                     "],condition=[" + format_list(conditions) + "])\n";
+            // 修复格式化问题：移除多余的方括号
+            result = indent_str + (plan->tag == T_NestLoop ? "Join" : "SortMergeJoin") +
+                     "(tables=[" + format_list(tables) + "]" +
+                     (conditions.empty() ? "" : ",condition=[" + format_list(conditions) + "]") +
+                     ")\n";
 
-            // 调整子树顺序，确保带有过滤条件的表优先处理
-            std::shared_ptr<Plan> left_tree = join_plan->left_;
-            std::shared_ptr<Plan> right_tree = join_plan->right_;
-
-            // 检查左右子树的过滤条件，将有过滤条件的子树放在左边
-            bool left_has_filter = has_filter_conditions(left_tree);
-            bool right_has_filter = has_filter_conditions(right_tree);
-
-            // 如果右子树有过滤条件而左子树没有，则交换位置
-            if (!left_has_filter && right_has_filter)
+            // 处理子计划
+            if (join_plan->left_)
             {
-                std::swap(left_tree, right_tree);
+                result += explain_plan(join_plan->left_, depth + 1, stmt);
             }
-
-            result += explain_plan(left_tree, depth + 1, stmt);
-            result += explain_plan(right_tree, depth + 1, stmt);
+            if (join_plan->right_)
+            {
+                result += explain_plan(join_plan->right_, depth + 1, stmt);
+            }
             break;
         }
         default:

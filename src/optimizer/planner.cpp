@@ -198,35 +198,63 @@ std::shared_ptr<Query> Planner::logical_optimization(std::shared_ptr<Query> quer
         // 2. 对每个选择条件进行分类和下推
         for (auto it = all_conds.begin(); it != all_conds.end();)
         {
-            std::cout << "[Debug] 处理条件: " << it->lhs_col.tab_name << "."
-                      << it->lhs_col.col_name;
-            if (!it->is_rhs_val)
+            std::cout << "[Debug] 处理条件: ";
+            if (it->is_rhs_val)
             {
-                std::cout << " = " << it->rhs_col.tab_name << "."
-                          << it->rhs_col.col_name << std::endl;
+                std::cout << it->lhs_col.tab_name << "." << it->lhs_col.col_name
+                          << " " << get_op_string(it->op) << " " << "值比较" << std::endl;
             }
             else
             {
-                std::cout << " (与值比较)" << std::endl;
+                std::cout << it->lhs_col.tab_name << "." << it->lhs_col.col_name
+                          << " " << get_op_string(it->op) << " "
+                          << it->rhs_col.tab_name << "." << it->rhs_col.col_name << std::endl;
             }
 
             // 判断是否可以下推(只涉及一个表的条件可以下推)
             if (it->is_rhs_val)
             {
-                std::cout << "[Debug] 单表条件，可以下推" << std::endl;
+                std::cout << "[Debug] 单表条件，可以下推到表 " << it->lhs_col.tab_name << std::endl;
                 remaining_conds.push_back(*it);
                 it = all_conds.erase(it);
             }
             else if (it->lhs_col.tab_name == it->rhs_col.tab_name)
             {
-                std::cout << "[Debug] 同一表的多列条件，可以下推" << std::endl;
+                std::cout << "[Debug] 同一表的多列条件，可以下推到表 " << it->lhs_col.tab_name << std::endl;
                 remaining_conds.push_back(*it);
                 it = all_conds.erase(it);
             }
             else
             {
-                std::cout << "[Debug] 多表连接条件，保留在join节点" << std::endl;
-                join_conds.push_back(*it);
+                // 检查是否是有效的连接条件
+                bool is_valid_join = false;
+                for (const auto &tab1 : query->tables)
+                {
+                    for (const auto &tab2 : query->tables)
+                    {
+                        if (tab1 != tab2 &&
+                            ((it->lhs_col.tab_name == tab1 && it->rhs_col.tab_name == tab2) ||
+                             (it->lhs_col.tab_name == tab2 && it->rhs_col.tab_name == tab1)))
+                        {
+                            is_valid_join = true;
+                            break;
+                        }
+                    }
+                    if (is_valid_join)
+                        break;
+                }
+
+                if (is_valid_join)
+                {
+                    std::cout << "[Debug] 多表连接条件: "
+                              << it->lhs_col.tab_name << " 和 "
+                              << it->rhs_col.tab_name << std::endl;
+                    join_conds.push_back(*it);
+                }
+                else
+                {
+                    std::cout << "[Debug] 无效的连接条件，跳过" << std::endl;
+                }
                 it = all_conds.erase(it);
             }
         }
@@ -387,19 +415,34 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
     {
         if (!cond.is_rhs_val)
         {
-            if ((cond.lhs_col.tab_name == table_sizes[0].first &&
-                 cond.rhs_col.tab_name == table_sizes[1].first) ||
-                (cond.lhs_col.tab_name == table_sizes[1].first &&
-                 cond.rhs_col.tab_name == table_sizes[0].first))
+            std::cout << "[Debug] 检查连接条件: "
+                      << cond.lhs_col.tab_name << "." << cond.lhs_col.col_name
+                      << " = "
+                      << cond.rhs_col.tab_name << "." << cond.rhs_col.col_name
+                      << std::endl;
+
+            // 获取实际的表名（考虑别名）
+            std::string lhs_table = cond.lhs_col.tab_name;
+            std::string rhs_table = cond.rhs_col.tab_name;
+
+            // 检查是否是这两个表之间的连接条件
+            if ((lhs_table == table_sizes[0].first && rhs_table == table_sizes[1].first) ||
+                (lhs_table == table_sizes[1].first && rhs_table == table_sizes[0].first))
             {
                 std::cout << "[Debug] 添加连接条件: " << cond.lhs_col.tab_name
                           << "." << cond.lhs_col.col_name << " = "
-                          << cond.rhs_col.tab_name << "."
-                          << cond.rhs_col.col_name << std::endl;
+                          << cond.rhs_col.tab_name << "." << cond.rhs_col.col_name
+                          << std::endl;
                 join_conds.push_back(cond);
+            }
+            else
+            {
+                std::cout << "[Debug] 跳过条件: 不是当前两表之间的连接条件" << std::endl;
             }
         }
     }
+
+    std::cout << "[Debug] 找到 " << join_conds.size() << " 个连接条件" << std::endl;
 
     // 创建第一个连接计划
     join_plan = std::make_shared<JoinPlan>(PlanTag::T_NestLoop,
@@ -573,11 +616,49 @@ std::shared_ptr<Plan> Planner::generate_select_plan(std::shared_ptr<Query> query
     // 确保query对象包含条件信息
     if (query->conds.empty() && !select_stmt->conds.empty())
     {
+        std::cout << "[Debug] 处理SELECT语句中的条件" << std::endl;
+
+        // 首先建立表名到别名的映射
+        std::map<std::string, std::string> tab_aliases;
+        for (size_t i = 0; i < select_stmt->tabs.size(); ++i)
+        {
+            if (i < select_stmt->tab_aliases.size() && !select_stmt->tab_aliases[i].empty())
+            {
+                std::cout << "[Debug] 表别名映射: " << select_stmt->tabs[i]
+                          << " -> " << select_stmt->tab_aliases[i] << std::endl;
+                tab_aliases[select_stmt->tab_aliases[i]] = select_stmt->tabs[i];
+            }
+        }
+
         for (const auto &cond : select_stmt->conds)
         {
+            std::cout << "[Debug] 处理条件: " << cond->lhs->col_name << std::endl;
+
             Condition condition;
-            condition.lhs_col.tab_name = query->tables[0];
+
+            // 处理左侧列的表名
+            if (cond->lhs->tab_name.empty())
+            {
+                // 如果没有指定表名，使用第一个表
+                condition.lhs_col.tab_name = query->tables[0];
+            }
+            else
+            {
+                // 如果使用了别名，查找实际的表名
+                auto it = tab_aliases.find(cond->lhs->tab_name);
+                if (it != tab_aliases.end())
+                {
+                    condition.lhs_col.tab_name = it->second;
+                }
+                else
+                {
+                    condition.lhs_col.tab_name = cond->lhs->tab_name;
+                }
+            }
             condition.lhs_col.col_name = cond->lhs->col_name;
+
+            std::cout << "[Debug] 左侧列: " << condition.lhs_col.tab_name
+                      << "." << condition.lhs_col.col_name << std::endl;
 
             switch (cond->op)
             {
@@ -606,26 +687,50 @@ std::shared_ptr<Plan> Planner::generate_select_plan(std::shared_ptr<Query> query
             if (auto col = std::dynamic_pointer_cast<ast::Col>(cond->rhs))
             {
                 condition.is_rhs_val = false;
-                condition.rhs_col.tab_name = query->tables[0];
+                // 处理右侧列的表名
+                if (col->tab_name.empty())
+                {
+                    // 如果没有指定表名，使用第一个表
+                    condition.rhs_col.tab_name = query->tables[0];
+                }
+                else
+                {
+                    // 如果使用了别名，查找实际的表名
+                    auto it = tab_aliases.find(col->tab_name);
+                    if (it != tab_aliases.end())
+                    {
+                        condition.rhs_col.tab_name = it->second;
+                    }
+                    else
+                    {
+                        condition.rhs_col.tab_name = col->tab_name;
+                    }
+                }
                 condition.rhs_col.col_name = col->col_name;
+
+                std::cout << "[Debug] 右侧列: " << condition.rhs_col.tab_name
+                          << "." << condition.rhs_col.col_name << std::endl;
             }
             else if (auto int_lit = std::dynamic_pointer_cast<ast::IntLit>(cond->rhs))
             {
                 condition.is_rhs_val = true;
                 condition.rhs_val.type = TYPE_INT;
                 condition.rhs_val.int_val = int_lit->val;
+                std::cout << "[Debug] 右侧值: " << int_lit->val << " (INT)" << std::endl;
             }
             else if (auto float_lit = std::dynamic_pointer_cast<ast::FloatLit>(cond->rhs))
             {
                 condition.is_rhs_val = true;
                 condition.rhs_val.type = TYPE_FLOAT;
                 condition.rhs_val.float_val = float_lit->val;
+                std::cout << "[Debug] 右侧值: " << float_lit->val << " (FLOAT)" << std::endl;
             }
             else if (auto str_lit = std::dynamic_pointer_cast<ast::StringLit>(cond->rhs))
             {
                 condition.is_rhs_val = true;
                 condition.rhs_val.type = TYPE_STRING;
                 condition.rhs_val.str_val = str_lit->val;
+                std::cout << "[Debug] 右侧值: " << str_lit->val << " (STRING)" << std::endl;
             }
             else
             {

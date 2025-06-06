@@ -11,6 +11,7 @@ See the Mulan PSL v2 for more details. */
 #pragma once
 
 #include <map>
+#include <iostream>
 
 #include "errors.h"
 #include "execution/execution.h"
@@ -37,6 +38,46 @@ private:
     SmManager *sm_manager_;
     Planner *planner_;
     std::map<std::string, std::unique_ptr<RmFileHandle>> fhs_;
+
+    // Debug helper functions
+    void debug_alias_mapping(const std::string &alias, const std::string &table_name)
+    {
+        std::cout << "DEBUG: Alias mapping - " << alias << " -> " << table_name << std::endl;
+    }
+
+    void debug_join_condition(const Condition &cond)
+    {
+        std::cout << "DEBUG: Join condition - "
+                  << cond.lhs_col.tab_name << "." << cond.lhs_col.col_name
+                  << " = "
+                  << cond.rhs_col.tab_name << "." << cond.rhs_col.col_name
+                  << std::endl;
+    }
+
+    void debug_predicate_pushdown(const Condition &cond, const std::string &target_table)
+    {
+        std::cout << "DEBUG: Pushing predicate to table " << target_table << ": "
+                  << cond.lhs_col.tab_name << "." << cond.lhs_col.col_name;
+        if (cond.is_rhs_val)
+        {
+            std::cout << " > ";
+            switch (cond.rhs_val.type)
+            {
+            case TYPE_INT:
+                std::cout << cond.rhs_val.int_val;
+                break;
+            case TYPE_FLOAT:
+                std::cout << cond.rhs_val.float_val;
+                break;
+            case TYPE_STRING:
+                std::cout << cond.rhs_val.str_val;
+                break;
+            default:
+                std::cout << "(unknown type)";
+            }
+        }
+        std::cout << std::endl;
+    }
 
     // 获取表的基数（行数）
     size_t get_table_cardinality(const std::string &table_name)
@@ -68,6 +109,8 @@ private:
         if (!plan)
             return nullptr;
 
+        std::cout << "DEBUG: Processing plan node type: " << plan->tag << std::endl;
+
         switch (plan->tag)
         {
         case T_Projection:
@@ -85,24 +128,67 @@ private:
             std::vector<Condition> left_conds;
             std::vector<Condition> right_conds;
 
+            std::cout << "DEBUG: Processing conditions for join" << std::endl;
+
+            // 获取左右子树的表名
+            auto left_tables = get_tables_in_plan(join_plan->left_);
+            auto right_tables = get_tables_in_plan(join_plan->right_);
+
+            std::cout << "DEBUG: Left tables: ";
+            for (const auto &t : left_tables)
+                std::cout << t << " ";
+            std::cout << "\nDEBUG: Right tables: ";
+            for (const auto &t : right_tables)
+                std::cout << t << " ";
+            std::cout << std::endl;
+
             for (const auto &cond : conditions)
             {
                 if (!cond.is_rhs_val)
                 {
                     // 连接条件
+                    debug_join_condition(cond);
                     join_conds.push_back(cond);
                 }
                 else
                 {
                     // 过滤条件，根据列所属表分配
-                    auto left_tables = get_tables_in_plan(join_plan->left_);
-                    if (std::find(left_tables.begin(), left_tables.end(), cond.lhs_col.tab_name) != left_tables.end())
+                    bool pushed_to_left = false;
+                    bool pushed_to_right = false;
+
+                    // 检查条件中的表名是否在左子树中
+                    for (const auto &left_table : left_tables)
                     {
-                        left_conds.push_back(cond);
+                        if (cond.lhs_col.tab_name == left_table)
+                        {
+                            debug_predicate_pushdown(cond, "left - " + left_table);
+                            left_conds.push_back(cond);
+                            pushed_to_left = true;
+                            break;
+                        }
                     }
-                    else
+
+                    // 如果不在左子树中，检查右子树
+                    if (!pushed_to_left)
                     {
-                        right_conds.push_back(cond);
+                        for (const auto &right_table : right_tables)
+                        {
+                            if (cond.lhs_col.tab_name == right_table)
+                            {
+                                debug_predicate_pushdown(cond, "right - " + right_table);
+                                right_conds.push_back(cond);
+                                pushed_to_right = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    // 如果条件没有被推送到任何一边，输出警告
+                    if (!pushed_to_left && !pushed_to_right)
+                    {
+                        std::cout << "WARNING: Condition on " << cond.lhs_col.tab_name
+                                  << "." << cond.lhs_col.col_name
+                                  << " could not be pushed to either side" << std::endl;
                     }
                 }
             }
@@ -117,12 +203,15 @@ private:
         case T_SeqScan:
         {
             auto scan_plan = std::dynamic_pointer_cast<ScanPlan>(plan);
+            std::cout << "DEBUG: Processing scan node for table: " << scan_plan->tab_name_ << std::endl;
+
             // 将适用于此表的过滤条件添加到扫描节点
             std::vector<Condition> applicable_conds;
             for (const auto &cond : conditions)
             {
                 if (cond.lhs_col.tab_name == scan_plan->tab_name_)
                 {
+                    debug_predicate_pushdown(cond, scan_plan->tab_name_);
                     applicable_conds.push_back(cond);
                 }
             }
