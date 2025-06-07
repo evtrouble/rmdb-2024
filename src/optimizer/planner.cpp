@@ -364,125 +364,61 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
     std::vector<std::shared_ptr<Plan>> table_scan_executors;
     std::map<std::string, std::shared_ptr<Plan>> table_plans;
 
-    for (const auto &table_name : query->tables)
+    for (const auto &table : query->tables)
     {
-        // 获取表的条件
-        std::vector<Condition> table_conditions;
-        if (query->tab_conds.find(table_name) != query->tab_conds.end())
-        {
-            table_conditions = query->tab_conds[table_name];
-        }
-
-        // 检查是否可以使用索引
-        auto [index_meta, max_match_col_count] = get_index_cols(table_name, table_conditions);
+        auto [index_meta, max_match_col_count] = get_index_cols(table, query->tab_conds[table]);
         std::shared_ptr<Plan> scan_plan;
 
-        if (index_meta != nullptr)
+        if (index_meta == nullptr)
         {
-            scan_plan = std::make_shared<ScanPlan>(PlanTag::T_IndexScan,
-                                                   sm_manager_,
-                                                   table_name,
-                                                   table_conditions,
-                                                   *index_meta,
-                                                   max_match_col_count);
+            scan_plan = std::make_shared<ScanPlan>(T_SeqScan, sm_manager_, table, std::vector<Condition>());
         }
         else
         {
-            scan_plan = std::make_shared<ScanPlan>(PlanTag::T_SeqScan,
-                                                   sm_manager_,
-                                                   table_name,
-                                                   table_conditions);
+            scan_plan = std::make_shared<ScanPlan>(T_IndexScan, sm_manager_, table, std::vector<Condition>(), *index_meta, max_match_col_count);
         }
 
-        table_plans[table_name] = scan_plan;
-    }
-
-    // 如果只有一个表，添加过滤条件（如果有）并返回
-    if (table_plans.size() == 1)
-    {
-        auto plan = table_plans.begin()->second;
-
-        // 创建最终的投影计划
-        std::vector<TabCol> final_proj_cols;
-        for (const auto &col : query->cols)
+        // 如果有过滤条件，创建FilterPlan
+        if (!query->tab_conds[table].empty())
         {
-            if (col.col_name != "*")
-            {
-                TabCol proj_col;
-                proj_col.tab_name = col.tab_name;
-                proj_col.col_name = col.col_name;
-                final_proj_cols.push_back(proj_col);
-            }
+            scan_plan = std::make_shared<FilterPlan>(
+                PlanTag::T_Filter,
+                scan_plan,
+                query->tab_conds[table]);
         }
 
-        return std::make_shared<ProjectionPlan>(
-            PlanTag::T_Projection,
-            plan,
-            final_proj_cols);
+        table_plans[table] = scan_plan;
     }
 
-    // 处理多表查询
-    // 1. 首先处理所有的Filter（按字典序应该最先处理）
-    for (auto &[table_name, plan] : table_plans)
+    // 如果只有一个表，直接返回其扫描计划
+    if (query->tables.size() == 1)
     {
-        std::vector<Condition> filter_conditions;
+        return table_plans[query->tables[0]];
+    }
+
+    // 处理多表连接
+    auto plan = table_plans[query->tables[0]];
+    for (size_t i = 1; i < query->tables.size(); i++)
+    {
+        std::vector<Condition> join_conds;
         for (const auto &cond : query->conds)
         {
-            if (cond.is_rhs_val && cond.lhs_col.tab_name == table_name)
+            if (!cond.is_rhs_val &&
+                ((cond.lhs_col.tab_name == query->tables[i - 1] && cond.rhs_col.tab_name == query->tables[i]) ||
+                 (cond.lhs_col.tab_name == query->tables[i] && cond.rhs_col.tab_name == query->tables[i - 1])))
             {
-                filter_conditions.push_back(cond);
+                join_conds.push_back(cond);
             }
         }
 
-        if (!filter_conditions.empty())
-        {
-            plan = std::make_shared<FilterPlan>(
-                PlanTag::T_Filter,
-                plan,
-                filter_conditions);
-        }
+        plan = std::make_shared<JoinPlan>(
+            enable_nestedloop_join ? T_NestLoop : T_SortMerge,
+            plan,
+            table_plans[query->tables[i]],
+            join_conds);
     }
 
-    // 2. 处理Join（按字典序第二个处理）
-    std::shared_ptr<Plan> join_plan;
-    std::vector<Condition> join_conditions;
-
-    // 收集所有join条件
-    for (const auto &cond : query->conds)
-    {
-        if (!cond.is_rhs_val)
-        {
-            join_conditions.push_back(cond);
-        }
-    }
-
-    // 创建join计划，确保orders表在右侧
-    auto customers_plan = table_plans["customers"];
-    auto orders_plan = table_plans["orders"];
-
-    join_plan = std::make_shared<JoinPlan>(
-        PlanTag::T_NestLoop,
-        customers_plan, // 左子树
-        orders_plan,    // 右子树
-        join_conditions);
-
-    // 3. 最后添加Project（按字典序最后处理）
-    std::vector<TabCol> final_proj_cols;
-    for (const auto &col : query->cols)
-    {
-        if (col.col_name != "*")
-        {
-            TabCol proj_col;
-            proj_col.tab_name = col.tab_name;
-            proj_col.col_name = col.col_name;
-            final_proj_cols.push_back(proj_col);
-        }
-    }
-
-    return std::make_shared<ProjectionPlan>(
-        PlanTag::T_Projection,
-        join_plan,
-        final_proj_cols);
+    return plan;
 }
 
 std::shared_ptr<Plan> Planner::generate_agg_plan(const std::shared_ptr<Query> &query, std::shared_ptr<Plan> plan)

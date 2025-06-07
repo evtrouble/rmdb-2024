@@ -24,6 +24,47 @@ private:
     std::string result_;
     bool done_;
 
+    // 节点类型优先级枚举
+    enum class NodePriority
+    {
+        FILTER = 1,
+        JOIN = 2,
+        PROJECT = 3,
+        SCAN = 4,
+        OTHER = 5
+    };
+
+    // 获取节点类型的优先级
+    NodePriority getNodePriority(PlanTag tag)
+    {
+        switch (tag)
+        {
+        case T_Filter:
+            return NodePriority::FILTER;
+        case T_NestLoop:
+        case T_SortMerge:
+            return NodePriority::JOIN;
+        case T_Projection:
+            return NodePriority::PROJECT;
+        case T_SeqScan:
+        case T_IndexScan:
+            return NodePriority::SCAN;
+        default:
+            return NodePriority::OTHER;
+        }
+    }
+
+    // 子节点信息结构
+    struct ChildNodeInfo
+    {
+        std::shared_ptr<Plan> plan;
+        NodePriority priority;
+        std::string output;
+
+        ChildNodeInfo(std::shared_ptr<Plan> p, NodePriority prio, const std::string &out)
+            : plan(p), priority(prio), output(out) {}
+    };
+
     // 获取表的实际显示名称（别名或原名）
     std::string get_table_display_name(const std::string &original_name, const std::shared_ptr<ast::SelectStmt> &stmt)
     {
@@ -39,7 +80,7 @@ private:
         return original_name;
     }
 
-    // 递归生成查询计划树的字符串表示
+    // 递归生成查询计划树的字符串表示（新版本支持子节点排序）
     std::string explain_plan(const std::shared_ptr<Plan> &plan, int depth = 0, std::shared_ptr<ast::SelectStmt> stmt = nullptr)
     {
         if (!plan)
@@ -63,28 +104,20 @@ private:
         {
             auto proj_plan = std::static_pointer_cast<ProjectionPlan>(plan);
 
-            // 先处理子计划
-            std::string subplan_result;
-            if (proj_plan->subplan_)
-            {
-                subplan_result = explain_plan(proj_plan->subplan_, depth + 1, stmt);
-            }
-
             // 处理当前节点
-            result += indent_str + "Project(columns=";
+            std::string proj_str = "Project(columns=";
             std::vector<std::string> columns;
             bool has_star = false;
             for (const auto &col : proj_plan->sel_cols_)
             {
                 if (col.col_name == "*")
                 {
-                    result += "[*])\n";
+                    proj_str += "[*])\n";
                     has_star = true;
                     break;
                 }
                 else
                 {
-                    // 使用表别名（如果有）
                     std::string tab_name = col.tab_name;
                     if (stmt)
                     {
@@ -95,33 +128,37 @@ private:
             }
             if (!has_star && proj_plan->sel_cols_.empty())
             {
-                result += "[*])\n";
+                proj_str += "[*])\n";
             }
             else if (!has_star)
             {
-                std::sort(columns.begin(), columns.end()); // 按字母顺序排序列名
-                result += "[" + format_list(columns) + "])\n";
+                std::sort(columns.begin(), columns.end());
+                proj_str += "[" + format_list(columns) + "])\n";
             }
 
-            result += subplan_result;
+            result += indent_str + proj_str;
+
+            // 处理子计划
+            if (proj_plan->subplan_)
+            {
+                result += explain_plan(proj_plan->subplan_, depth + 1, stmt);
+            }
             break;
         }
         case T_SeqScan:
         case T_IndexScan:
         {
             auto scan_plan = std::static_pointer_cast<ScanPlan>(plan);
-            // 在Scan节点使用实际表名
             std::string tab_name = scan_plan->tab_name_;
 
-            // 如果有过滤条件，先输出Filter节点
+            // 如果有过滤条件，先添加Filter节点
             if (!scan_plan->fed_conds_.empty())
             {
                 std::vector<std::string> conditions;
                 for (const auto &cond : scan_plan->fed_conds_)
                 {
-                    // 在条件中使用表别名，并确保条件应用到正确的表
                     if (cond.lhs_col.tab_name != scan_plan->tab_name_)
-                        continue; // 跳过不属于当前表的条件
+                        continue;
 
                     std::string lhs_tab_name = cond.lhs_col.tab_name;
                     if (stmt)
@@ -147,18 +184,18 @@ private:
                 }
                 if (!conditions.empty())
                 {
-                    std::sort(conditions.begin(), conditions.end()); // 按字典序排序条件
+                    std::sort(conditions.begin(), conditions.end());
                     result += indent_str + "Filter(condition=[" + format_list(conditions) + "])\n";
-                    result += indent_str + "\t" + (plan->tag == T_SeqScan ? "Scan" : "IndexScan") + "(table=" + tab_name + ")\n";
+                    result += std::string(depth + 1, '\t') + (plan->tag == T_SeqScan ? "Scan" : "IndexScan") + std::string("(table=") + tab_name + ")\n";
                 }
                 else
                 {
-                    result += indent_str + (plan->tag == T_SeqScan ? "Scan" : "IndexScan") + "(table=" + tab_name + ")\n";
+                    result += indent_str + (plan->tag == T_SeqScan ? "Scan" : "IndexScan") + std::string("(table=") + tab_name + ")\n";
                 }
             }
             else
             {
-                result += indent_str + (plan->tag == T_SeqScan ? "Scan" : "IndexScan") + "(table=" + tab_name + ")\n";
+                result += indent_str + (plan->tag == T_SeqScan ? "Scan" : "IndexScan") + std::string("(table=") + tab_name + ")\n";
             }
             break;
         }
@@ -169,18 +206,14 @@ private:
             std::vector<std::string> conditions;
             std::set<std::string> table_set;
 
-            // 收集所有表名（使用实际表名）
             collect_tables(join_plan, table_set);
-
-            // 将set中的表名转换为vector
             std::vector<std::string> tables(table_set.begin(), table_set.end());
-            std::sort(tables.begin(), tables.end()); // 按字母顺序排序表名
+            std::sort(tables.begin(), tables.end());
 
-            // 收集连接条件（使用表别名）
             for (const auto &cond : join_plan->conds_)
             {
                 if (!cond.is_rhs_val)
-                { // 只处理连接条件
+                {
                     std::string lhs_tab_name = cond.lhs_col.tab_name;
                     std::string rhs_tab_name = cond.rhs_col.tab_name;
                     if (stmt)
@@ -193,21 +226,76 @@ private:
                     conditions.push_back(condition);
                 }
             }
-            std::sort(conditions.begin(), conditions.end()); // 按字典序排序连接条件
+            std::sort(conditions.begin(), conditions.end());
 
-            // 修复格式化问题：使用正确的格式
-            result = indent_str + "Join(tables=[" + format_list(tables) + "]" +
-                     (conditions.empty() ? "" : ",condition=[" + format_list(conditions) + "]") +
-                     ")\n";
+            result += indent_str + "Join(tables=[" + format_list(tables) + "]" +
+                      (conditions.empty() ? "" : ",condition=[" + format_list(conditions) + "]") +
+                      ")\n";
 
-            // 处理子计划
+            // **关键修改：收集所有子节点并按优先级排序**
+            std::vector<ChildNodeInfo> child_nodes;
+
             if (join_plan->left_)
             {
-                result += explain_plan(join_plan->left_, depth + 1, stmt);
+                std::string left_output = explain_plan(join_plan->left_, depth + 1, stmt);
+                child_nodes.emplace_back(join_plan->left_, getNodePriority(join_plan->left_->tag), left_output);
             }
             if (join_plan->right_)
             {
-                result += explain_plan(join_plan->right_, depth + 1, stmt);
+                std::string right_output = explain_plan(join_plan->right_, depth + 1, stmt);
+                child_nodes.emplace_back(join_plan->right_, getNodePriority(join_plan->right_->tag), right_output);
+            }
+
+            // 按优先级排序子节点（Filter < Join < Project < Scan）
+            std::sort(child_nodes.begin(), child_nodes.end(),
+                      [](const ChildNodeInfo &a, const ChildNodeInfo &b)
+                      {
+                          return a.priority < b.priority;
+                      });
+
+            // 按排序后的顺序输出子节点
+            for (const auto &child : child_nodes)
+            {
+                result += child.output;
+            }
+            break;
+        }
+        case T_Filter:
+        {
+            auto filter_plan = std::static_pointer_cast<FilterPlan>(plan);
+            std::vector<std::string> conditions;
+
+            for (const auto &cond : filter_plan->conds_)
+            {
+                std::string lhs_tab_name = cond.lhs_col.tab_name;
+                if (stmt)
+                {
+                    lhs_tab_name = stmt->find_alias(lhs_tab_name);
+                }
+                std::string condition = lhs_tab_name + "." + cond.lhs_col.col_name;
+                condition += get_op_string(cond.op);
+                if (cond.is_rhs_val)
+                {
+                    condition += get_value_string(cond.rhs_val);
+                }
+                else
+                {
+                    std::string rhs_tab_name = cond.rhs_col.tab_name;
+                    if (stmt)
+                    {
+                        rhs_tab_name = stmt->find_alias(rhs_tab_name);
+                    }
+                    condition += rhs_tab_name + "." + cond.rhs_col.col_name;
+                }
+                conditions.push_back(condition);
+            }
+
+            std::sort(conditions.begin(), conditions.end());
+            result += indent_str + "Filter(condition=[" + format_list(conditions) + "])\n";
+
+            if (filter_plan->subplan_)
+            {
+                result += explain_plan(filter_plan->subplan_, depth + 1, stmt);
             }
             break;
         }
@@ -215,6 +303,7 @@ private:
             result = indent_str + "Unknown\n";
             break;
         }
+
         return result;
     }
 
@@ -289,6 +378,12 @@ private:
             auto join_plan = std::static_pointer_cast<JoinPlan>(plan);
             collect_tables(join_plan->left_, table_set);
             collect_tables(join_plan->right_, table_set);
+            break;
+        }
+        case T_Filter:
+        {
+            auto filter_plan = std::static_pointer_cast<FilterPlan>(plan);
+            collect_tables(filter_plan->subplan_, table_set);
             break;
         }
         default:

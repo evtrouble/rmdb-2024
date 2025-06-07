@@ -233,6 +233,19 @@ public:
     ~AggPlan() override = default;
 };
 
+// 添加Filter计划节点
+class FilterPlan : public Plan
+{
+public:
+    std::shared_ptr<Plan> subplan_; // 子计划
+    std::vector<Condition> conds_;  // 过滤条件
+
+    FilterPlan(PlanTag tag, std::shared_ptr<Plan> subplan, std::vector<Condition> conds)
+        : Plan(tag), subplan_(std::move(subplan)), conds_(std::move(conds)) {}
+
+    ~FilterPlan() override = default;
+};
+
 // 子查询计划
 // class SubqueryPlan : public Plan
 // {
