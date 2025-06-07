@@ -122,20 +122,19 @@ void TransactionManager::abort(Context *context, LogManager *log_manager)
         auto write_record = std::move(write_set->front()); // 获取最后一个写记录
         write_set->pop_front();      // 移除最后一个写记录
         Rid rid = write_record->GetRid();
-        if(abort_set.count(rid))
-        {
-            delete write_record;
-            continue; // 如果已经回滚过该记录，跳过
-        }
-        abort_set.emplace(rid);
         // 根据写操作类型进行回滚
         switch (write_record->GetWriteType())
         {
             case WType::INSERT_TUPLE:
+                abort_set.emplace(rid);
+                txn->release();
                 sm_manager_->get_table_handle(write_record->GetTableName())
                     ->abort_insert_record(rid);
                 break;
             case WType::DELETE_TUPLE: {
+                if(abort_set.count(rid))break;
+                abort_set.emplace(rid);
+                txn->release();
                 auto undolog = write_record->GetUndoLog();
                 auto fh = sm_manager_->get_table_handle(write_record->GetTableName());
                 if (undolog == nullptr)
@@ -150,6 +149,9 @@ void TransactionManager::abort(Context *context, LogManager *log_manager)
             }
                 break;
             case WType::UPDATE_TUPLE:{
+                if(abort_set.count(rid))break;
+                abort_set.emplace(rid);
+                txn->release();
                 auto undolog = write_record->GetUndoLog();
                 auto fh = sm_manager_->get_table_handle(write_record->GetTableName());
                 if (undolog == nullptr)
@@ -190,6 +192,7 @@ void TransactionManager::abort(Context *context, LogManager *log_manager)
     // 5. 更新事务状态
     txn->set_state(TransactionState::ABORTED);
     running_txns_.RemoveTxn(txn->get_start_ts());
+    txn->release();
 }
 
 bool TransactionManager::UpdateUndoLink(int fd, const Rid &rid, UndoLog* prev_link,
@@ -414,6 +417,15 @@ void TransactionManager::PurgeCleaning()
 
 void TransactionManager::StartPurgeCleaner()
 {
+    std::ifstream fin("txn_map.txt");
+    if(!fin) {
+        timestamp_t init_timestamp = 0;
+        txn_id_t init_txn_id = 0;
+        fin >> init_timestamp >> init_txn_id;
+        fin.close();
+        next_timestamp_ = init_timestamp;
+        next_txn_id_ = init_txn_id;
+    }
     if(concurrency_mode_ == ConcurrencyMode::MVCC)
     {
         purgeCleaner = std::thread(&TransactionManager::PurgeCleaning, this);

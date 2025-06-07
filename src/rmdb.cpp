@@ -215,10 +215,8 @@ void *client_handler(void *sock_fd)
         }
         // 如果是单条语句，需要按照一个完整的事务来执行，所以执行完当前语句后，自动提交事务
         if(context->txn_->get_state() == TransactionState::ABORTED)
-        {
-            delete context->txn_;
-        }
-        else if (!context->txn_->get_txn_mode())
+            continue;
+        if (!context->txn_->get_txn_mode())
         {
             txn_manager->commit(context.get(), context->log_mgr_);
             txn_id = INVALID_TXN_ID;

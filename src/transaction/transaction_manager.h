@@ -49,15 +49,6 @@ public:
         sm_manager_ = sm_manager;
         lock_manager_ = lock_manager;
         concurrency_mode_ = concurrency_mode;
-        std::ifstream fin("txn_map.txt");
-        if(!fin) {
-            timestamp_t init_timestamp = 0;
-            txn_id_t init_txn_id = 0;
-            fin >> init_timestamp >> init_txn_id;
-            fin.close();
-            next_timestamp_ = init_timestamp;
-            next_txn_id_ = init_txn_id;
-        }
     }
 
     ~TransactionManager() {
@@ -67,9 +58,6 @@ public:
                 purgeCleaner.join();
             }
         }
-        std::ofstream fout("txn_map.txt", std::ios::out | std::ios::trunc);
-        fout << next_timestamp_ << " " << next_txn_id_ << std::endl;
-        fout.close();
     }
 
     Transaction *begin(Transaction *txn, LogManager *log_manager);
@@ -127,7 +115,12 @@ public:
     void DeleteVersionChain(std::shared_ptr<PageVersionInfo> page_info, const PageId &page_id, const Rid &rid);
 
     void StartPurgeCleaner();
-    inline void StopPurgeCleaner() { terminate_purge_cleaner_ = false; }
+    inline void StopPurgeCleaner() { 
+        terminate_purge_cleaner_ = false;
+        std::ofstream fout("txn_map.txt", std::ios::out | std::ios::trunc);
+        fout << next_timestamp_ << " " << next_txn_id_ << std::endl;
+        fout.close();
+    }
 
     void remove_txn(txn_id_t txn_id) {
         std::unique_lock lock(txn_map_mutex_);
