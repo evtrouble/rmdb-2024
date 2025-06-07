@@ -199,19 +199,8 @@ public:
         memcpy(data, &txn_id, sizeof(txn_id_t));
     }
 
-    bool is_write_conflict(Transaction* record, Transaction* txn) const {
-        if (concurrency_mode_ != ConcurrencyMode::MVCC) [[unlikely]] {
-            return false; // 在非MVCC模式下，不存在写冲突
-        }
-        if(record == txn)
-            return false;
-
-        timestamp_t commit_ts = record->get_commit_ts();
-        if (commit_ts == INVALID_TIMESTAMP)
-        {
-            return true;
-        }
-        return false;
+    inline bool is_write_conflict(Transaction* record, Transaction* txn) const {
+        return need_find_version_chain(record, txn);
     }
 
     /**
