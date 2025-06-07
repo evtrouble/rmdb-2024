@@ -289,15 +289,191 @@ std::shared_ptr<Query> Planner::logical_optimization(std::shared_ptr<Query> quer
     return query;
 }
 
+bool Planner::is_select_star_query(const std::shared_ptr<ast::SelectStmt> &select_stmt)
+{
+    if (!select_stmt)
+        return false;
+
+    // 情况1：cols 向量为空（隐式的 SELECT *）
+    if (select_stmt->cols.empty())
+        return true;
+
+    // 情况2：只有一个列且列名为 "*"
+    if (select_stmt->cols.size() == 1 && select_stmt->cols[0]->col_name == "*")
+        return true;
+
+    return false;
+}
+
+// 修复后的 compute_required_columns 函数
+std::vector<TabCol> Planner::compute_required_columns(const std::string &table_name, const std::shared_ptr<Query> &query)
+{
+    std::set<std::string> required_cols;
+
+    // 建立别名映射
+    std::map<std::string, std::string> tab_to_alias;
+    std::map<std::string, std::string> alias_to_tab;
+    auto select_stmt = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
+    if (select_stmt)
+    {
+        for (size_t i = 0; i < select_stmt->tabs.size(); i++)
+        {
+            if (i < select_stmt->tab_aliases.size() && !select_stmt->tab_aliases[i].empty())
+            {
+                tab_to_alias[select_stmt->tabs[i]] = select_stmt->tab_aliases[i];
+                alias_to_tab[select_stmt->tab_aliases[i]] = select_stmt->tabs[i];
+            }
+        }
+    }
+
+    // 1. 添加 SELECT 子句中的列
+    for (const auto &col : query->cols)
+    {
+        if (table_matches(col.tab_name, table_name, alias_to_tab, tab_to_alias) && col.col_name != "*")
+        {
+            required_cols.insert(col.col_name);
+        }
+    }
+
+    // 2. 添加连接条件中的列
+    for (const auto &cond : query->conds)
+    {
+        if (!cond.is_rhs_val)
+        {
+            if (table_matches(cond.lhs_col.tab_name, table_name, alias_to_tab, tab_to_alias))
+            {
+                required_cols.insert(cond.lhs_col.col_name);
+            }
+            if (table_matches(cond.rhs_col.tab_name, table_name, alias_to_tab, tab_to_alias))
+            {
+                required_cols.insert(cond.rhs_col.col_name);
+            }
+        }
+    }
+
+    // 3. 添加 WHERE 条件中的列
+    if (query->tab_conds.find(table_name) != query->tab_conds.end())
+    {
+        for (const auto &cond : query->tab_conds.at(table_name))
+        {
+            if (table_matches(cond.lhs_col.tab_name, table_name, alias_to_tab, tab_to_alias))
+            {
+                required_cols.insert(cond.lhs_col.col_name);
+            }
+        }
+    }
+
+    // 转换为 TabCol 格式
+    std::vector<TabCol> result;
+    for (const auto &col_name : required_cols)
+    {
+        result.push_back({table_name, col_name});
+    }
+
+    return result;
+}
+
+std::shared_ptr<Plan> Planner::add_leaf_projections(std::shared_ptr<Plan> plan, const std::shared_ptr<Query> &query)
+{
+    if (!plan)
+        return nullptr;
+
+    auto select_stmt = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
+    if (select_stmt && is_select_star_query(select_stmt))
+    {
+        // 对于 SELECT * 查询，不添加任何中间投影节点
+        switch (plan->tag)
+        {
+        case PlanTag::T_NestLoop:
+        {
+            auto join_plan = std::dynamic_pointer_cast<JoinPlan>(plan);
+            join_plan->left_ = add_leaf_projections(join_plan->left_, query);
+            join_plan->right_ = add_leaf_projections(join_plan->right_, query);
+            return plan;
+        }
+        default:
+            return plan;
+        }
+    }
+
+    // 对于非 SELECT * 查询，添加必要的投影节点
+    switch (plan->tag)
+    {
+    case PlanTag::T_SeqScan:
+    case PlanTag::T_IndexScan:
+    {
+        auto scan_plan = std::dynamic_pointer_cast<ScanPlan>(plan);
+
+        // 计算该表需要的列集合
+        std::vector<TabCol> required_cols = compute_required_columns(scan_plan->tab_name_, query);
+
+        if (!required_cols.empty())
+        {
+            return std::make_shared<ProjectionPlan>(PlanTag::T_Projection, plan, required_cols);
+        }
+        return plan;
+    }
+    case PlanTag::T_NestLoop:
+    {
+        auto join_plan = std::dynamic_pointer_cast<JoinPlan>(plan);
+        join_plan->left_ = add_leaf_projections(join_plan->left_, query);
+        join_plan->right_ = add_leaf_projections(join_plan->right_, query);
+        return plan;
+    }
+    default:
+        return plan;
+    }
+}
+
+std::shared_ptr<Plan> Planner::apply_projection_pushdown(std::shared_ptr<Plan> plan, const std::shared_ptr<Query> &query)
+{
+    auto select_stmt = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
+
+    // 对于 SELECT * 查询，我们只在最顶层添加投影节点
+    if (select_stmt && is_select_star_query(select_stmt))
+    {
+        return plan;
+    }
+
+    // 对于非 SELECT * 查询，在叶子节点添加投影
+    return add_leaf_projections(plan, query);
+}
+
 std::shared_ptr<Plan> Planner::physical_optimization(std::shared_ptr<Query> query, Context *context)
 {
     std::shared_ptr<Plan> plan = make_one_rel(query, context);
 
-    // 其他物理优化
+    // 应用投影下推优化
+    plan = apply_projection_pushdown(plan, query);
+
     // 处理聚合函数
     plan = generate_agg_plan(query, std::move(plan));
+
     // 处理orderby
     plan = generate_sort_plan(query, std::move(plan));
+
+    // **关键修改：添加最终的投影节点**
+    auto select_stmt = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
+    if (select_stmt)
+    {
+        if (is_select_star_query(select_stmt))
+        {
+            // **修改：对于 SELECT * 情况，创建一个包含 "*" 标记的投影节点**
+            std::cout << "[Debug] 添加 SELECT * 投影节点" << std::endl;
+
+            // 创建一个特殊的 TabCol 来表示 SELECT *
+            std::vector<TabCol> star_cols;
+            star_cols.push_back(TabCol{"", "*"}); // 使用空表名和 "*" 列名来表示 SELECT *
+
+            plan = std::make_shared<ProjectionPlan>(PlanTag::T_Projection, plan, star_cols);
+        }
+        else
+        {
+            // SELECT 具体列情况：使用查询中指定的列
+            std::cout << "[Debug] 添加具体列投影节点" << std::endl;
+            plan = std::make_shared<ProjectionPlan>(PlanTag::T_Projection, plan, query->cols);
+        }
+    }
 
     return plan;
 }

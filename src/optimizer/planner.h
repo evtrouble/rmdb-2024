@@ -60,6 +60,12 @@ private:
         }
     }
 
+    // 投影下推相关的辅助函数
+    bool is_select_star_query(const std::shared_ptr<ast::SelectStmt> &select_stmt);
+    std::vector<TabCol> compute_required_columns(const std::string &table_name, const std::shared_ptr<Query> &query);
+    std::shared_ptr<Plan> add_leaf_projections(std::shared_ptr<Plan> plan, const std::shared_ptr<Query> &query);
+    std::shared_ptr<Plan> apply_projection_pushdown(std::shared_ptr<Plan> plan, const std::shared_ptr<Query> &query);
+
 public:
     Planner(SmManager *sm_manager) : sm_manager_(sm_manager) {}
 
@@ -120,6 +126,32 @@ private:
 
         std::cout << "  Is join condition: " << (result ? "true" : "false") << std::endl;
         return result;
+    }
+    bool table_matches(const std::string &col_table_name, const std::string &target_table_name,
+                       const std::map<std::string, std::string> &alias_to_tab,
+                       const std::map<std::string, std::string> &tab_to_alias)
+    {
+        // 直接匹配表名
+        if (col_table_name == target_table_name)
+        {
+            return true;
+        }
+
+        // 检查 col_table_name 是否是 target_table_name 的别名
+        auto it = tab_to_alias.find(target_table_name);
+        if (it != tab_to_alias.end() && col_table_name == it->second)
+        {
+            return true;
+        }
+
+        // 检查 col_table_name 是否是别名，其对应的实际表名是 target_table_name
+        auto it2 = alias_to_tab.find(col_table_name);
+        if (it2 != alias_to_tab.end() && it2->second == target_table_name)
+        {
+            return true;
+        }
+
+        return false;
     }
 
     // 分离连接条件和选择条件

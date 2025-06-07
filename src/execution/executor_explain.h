@@ -478,16 +478,19 @@ public:
         {
             auto proj_plan = std::dynamic_pointer_cast<ProjectionPlan>(plan);
             std::vector<std::string> cols;
-            for (const auto &col : proj_plan->sel_cols_)
-            {
-                cols.push_back(format_tabcol(col));
-            }
-            if (cols.empty())
+
+            // 检查是否是 SELECT *
+            bool is_select_all = proj_plan->sel_cols_.empty();
+            if (is_select_all)
             {
                 result = indent_str + "Project(columns=[*])\n";
             }
             else
             {
+                for (const auto &col : proj_plan->sel_cols_)
+                {
+                    cols.push_back(format_tabcol(col));
+                }
                 result = indent_str + "Project(columns=" + format_list(cols) + ")\n";
             }
             result += plan_to_string(proj_plan->subplan_, indent + 1);
