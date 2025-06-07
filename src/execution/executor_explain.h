@@ -106,34 +106,39 @@ private:
 
             // 处理当前节点
             std::string proj_str = "Project(columns=";
-            std::vector<std::string> columns;
-            bool has_star = false;
-            for (const auto &col : proj_plan->sel_cols_)
+
+            // 检查是否是 SELECT * 查询
+            if (stmt && stmt->is_select_star_query())
             {
-                if (col.col_name == "*")
-                {
-                    proj_str += "[*])\n";
-                    has_star = true;
-                    break;
-                }
-                else
-                {
-                    std::string tab_name = col.tab_name;
-                    if (stmt)
-                    {
-                        tab_name = stmt->find_alias(tab_name);
-                    }
-                    columns.push_back(tab_name + "." + col.col_name);
-                }
-            }
-            if (!has_star && proj_plan->sel_cols_.empty())
-            {
+                // 如果是 SELECT *，直接输出 [*]
                 proj_str += "[*])\n";
             }
-            else if (!has_star)
+            else
             {
-                std::sort(columns.begin(), columns.end());
-                proj_str += "[" + format_list(columns) + "])\n";
+                std::vector<std::string> columns;
+                for (const auto &col : proj_plan->sel_cols_)
+                {
+                    if (col.col_name == "*")
+                    {
+                        // 如果遇到单独的 *，也输出 [*]
+                        proj_str += "[*])\n";
+                        break;
+                    }
+                    else
+                    {
+                        std::string tab_name = col.tab_name;
+                        if (stmt)
+                        {
+                            tab_name = stmt->find_alias(tab_name);
+                        }
+                        columns.push_back(tab_name + "." + col.col_name);
+                    }
+                }
+                if (!columns.empty())
+                {
+                    std::sort(columns.begin(), columns.end());
+                    proj_str += "[" + format_list(columns) + "])\n";
+                }
             }
 
             result += indent_str + proj_str;

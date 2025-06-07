@@ -289,22 +289,6 @@ std::shared_ptr<Query> Planner::logical_optimization(std::shared_ptr<Query> quer
     return query;
 }
 
-bool Planner::is_select_star_query(const std::shared_ptr<ast::SelectStmt> &select_stmt)
-{
-    if (!select_stmt)
-        return false;
-
-    // 情况1：cols 向量为空（隐式的 SELECT *）
-    if (select_stmt->cols.empty())
-        return true;
-
-    // 情况2：只有一个列且列名为 "*"
-    if (select_stmt->cols.size() == 1 && select_stmt->cols[0]->col_name == "*")
-        return true;
-
-    return false;
-}
-
 // 修复后的 compute_required_columns 函数
 std::vector<TabCol> Planner::compute_required_columns(const std::string &table_name, const std::shared_ptr<Query> &query)
 {
@@ -379,7 +363,7 @@ std::shared_ptr<Plan> Planner::add_leaf_projections(std::shared_ptr<Plan> plan, 
         return nullptr;
 
     auto select_stmt = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
-    if (select_stmt && is_select_star_query(select_stmt))
+    if (select_stmt && select_stmt->is_select_star_query())
     {
         // 对于 SELECT * 查询，不添加任何中间投影节点
         switch (plan->tag)
@@ -430,7 +414,7 @@ std::shared_ptr<Plan> Planner::apply_projection_pushdown(std::shared_ptr<Plan> p
     auto select_stmt = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
 
     // 对于 SELECT * 查询，我们只在最顶层添加投影节点
-    if (select_stmt && is_select_star_query(select_stmt))
+    if (select_stmt && select_stmt->is_select_star_query())
     {
         return plan;
     }
@@ -452,25 +436,27 @@ std::shared_ptr<Plan> Planner::physical_optimization(std::shared_ptr<Query> quer
     // 处理orderby
     plan = generate_sort_plan(query, std::move(plan));
 
-    // **关键修改：添加最终的投影节点**
+    // 添加最终的投影节点
     auto select_stmt = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
     if (select_stmt)
     {
-        if (is_select_star_query(select_stmt))
+        if (select_stmt->is_select_star_query())
         {
-            // **修改：对于 SELECT * 情况，创建一个包含 "*" 标记的投影节点**
-            std::cout << "[Debug] 添加 SELECT * 投影节点" << std::endl;
-
-            // 创建一个特殊的 TabCol 来表示 SELECT *
-            std::vector<TabCol> star_cols;
-            star_cols.push_back(TabCol{"", "*"}); // 使用空表名和 "*" 列名来表示 SELECT *
-
-            plan = std::make_shared<ProjectionPlan>(PlanTag::T_Projection, plan, star_cols);
+            // 对于 SELECT * 查询，获取所有表的所有列
+            std::vector<TabCol> all_cols;
+            for (const auto &table : query->tables)
+            {
+                const auto &table_cols = sm_manager_->db_.get_table(table).cols;
+                for (const auto &col : table_cols)
+                {
+                    all_cols.emplace_back(TabCol{table, col.name});
+                }
+            }
+            plan = std::make_shared<ProjectionPlan>(PlanTag::T_Projection, plan, all_cols);
         }
         else
         {
             // SELECT 具体列情况：使用查询中指定的列
-            std::cout << "[Debug] 添加具体列投影节点" << std::endl;
             plan = std::make_shared<ProjectionPlan>(PlanTag::T_Projection, plan, query->cols);
         }
     }
@@ -955,10 +941,12 @@ std::shared_ptr<Plan> Planner::do_planner(std::shared_ptr<Query> query, Context 
 
         // 递归处理内部的查询
         auto inner_query = std::make_shared<Query>();
+        std::shared_ptr<ast::SelectStmt> select_stmt; // 声明在外部以便后续使用
 
         // 从原始SELECT语句中获取列和表信息
-        if (auto select_stmt = std::dynamic_pointer_cast<ast::SelectStmt>(explain_stmt->query))
+        if (auto stmt = std::dynamic_pointer_cast<ast::SelectStmt>(explain_stmt->query))
         {
+            select_stmt = stmt; // 保存以便后续使用
             std::cout << "[Debug] Found SELECT statement" << std::endl;
             std::cout << "[Debug] Number of conditions in select_stmt: " << select_stmt->conds.size() << std::endl;
 
@@ -970,24 +958,67 @@ std::shared_ptr<Plan> Planner::do_planner(std::shared_ptr<Query> query, Context 
             std::cout << "[Debug] Tables: " << inner_query->tables.size() << std::endl;
 
             // 设置列信息
-            for (const auto &col : select_stmt->cols)
+            if (select_stmt->is_select_star_query())
             {
-                std::cout << "[Debug] Adding column: " << col->col_name << std::endl;
+                // 对于 SELECT *，保持原样
                 TabCol tab_col;
-                tab_col.tab_name = inner_query->tables[0]; // 假设只有一个表
-                tab_col.col_name = col->col_name;
+                tab_col.col_name = "*";
                 inner_query->cols.push_back(tab_col);
+            }
+            else
+            {
+                for (const auto &col : select_stmt->cols)
+                {
+                    std::cout << "[Debug] Adding column: " << col->col_name << std::endl;
+                    TabCol tab_col;
+                    tab_col.tab_name = col->tab_name.empty() ? inner_query->tables[0] : col->tab_name;
+                    tab_col.col_name = col->col_name;
+                    inner_query->cols.push_back(tab_col);
+                }
             }
 
             // 设置条件信息
             std::cout << "[Debug] Processing conditions from select statement" << std::endl;
+
+            // 建立表名到别名的映射
+            std::map<std::string, std::string> tab_aliases;
+            std::map<std::string, std::string> alias_to_table; // 别名到表名的映射
+            for (size_t i = 0; i < select_stmt->tabs.size(); ++i)
+            {
+                if (i < select_stmt->tab_aliases.size() && !select_stmt->tab_aliases[i].empty())
+                {
+                    std::cout << "[Debug] 表别名映射: " << select_stmt->tabs[i]
+                              << " -> " << select_stmt->tab_aliases[i] << std::endl;
+                    tab_aliases[select_stmt->tab_aliases[i]] = select_stmt->tabs[i];
+                    alias_to_table[select_stmt->tab_aliases[i]] = select_stmt->tabs[i];
+                }
+            }
+
             for (const auto &cond : select_stmt->conds)
             {
                 std::cout << "[Debug] Found condition in select statement" << std::endl;
                 std::cout << "[Debug] LHS column: " << cond->lhs->col_name << std::endl;
 
                 Condition condition;
-                condition.lhs_col.tab_name = inner_query->tables[0]; // 假设只有一个表
+
+                // 处理左侧列的表名
+                if (cond->lhs->tab_name.empty())
+                {
+                    condition.lhs_col.tab_name = inner_query->tables[0];
+                }
+                else
+                {
+                    // 如果使用了别名，查找实际的表名
+                    auto it = alias_to_table.find(cond->lhs->tab_name);
+                    if (it != alias_to_table.end())
+                    {
+                        condition.lhs_col.tab_name = it->second;
+                    }
+                    else
+                    {
+                        condition.lhs_col.tab_name = cond->lhs->tab_name;
+                    }
+                }
                 condition.lhs_col.col_name = cond->lhs->col_name;
 
                 // 转换操作符
@@ -1076,7 +1107,9 @@ std::shared_ptr<Plan> Planner::do_planner(std::shared_ptr<Query> query, Context 
 
         auto inner_plan = do_planner(analyzed_query, context);
         std::cout << "[Debug] Creating explain plan" << std::endl;
-        return std::make_shared<ExplainPlan>(T_Explain, inner_plan);
+        auto explain_plan = std::make_shared<ExplainPlan>(T_Explain, inner_plan);
+        explain_plan->select_stmt = select_stmt; // 现在 select_stmt 已在作用域内
+        return explain_plan;
     }
     case ast::TreeNodeType::CreateTable:
     {

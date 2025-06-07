@@ -436,6 +436,24 @@ namespace ast
             }
         }
 
+        // 检查是否是 SELECT * 查询
+        bool is_select_star_query() const
+        {
+            // 情况1：cols 向量为空（隐式的 SELECT *）
+            if (cols.empty())
+                return true;
+
+            // 情况2：只有一个列且列名为 "*"，且没有指定表名
+            if (cols.size() == 1 &&
+                cols[0]->col_name == "*" &&
+                cols[0]->tab_name.empty())
+            {
+                return true;
+            }
+
+            return false;
+        }
+
         // 获取表的实际使用名称（如果有别名则返回别名，否则返回原表名）
         std::string get_table_name(size_t index) const
         {

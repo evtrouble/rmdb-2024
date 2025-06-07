@@ -426,6 +426,12 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
 
 TabCol Analyze::check_column(const std::vector<ColMeta> &all_cols, TabCol target, bool is_semijoin)
 {
+    // 如果是通配符 '*'，直接返回，不需要验证
+    if (target.col_name == "*")
+    {
+        return target;
+    }
+
     if (target.tab_name.empty())
     {
         // Table name not specified, infer table name from column name

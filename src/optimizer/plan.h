@@ -203,10 +203,13 @@ public:
 class ExplainPlan : public Plan
 {
 public:
-    ExplainPlan(PlanTag tag, std::shared_ptr<Plan> subplan)
-        : Plan(tag), subplan_(std::move(subplan)) {}
-    ~ExplainPlan() {}
     std::shared_ptr<Plan> subplan_;
+    std::shared_ptr<ast::SelectStmt> select_stmt; // 存储原始的 SELECT 语句
+
+    ExplainPlan(PlanTag tag, std::shared_ptr<Plan> subplan)
+        : Plan(tag), subplan_(std::move(subplan)), select_stmt(nullptr) {}
+
+    ~ExplainPlan() override = default;
 };
 
 // Set Knob Plan
