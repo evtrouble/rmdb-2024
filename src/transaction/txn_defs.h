@@ -52,7 +52,7 @@ public:
 
     // onstructor for delete & update operation
     WriteRecord(WType wtype, const std::string &tab_name, const Rid &rid, UndoLog *undolog)
-        : tab_name_(tab_name), rid_(rid), undolog_(undolog) {}
+        : wtype_(wtype), tab_name_(tab_name), rid_(rid), undolog_(undolog) {}
 
     ~WriteRecord() = default;
 

@@ -49,6 +49,15 @@ public:
         sm_manager_ = sm_manager;
         lock_manager_ = lock_manager;
         concurrency_mode_ = concurrency_mode;
+        std::ifstream fin("txn_map.txt");
+        if(!fin) {
+            timestamp_t init_timestamp = 0;
+            txn_id_t init_txn_id = 0;
+            fin >> init_timestamp >> init_txn_id;
+            fin.close();
+            next_timestamp_ = init_timestamp;
+            next_txn_id_ = init_txn_id;
+        }
     }
 
     ~TransactionManager() {
@@ -58,6 +67,9 @@ public:
                 purgeCleaner.join();
             }
         }
+        std::ofstream fout("txn_map.txt", std::ios::out | std::ios::trunc);
+        fout << next_timestamp_ << " " << next_txn_id_ << std::endl;
+        fout.close();
     }
 
     Transaction *begin(Transaction *txn, LogManager *log_manager);
@@ -68,7 +80,15 @@ public:
 
     ConcurrencyMode get_concurrency_mode() { return concurrency_mode_; }
 
-    void set_concurrency_mode(ConcurrencyMode concurrency_mode) { concurrency_mode_ = concurrency_mode; }
+    void set_concurrency_mode(ConcurrencyMode concurrency_mode) { 
+        concurrency_mode_ = concurrency_mode; 
+        if (concurrency_mode_ == ConcurrencyMode::MVCC)
+        {
+            hidden_columns = {{.name = TXN_ID_FIELD,
+                               .type = TYPE_INT,
+                               .len = sizeof(txn_id_t)}};
+        }
+    }
 
     LockManager *get_lock_manager() { return lock_manager_; }
 
@@ -150,17 +170,8 @@ public:
     static constexpr const char* TXN_ID_FIELD = "__txn_id";
 
     // 获取MVCC所需的隐藏字段定义
-    std::vector<ColDef> get_hidden_columns() const {
-        if (concurrency_mode_ != ConcurrencyMode::MVCC) [[unlikely]] {
-            return {};
-        }
-        return {
-            {
-                .name = TXN_ID_FIELD,
-                .type = TYPE_INT,
-                .len = sizeof(txn_id_t)
-            }
-        };
+    inline std::vector<ColDef>& get_hidden_columns() {
+        return hidden_columns;
     }
 
     // 获取隐藏字段数量
@@ -253,4 +264,5 @@ private:
 
     // std::atomic<timestamp_t> last_commit_ts_{0}; // 最后提交的时间戳,仅用于MVCC
     Watermark running_txns_{0};                  // 存储所有正在运行事务的读取时间戳，以便于垃圾回收，仅用于MVCC
+    std::vector<ColDef> hidden_columns;
 };

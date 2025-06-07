@@ -14,9 +14,9 @@ void Watermark::AddTxn(timestamp_t read_ts) {
     std::lock_guard lock(mutex_);
     current_reads_[read_ts]++;
 
-    // 如果新的read_ts小于当前watermark,更新watermark
-    if (read_ts < watermark_.load()) {
-        watermark_.store(read_ts);
+    // watermark 应该是所有活跃读事务中最小的时间戳
+    if (current_reads_.begin()->first < watermark_.load()) {
+        watermark_.store(current_reads_.begin()->first);
     }
 }
 
@@ -30,12 +30,11 @@ void Watermark::RemoveTxn(timestamp_t read_ts) {
     if (--(it->second) == 0) {
         current_reads_.erase(it);
 
-        // 只有在删除的是最小时间戳时才需要更新watermark
-        if (read_ts == watermark_.load()) {    
-            timestamp_t new_watermark = current_reads_.empty() ? 
-                commit_ts_.load() : current_reads_.begin()->first;
-            watermark_.store(new_watermark);
-        }
+        // 删除事务后，需要更新 watermark 为当前最小的活跃读事务时间戳
+        // 如果没有活跃读事务，则使用最后提交的时间戳
+        timestamp_t new_watermark = current_reads_.empty() ? 
+            commit_ts_.load() : current_reads_.begin()->first;
+        watermark_.store(new_watermark);
     }
 }
 

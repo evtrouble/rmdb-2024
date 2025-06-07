@@ -127,7 +127,7 @@ struct UndoLog
   // 不需要增加引用计数，在写入表中时已经增加过
   // commit_ts_为0是一种特殊事务，表示数据库启动前表中已经存在的事务
   UndoLog(const RmRecord& tuple, Transaction* txn)
-   : tuple_(std::move(tuple)), txn_(txn) {
+   : tuple_(std::move(tuple)), txn_(txn), prev_version_{nullptr} {
     if(txn_->get_commit_ts() == 0)
     {
       txn_->dup();

@@ -1,11 +1,17 @@
 #include "buffer_pool_manager.h"
 #include <chrono>
+#include <algorithm>
 
 // replacer
 static std::string REPLACER_TYPE;
+static constexpr size_t FLUSH_BATCH_SIZE = 32;  // 批量刷盘大小
+static constexpr auto FLUSH_INTERVAL = std::chrono::seconds(1);  // 定期刷盘间隔
+static constexpr size_t DIRTY_THRESHOLD = 1024;  // 脏页阈值
+
 BufferPoolManager::BufferPoolManager(size_t pool_size, DiskManager *disk_manager)
         : buckets_(BUCKET_COUNT), pages_(pool_size), 
-      disk_manager_(disk_manager)
+      disk_manager_(disk_manager),
+      dirty_page_count_(0)
 {
     // REPLACER_TYPE = "CLOCK";
     // 可以被Replacer改变
@@ -29,7 +35,11 @@ BufferPoolManager::~BufferPoolManager() {
         flush_thread_.join();
     }
     delete replacer_;
-    flush_all_pages(-1); // 确保所有脏页刷盘
+    for(auto& page : pages_) {
+        if (page.is_dirty_) {
+            disk_manager_->write_page(page.id_.fd, page.id_.page_no, page.data_, PAGE_SIZE);
+        }
+    }
 }
 
 Page* BufferPoolManager::fetch_page(PageId page_id) {
@@ -102,7 +112,15 @@ bool BufferPoolManager::unpin_page(PageId page_id, bool is_dirty) {
         page.pin_count_.fetch_add(1);
         return false;
     }
-    if (is_dirty) page.is_dirty_.store(true);
+    
+    // 如果页面变脏，增加脏页计数
+    if (is_dirty && !page.is_dirty_.exchange(true)) {
+        dirty_page_count_.fetch_add(1);
+        // 如果脏页数量超过阈值，唤醒后台刷盘线程
+        if (dirty_page_count_.load() > DIRTY_THRESHOLD) {
+            flush_cond_.notify_one();
+        }
+    }
     return true;
 }
 
@@ -113,7 +131,9 @@ bool BufferPoolManager::flush_page(PageId page_id) {
     if (it == bucket.page_table.end()) return false;
 
     frame_id_t frame_id = it->second;
+    read_lock.unlock(); // 释放读锁，避免持有锁过长时间
     Page& page = pages_[frame_id];
+    std::lock_guard lock(page.latch_); // 确保页面解锁
     if (page.is_dirty_.exchange(false)) {
         disk_manager_->write_page(page_id.fd, page_id.page_no, page.data_, PAGE_SIZE);
     }
@@ -135,6 +155,7 @@ Page* BufferPoolManager::new_page(PageId* page_id) {
         old_bucket.page_table.erase(page.id_);
     }
     update_page(&page, *page_id, frame_id);
+    page.reset_memory();
 
     auto& new_bucket = get_bucket(*page_id);
     {
@@ -160,15 +181,13 @@ bool BufferPoolManager::delete_page(PageId page_id) {
     frame_id_t frame_id = it->second;
     Page& page = pages_[frame_id];
     if (page.pin_count_.load() > 0) return false;
-
-    // 标记删除并异步刷盘
-    if (page.is_dirty_.load()) {
-        std::lock_guard queue_lock(queue_mutex_);
-        flush_queue_.push(frame_id);
-        flush_cond_.notify_one();
-    }
-
+    
+    // 从page table移除并加入free list
     bucket.page_table.erase(it);
+    {
+        std::lock_guard free_lock(free_list_mutex_);
+        free_list_.push_back(frame_id);
+    }
     return true;
 }
 
@@ -183,9 +202,12 @@ void BufferPoolManager::flush_all_pages(int fd, bool flush) {
                 continue;
             }
             Page& page = pages_[frame_id];
-            if (page.is_dirty_.exchange(false) && flush) {
-                disk_manager_->write_page(pid.fd, pid.page_no, page.data_, PAGE_SIZE);
+            if(!flush) {
+                page.is_dirty_.store(false);
+                dirty_page_count_.fetch_sub(1);
             }
+            std::lock_guard page_lock(free_list_mutex_);
+            free_list_.push_back(frame_id);
             page.pin_count_.store(0);
             replacer_->unpin(frame_id);
             // 删除对应bucket的记录
@@ -195,27 +217,67 @@ void BufferPoolManager::flush_all_pages(int fd, bool flush) {
 }
 
 void BufferPoolManager::background_flush() {
+    std::vector<frame_id_t> batch;
+    batch.reserve(FLUSH_BATCH_SIZE);
+    
     while (!terminate_.load()) {
-        std::vector<frame_id_t> batch;
+        // 周期性检查或等待条件触发
         {
-            std::unique_lock lock(queue_mutex_);
-            flush_cond_.wait_for(lock, std::chrono::seconds(1),
-                [this] { return !flush_queue_.empty() || terminate_; });
-            
-            while (!flush_queue_.empty()) {
-                batch.emplace_back(flush_queue_.front());
-                flush_queue_.pop();
-            }
+            std::unique_lock lock(flush_mutex_);
+            flush_cond_.wait_for(lock, FLUSH_INTERVAL,
+                [this] { 
+                    return dirty_page_count_.load() > DIRTY_THRESHOLD ||
+                           terminate_; 
+                });
         }
 
-        if(batch.empty())continue;
-        std::lock_guard list_lock(free_list_mutex_);
-        for (frame_id_t fid : batch) {
-            Page& page = pages_[fid];
-            if (page.is_dirty_.exchange(false)) {
-                disk_manager_->write_page(page.id_.fd, page.id_.page_no, page.data_, PAGE_SIZE);
-                free_list_.push_back(fid);
+        // 检查是否需要退出
+        if (terminate_.load()) break;
+
+        // 收集并处理脏页
+        if (dirty_page_count_.load() > 0) {
+            collect_dirty_pages(batch);
+            if (!batch.empty()) {
+                flush_batch(batch);
+                batch.clear();
             }
+        }
+    }
+}
+
+void BufferPoolManager::collect_dirty_pages(std::vector<frame_id_t>& batch) {
+    size_t start_pos = last_scan_pos_;
+    size_t current_pos = start_pos;
+    size_t pool_size = pages_.size();
+    
+    // 从上次结束的位置开始扫描,最多扫描一轮
+    do {
+        if(pages_[current_pos].is_dirty_.load()) {
+            batch.push_back(current_pos);
+            if(batch.size() >= FLUSH_BATCH_SIZE) {
+                break;
+            }
+        }
+        current_pos++;
+        if (current_pos >= pool_size) current_pos = 0; // 循环扫描
+    } while (current_pos != start_pos && batch.size() < FLUSH_BATCH_SIZE);
+
+    // 更新下次扫描的起始位置
+    last_scan_pos_ = current_pos;
+}
+
+void BufferPoolManager::flush_batch(const std::vector<frame_id_t>& batch) {
+    if(batch.empty())[[unlikely]] return;
+    
+    // 直接遍历所有页面进行刷盘
+    for (frame_id_t fid : batch) {
+        Page& page = pages_[fid];
+        std::lock_guard lock(page.latch_);
+        
+        // 检查是否仍然是脏页
+        if (page.is_dirty_.exchange(false)) {
+            disk_manager_->write_page(page.id_.fd, page.id_.page_no, page.data_, PAGE_SIZE);
+            dirty_page_count_.fetch_sub(1);
         }
     }
 }
@@ -235,10 +297,14 @@ bool BufferPoolManager::find_victim_page(frame_id_t* frame_id) {
 
 void BufferPoolManager::update_page(Page* page, PageId new_page_id, frame_id_t new_frame_id) {
     if (page->is_dirty_.load()) {
-        disk_manager_->write_page(page->id_.fd, page->id_.page_no, page->data_, PAGE_SIZE);
-        page->is_dirty_ = false;
+        std::lock_guard lock(page->latch_);
+        if(page->is_dirty_.load()) {
+            disk_manager_->write_page(page->id_.fd, page->id_.page_no, page->data_, PAGE_SIZE);
+            page->is_dirty_ = false;
+            dirty_page_count_.fetch_sub(1);
+        }
     }
-    page->reset_memory();
+    // page->reset_memory();
     page->id_ = new_page_id;
     page->pin_count_.store(0);
 }

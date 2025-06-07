@@ -215,7 +215,7 @@ void SmManager::create_table(const std::string& tab_name, const std::vector<ColD
     tab.name = tab_name;
     
     // 获取MVCC隐藏字段(如果需要)
-    auto hidden_cols = context->txn_->get_txn_manager()->get_hidden_columns();
+    auto& hidden_cols = context->txn_->get_txn_manager()->get_hidden_columns();
     
     // 计算总列数(用户列 + 隐藏列)
     size_t total_cols = col_defs.size() + hidden_cols.size();

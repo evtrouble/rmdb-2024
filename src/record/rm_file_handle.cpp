@@ -433,6 +433,11 @@ void RmFileHandle::clean_page(int page_no, TransactionManager* txn_mgr, timestam
 
     {
         auto version = txn_mgr->GetPageVersionInfo(pageid);
+        if(version == nullptr) {
+            // 如果没有版本信息，直接返回
+            rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), false);
+            return;
+        }
         Rid rid{.page_no = page_no};
         int slot_no = -1;
         std::shared_lock read_lock(page_handle.page->latch_);

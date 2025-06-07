@@ -122,7 +122,11 @@ void TransactionManager::abort(Context *context, LogManager *log_manager)
         auto write_record = std::move(write_set->front()); // 获取最后一个写记录
         write_set->pop_front();      // 移除最后一个写记录
         Rid rid = write_record->GetRid();
-        if(abort_set.count(rid))continue;
+        if(abort_set.count(rid))
+        {
+            delete write_record;
+            continue; // 如果已经回滚过该记录，跳过
+        }
         abort_set.emplace(rid);
         // 根据写操作类型进行回滚
         switch (write_record->GetWriteType())
@@ -140,6 +144,7 @@ void TransactionManager::abort(Context *context, LogManager *log_manager)
                 }
                 else
                 {
+                    undolog->txn_->dup(); // 增加引用计数
                     fh->abort_delete_record(rid, undolog->tuple_.data);
                 }
             }
@@ -153,6 +158,7 @@ void TransactionManager::abort(Context *context, LogManager *log_manager)
                 }
                 else
                 {
+                    undolog->txn_->dup(); // 增加引用计数
                     fh->abort_update_record(rid, undolog->tuple_.data);
                 }
             }
@@ -184,7 +190,6 @@ void TransactionManager::abort(Context *context, LogManager *log_manager)
     // 5. 更新事务状态
     txn->set_state(TransactionState::ABORTED);
     running_txns_.RemoveTxn(txn->get_start_ts());
-    delete txn;
 }
 
 bool TransactionManager::UpdateUndoLink(int fd, const Rid &rid, UndoLog* prev_link,
@@ -215,7 +220,7 @@ bool TransactionManager::UpdateUndoLink(int fd, const Rid &rid, UndoLog* prev_li
     std::unique_lock page_lock(page_info->mutex_);
     
     // 5. 获取当前版本用于check
-    UndoLog* current_version;
+    UndoLog* current_version = nullptr;
     auto version_it = page_info->prev_version_.find(rid.slot_no);
     if (version_it != page_info->prev_version_.end()) {
         current_version = version_it->second;
@@ -227,9 +232,8 @@ bool TransactionManager::UpdateUndoLink(int fd, const Rid &rid, UndoLog* prev_li
     }
     
     // 7. 更新版本信息
-    if (current_version) {
-        prev_link->prev_version_ = current_version;
-    }
+    prev_link->prev_version_ = current_version;
+    
     // 更新或插入新版本
     page_info->prev_version_.insert_or_assign(rid.slot_no, prev_link);
     return true;
@@ -350,7 +354,7 @@ void TransactionManager::TruncateVersionChain(std::shared_ptr<PageVersionInfo> p
     if (version_it == page_info->prev_version_.end()) {
         return;
     }
-    auto current = version_it->second;
+    auto* current = version_it->second;
     page_lock.unlock();  // 释放读锁以避免长时间持有，后续操作需要写锁
    
     // 遍历版本链找到截断点 - 保持页面级读锁
@@ -387,16 +391,19 @@ std::shared_ptr<PageVersionInfo> TransactionManager::GetPageVersionInfo(const Pa
 void TransactionManager::PurgeCleaning()
 {
     std::vector<std::shared_ptr<RmFileHandle>> tables;
+    int delay = 0;
     while (!terminate_purge_cleaner_)
     {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        std::this_thread::sleep_for(std::chrono::milliseconds(std::max(1, 10 - delay) * 10));
+        delay = 0;
         tables = sm_manager_->get_all_table_handle();
         timestamp_t watermark = running_txns_.GetWatermark();
 
         for(auto& fh : tables) {
-            if(!terminate_purge_cleaner_)
+            if(terminate_purge_cleaner_)
                 break;
             int page_num = fh->get_page_num();
+            delay += page_num * 10; // 每个表的页数乘以10ms的延迟
             for (int page_no = RM_FIRST_RECORD_PAGE; page_no < page_num && !terminate_purge_cleaner_; ++page_no)
             {
                 fh->clean_page(page_no, this, watermark);

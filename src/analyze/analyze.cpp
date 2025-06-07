@@ -59,8 +59,10 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
         {
             // select all columns
             query->cols.reserve(all_cols.size());
-            for (auto &col : all_cols)
+            int i = context->txn_->get_txn_manager()->get_hidden_column_count();
+            for (;i< (int)all_cols.size(); ++i)
             {
+                auto& col = all_cols[i];
                 query->cols.emplace_back(TabCol(col.tab_name, col.name));
             }
         }
