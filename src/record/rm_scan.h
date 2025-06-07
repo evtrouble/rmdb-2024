@@ -22,7 +22,8 @@ class RmScan : public RecScan {
     std::shared_ptr<RmFileHandle> file_handle_;
     Context* context_;  // 事务上下文
     Rid rid_;          // 当前扫描位置
-    
+    int page_num;
+
     // 批量扫描相关
     std::vector<std::pair<std::unique_ptr<RmRecord>, int>> current_records_;  // 当前页面的记录批次
     size_t current_record_idx_;  // 当前批次中的位置
@@ -37,9 +38,7 @@ class RmScan : public RecScan {
 
     // 单记录访问
     void record(std::unique_ptr<RmRecord> &out) {
-        if (current_record_idx_ >= current_records_.size()) out = nullptr;
-        else
-            out = std::move(current_records_[current_record_idx_].first);
+        out = std::move(current_records_[current_record_idx_].first);
     }
 
     // 批量访问接口

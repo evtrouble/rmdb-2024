@@ -62,8 +62,7 @@ public:
             memcpy(rec.data + col.offset, val.raw->data, col.len);
         }
 
-        txn_mgr->set_record_commit_ts(rec.data, INVALID_TIMESTAMP);
-        txn_mgr->set_record_txn_id(rec.data, context_->txn_->get_transaction_id(), false);
+        txn_mgr->set_record_txn_id(rec.data, context_->txn_, false);
 
         // Insert into index
         for (size_t id = 0; id < tab_.indexes.size(); id++) {

@@ -139,7 +139,7 @@ void *client_handler(void *sock_fd)
                     yy_delete_buffer(buf);
                     finish_analyze = true;
                     pthread_mutex_unlock(buffer_mutex);
-                    context->clearFlags(); // 清除标志位
+                    // context->clearFlags(); // 清除标志位
                     // 优化器
                     std::shared_ptr<Plan> plan = optimizer->plan_query(query, context.get());
                     // portal

@@ -32,6 +32,7 @@ static constexpr int INVALID_TIMESTAMP = -1;       // invalid transaction timest
 static constexpr int64_t INVALID_LSN = -1;         // invalid log sequence number
 // static constexpr int64_t TXN_START_ID = 1LL << 62; // first txn id
 static constexpr int64_t TXN_DELETE_TAG = 1LL << 30;
+static constexpr int64_t TXN_ID_MASK = TXN_DELETE_TAG - 1;
 static constexpr int64_t INVALID_TS = -1;          // invalid log sequence number
 static constexpr int HEADER_PAGE_ID = 0;           // the header page id
 static constexpr int PAGE_SIZE = 4096;             // size of a data page in byte  4KB

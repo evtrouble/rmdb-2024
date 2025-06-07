@@ -110,8 +110,7 @@ public:
                 memcpy(rec.data + set_col_metas[i]->offset, set_clauses_[i].rhs.raw->data, set_col_metas[i]->len);
             }
 
-            txn_mgr->set_record_commit_ts(rec.data, INVALID_TIMESTAMP);
-            txn_mgr->set_record_txn_id(rec.data, context_->txn_->get_transaction_id());
+            txn_mgr->set_record_txn_id(rec.data, context_->txn_);
 
             // 更新索引
             update_indexes(old_rec, rec, rid);

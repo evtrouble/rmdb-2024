@@ -19,6 +19,7 @@ RmScan::RmScan(std::shared_ptr<RmFileHandle> file_handle, Context* context) :
     rid_{RM_FILE_HDR_PAGE, -1},  // 初始化为第0页,slot_no为-1表示即将开始扫描
     current_record_idx_(0)
 {
+    page_num = file_handle->get_page_num();
     // 预分配空间，避免后续resize
     current_records_.reserve(file_handle_->file_hdr_.num_records_per_page);
     load_next_page();  // 加载第一页数据
@@ -27,7 +28,7 @@ RmScan::RmScan(std::shared_ptr<RmFileHandle> file_handle, Context* context) :
 
 void RmScan::next() {
     if(current_record_idx_ < current_records_.size() - 1) {
-        // 直接移动到下一条记录
+        // 移动到下一条记录
         current_record_idx_++;
         rid_.slot_no = current_records_[current_record_idx_].second;
     } else {
@@ -56,17 +57,44 @@ void RmScan::load_next_page() {
         return;
     }
     
-    // 直接使用移动赋值，避免拷贝
-    current_records_ = file_handle_->get_records(rid_.page_no, context_);
+    // 获取当前页的所有记录
+    std::vector<std::pair<std::unique_ptr<RmRecord>, int>> raw_records = 
+        file_handle_->get_records(rid_.page_no, context_);
+        
+    // 过滤出可见记录
+    current_records_.clear();
+    current_records_.reserve(raw_records.size());
+    TransactionManager *txn_manager = context_->txn_->get_txn_manager();
+    auto version_info = txn_manager->GetPageVersionInfo(
+        PageId{file_handle_->GetFd(), rid_.page_no});
     
-    if(current_records_.empty()) {
-        // 当前页没有记录，继续下一页
+    for(auto& record_pair : raw_records) {
+        if(record_pair.first != nullptr) {
+            // 直接可见的记录
+            current_records_.emplace_back(std::move(record_pair));
+            continue;
+        }
+        
+        // 尝试在版本链上查找可见版本
+        if(context_ && context_->txn_) {
+            Rid current_rid{rid_.page_no, record_pair.second};
+            auto visible_version = txn_manager->GetVisibleRecord(
+                version_info, current_rid, context_->txn_);
+            if(visible_version) {
+                auto record = std::make_unique<RmRecord>(std::move(*visible_version));
+                current_records_.emplace_back(std::make_pair(std::move(record), record_pair.second));
+            }
+        }
+    }
+    
+    // 如果当前页没有可见记录且还有下一页,继续查找
+    if(current_records_.empty() && rid_.page_no + 1 < file_handle_->file_hdr_.num_pages) {
         load_next_page();
     }
 }
 
 bool RmScan::is_end() const {
-    return rid_.page_no >= file_handle_->file_hdr_.num_pages ||
+    return rid_.page_no >= page_num ||
            current_records_.empty();
 }
 
@@ -78,11 +106,10 @@ std::vector<Rid> RmScan::rid_batch() const {
     std::vector<Rid> rids;
     rids.reserve(current_records_.size());
     
-    for(size_t i = 0; i < current_records_.size(); i++) {
-        // 返回所有记录的RID，包括需要在版本链上查找的记录
-        rids.emplace_back(Rid{rid_.page_no, current_records_[i].second});
+    // current_records_中的记录都已经是可见的了
+    for(const auto& record_pair : current_records_) {
+        rids.emplace_back(Rid{rid_.page_no, record_pair.second});
     }
-    
     return rids;
 }
 
@@ -90,25 +117,9 @@ std::vector<std::unique_ptr<RmRecord>> RmScan::record_batch() const {
     std::vector<std::unique_ptr<RmRecord>> records;
     records.reserve(current_records_.size());
     
+    // current_records_中的记录都已经是可见的了
     for(const auto& record_pair : current_records_) {
-        if(record_pair.first != nullptr) {
-            // 当前记录可见，直接移动所有权
-            auto record = std::make_unique<RmRecord>(record_pair.first->size);
-            memcpy(record->data, record_pair.first->data, record_pair.first->size);
-            records.push_back(std::move(record));
-        } else {
-            // 尝试从版本链获取记录
-            if(context_ && context_->txn_) {
-                Rid current_rid{rid_.page_no, record_pair.second};
-                auto visible_version = context_->txn_->get_txn_manager()->GetVisibleRecord(
-                    file_handle_->GetFd(), current_rid, context_->txn_);
-                if(visible_version) {
-                    auto record = std::make_unique<RmRecord>(std::move(*visible_version));
-                    records.push_back(std::move(record));
-                }
-            }
-        }
+        records.push_back(std::make_unique<RmRecord>(std::move(*record_pair.first)));
     }
-    
     return records;
 }

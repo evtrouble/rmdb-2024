@@ -87,9 +87,13 @@ public:
 
                 // 删除记录
                 fh_->delete_record(rid, context_);
-                auto write_record = new WriteRecord(WType::DELETE_TUPLE,
-                                                    tab_name_, rid, rec);
-                context_->txn_->append_write_record(write_record);
+                if(context_->txn_->get_txn_manager()->get_concurrency_mode() != 
+                    ConcurrencyMode::MVCC)
+                {
+                    auto write_record = new WriteRecord(WType::DELETE_TUPLE,
+                                tab_name_, rid, rec);
+                    context_->txn_->append_write_record(write_record);
+                }
             }
         }
         catch (const std::exception &e)

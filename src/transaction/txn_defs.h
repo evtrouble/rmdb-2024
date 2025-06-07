@@ -51,7 +51,7 @@ public:
         : wtype_(wtype), tab_name_(tab_name), rid_(rid), record_(std::move(record)) {}
 
     // onstructor for delete & update operation
-    WriteRecord(const std::string &tab_name, const Rid &rid, UndoLog *undolog)
+    WriteRecord(WType wtype, const std::string &tab_name, const Rid &rid, UndoLog *undolog)
         : tab_name_(tab_name), rid_(rid), undolog_(undolog) {}
 
     ~WriteRecord() = default;

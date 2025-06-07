@@ -82,9 +82,10 @@ public:
         if (txn_id == INVALID_TXN_ID)
             return nullptr;
 
-        std::unique_lock<std::mutex> lock(latch_);
-        assert(TransactionManager::txn_map.find(txn_id) != TransactionManager::txn_map.end());
-        auto *res = TransactionManager::txn_map[txn_id];
+        std::shared_lock lock(txn_map_mutex_);
+        auto iter = txn_map.find(txn_id);
+        assert(iter != TransactionManager::txn_map.end());
+        auto *res = iter->second;
         lock.unlock();
         assert(res != nullptr);
         assert(res->get_thread_id() == std::this_thread::get_id());
@@ -99,16 +100,44 @@ public:
     std::shared_ptr<PageVersionInfo> GetPageVersionInfo(const PageId &page_id);
 
     void TruncateVersionChain(std::shared_ptr<PageVersionInfo> page_info,
-                                                  const Rid &rid, timestamp_t watermark);
+                            const Rid &rid, timestamp_t watermark);
     void TruncateVersionChain(int fd, const Rid &rid, timestamp_t watermark);
 
     void DeleteVersionChain(int fd, const Rid &rid);
     void DeleteVersionChain(std::shared_ptr<PageVersionInfo> page_info, const PageId &page_id, const Rid &rid);
 
     void StartPurgeCleaner();
-    void StopPurgeCleaner();
+    inline void StopPurgeCleaner() { terminate_purge_cleaner_ = false; }
+
+    void remove_txn(txn_id_t txn_id) {
+        std::unique_lock lock(txn_map_mutex_);
+        txn_map.erase(txn_id);
+    }
+
+    Transaction* get_or_create_transaction(txn_id_t txn_id)
+    {
+        txn_id &= TXN_ID_MASK;
+        {
+            std::shared_lock lock(txn_map_mutex_);
+            auto iter = txn_map.find(txn_id);
+            if(iter != txn_map.end())
+            {
+                return iter->second;
+            }
+        }
+
+        Transaction *txn;
+        {
+            std::unique_lock lock(txn_map_mutex_);
+            txn = txn_map.emplace(txn_id, new Transaction(txn_id, this, 0)).first->second;
+        }
+        txn->set_commit_ts(0);
+        return txn;
+    }
 
     std::optional<RmRecord> GetVisibleRecord(int fd, const Rid &rid, Transaction *current_txn);
+    std::optional<RmRecord> GetVisibleRecord(std::shared_ptr<PageVersionInfo> page_info_ptr,
+                                             const Rid &rid, Transaction* current_txn);
 
     bool UpdateUndoLink(int fd, const Rid &rid, UndoLog* prev_link,
                                             std::function<bool(UndoLog*)> &&check = nullptr);
@@ -118,7 +147,6 @@ public:
     std::unordered_map<PageId, std::shared_ptr<PageVersionInfo>, PageIdHash> version_info_;
 
     // 定义MVCC隐藏字段
-    static constexpr const char* COMMIT_TS_FIELD = "__commit_ts";
     static constexpr const char* TXN_ID_FIELD = "__txn_id";
 
     // 获取MVCC所需的隐藏字段定义
@@ -128,23 +156,16 @@ public:
         }
         return {
             {
-                .name = COMMIT_TS_FIELD,
-                .type = TYPE_INT,
-                .len = sizeof(timestamp_t)
-                // .visible = false
-            },
-            {
                 .name = TXN_ID_FIELD,
                 .type = TYPE_INT,
                 .len = sizeof(txn_id_t)
-                // .visible = false
             }
         };
     }
 
     // 获取隐藏字段数量
     size_t get_hidden_column_count() const {
-        return (concurrency_mode_ == ConcurrencyMode::MVCC) ? 2 : 0;
+        return (concurrency_mode_ == ConcurrencyMode::MVCC) ? 1 : 0;
     }
 
     txn_id_t get_record_txn_id(const char* data) const {
@@ -152,39 +173,32 @@ public:
             return INVALID_TXN_ID;
         }
         txn_id_t txn_id;
-        memcpy(&txn_id, data + sizeof(timestamp_t), sizeof(txn_id_t));
+        memcpy(&txn_id, data, sizeof(txn_id_t));
         return txn_id;
     }
 
-    void set_record_txn_id(char* data, txn_id_t txn_id, bool is_delete = false) const {
+    void set_record_txn_id(char* data, Transaction* txn, bool is_delete = false) const {
         if (concurrency_mode_ != ConcurrencyMode::MVCC) [[unlikely]] {
             return;
         }
-        if(is_delete)
+        txn_id_t txn_id = txn->get_transaction_id();
+        txn->dup();
+        if (is_delete)
             txn_id |= TXN_DELETE_TAG;
-        memcpy(data + sizeof(timestamp_t), &txn_id, sizeof(txn_id_t));
+        memcpy(data, &txn_id, sizeof(txn_id_t));
     }
 
-    void set_record_commit_ts(char* data, timestamp_t commit_ts) const {
-        if (concurrency_mode_ != ConcurrencyMode::MVCC) [[unlikely]] {
-            return;
-        }
-        memcpy(data, &commit_ts, sizeof(timestamp_t));
-    }
-
-    bool is_write_conflict(const char* data, Transaction* txn) const {
+    bool is_write_conflict(Transaction* record, Transaction* txn) const {
         if (concurrency_mode_ != ConcurrencyMode::MVCC) [[unlikely]] {
             return false; // 在非MVCC模式下，不存在写冲突
         }
-        txn_id_t record_txn_id = get_record_txn_id(data);
-
-        if(record_txn_id == txn->get_transaction_id()){
+        if(record == txn)
             return false;
-        }
-        timestamp_t record_commit_ts = get_record_commit_ts(data);
 
-        if(record_commit_ts == INVALID_TIMESTAMP) {
-            return true; // 记录未提交或不存在
+        timestamp_t commit_ts = record->get_commit_ts();
+        if (commit_ts == INVALID_TIMESTAMP)
+        {
+            return true;
         }
         return false;
     }
@@ -193,13 +207,14 @@ public:
      * @brief 判断记录的可见性和是否需要查找版本链
      * @return {bool} 如果返回true，表示记录已被删除或当前版本不可见(需要查找版本链)
      */
-    bool need_find_version_chain(timestamp_t commit_ts, txn_id_t txn_id, Transaction* txn) const {
+    bool need_find_version_chain(Transaction* record_txn , Transaction* txn) const {
         if (concurrency_mode_ != ConcurrencyMode::MVCC) [[unlikely]] {
             return false; // 在非MVCC模式下，记录不会被删除或不可见
         }
-        txn_id &= (TXN_DELETE_TAG - 1);
-        if(txn_id == txn->get_transaction_id())
+        if(record_txn == txn)
             return false;
+        
+        timestamp_t commit_ts = record_txn->get_commit_ts();
         if (commit_ts == INVALID_TIMESTAMP || commit_ts > txn->get_start_ts())
         {
             return true;
@@ -207,41 +222,35 @@ public:
         return false; // 记录可见且已提交
     }
 
-    inline bool is_deleted(timestamp_t commit_ts) const
+    inline bool need_clean(Transaction* record_txn , timestamp_t watermark) {
+        if (concurrency_mode_ != ConcurrencyMode::MVCC) [[unlikely]] {
+            return false; // 在非MVCC模式下，记录不会被删除或不可见
+        }
+        
+        timestamp_t commit_ts = record_txn->get_commit_ts();
+        return (commit_ts != INVALID_TIMESTAMP && commit_ts < watermark);
+    }
+
+    inline bool is_deleted(txn_id_t txn_id) const
     {
         if (concurrency_mode_ != ConcurrencyMode::MVCC) [[unlikely]] {
             return false; // 在非MVCC模式下，记录不会被删除或不可见
         }
-        return (commit_ts & TXN_DELETE_TAG);
+        return (txn_id & TXN_DELETE_TAG);
     }
 
-    timestamp_t get_record_commit_ts(const char* data) const {
-        if (concurrency_mode_ != ConcurrencyMode::MVCC) [[unlikely]] {
-            return INVALID_TIMESTAMP;
-        }
-        timestamp_t commit_ts;
-        memcpy(&commit_ts, data, sizeof(timestamp_t));
-        return commit_ts;
-    }
-
-    void mark_deleted(char* data) {
-        if (concurrency_mode_ != ConcurrencyMode::MVCC) [[unlikely]] {
-            return;
-        }
-        txn_id_t record_txn_id = get_record_txn_id(data);
-        set_record_txn_id(data, record_txn_id, true);
-    }
+private:
+    void PurgeCleaning();
 
 private:
     ConcurrencyMode concurrency_mode_;           // 事务使用的并发控制算法，目前只需要考虑2PL
     std::atomic<txn_id_t> next_txn_id_{0};       // 用于分发事务ID
     std::atomic<timestamp_t> next_timestamp_{0}; // 用于分发事务时间戳
-    std::mutex latch_;                           // 用于txn_map的并发
     SmManager *sm_manager_;
     LockManager *lock_manager_;
     std::thread purgeCleaner;
     bool terminate_purge_cleaner_{false}; // 用于终止清理线程
 
-    std::atomic<timestamp_t> last_commit_ts_{0}; // 最后提交的时间戳,仅用于MVCC
+    // std::atomic<timestamp_t> last_commit_ts_{0}; // 最后提交的时间戳,仅用于MVCC
     Watermark running_txns_{0};                  // 存储所有正在运行事务的读取时间戳，以便于垃圾回收，仅用于MVCC
 };

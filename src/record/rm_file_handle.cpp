@@ -59,17 +59,17 @@ std::vector<std::pair<std::unique_ptr<RmRecord>, int>> RmFileHandle::get_records
 
         char* data = page_handle.get_slot(slot_no);
         txn_id_t txn_id = txn_manager->get_record_txn_id(data);
-        timestamp_t commit_ts = txn_manager->get_record_commit_ts(data);
+        Transaction *record_txn = txn_manager->get_or_create_transaction(txn_id);
 
         // 1. 检查是否需要查找版本链
-        if(txn_manager->need_find_version_chain(commit_ts, txn_id, context->txn_)) {
+        if(txn_manager->need_find_version_chain(record_txn, context->txn_)) {
             // 需要查找版本链，让上层处理
             records.emplace_back(std::make_pair(nullptr, slot_no));
             continue;
         }
         
         // 2. 当前版本可见，检查是否是删除记录
-        bool is_deleted = txn_manager->is_deleted(commit_ts);
+        bool is_deleted = txn_manager->is_deleted(txn_id);
         if(is_deleted) {
             // 记录已被删除，跳过
             continue;
@@ -206,15 +206,17 @@ void RmFileHandle::delete_record(const Rid &rid, Context *context)
     char *data = page_handle.get_slot(rid.slot_no);
     if (txn_mgr->get_concurrency_mode() == ConcurrencyMode::MVCC)
     {
-        if(txn_mgr->is_write_conflict(data, context->txn_))
+        txn_id_t txn_id = txn_mgr->get_record_txn_id(data);
+        Transaction *record_txn = txn_mgr->get_or_create_transaction(txn_id);
+        if(txn_mgr->is_write_conflict(record_txn, context->txn_))
             throw TransactionAbortException(context->txn_->get_transaction_id(), 
                 AbortReason::UPGRADE_CONFLICT);
-        UndoLog *undolog = new UndoLog(false, RmRecord(data, file_hdr_.record_size),
-                                       context->txn_->get_timestame_ref());
+        UndoLog *undolog = new UndoLog(RmRecord(data, file_hdr_.record_size),
+                                       record_txn);
         txn_mgr->UpdateUndoLink(fd_, rid, undolog);
-        txn_mgr->mark_deleted(data);
+        txn_mgr->set_record_txn_id(data, context->txn_, true);
 
-        auto write_record = new WriteRecord(rm_manager_->disk_manager_->get_file_name(fd_), 
+        auto write_record = new WriteRecord(WType::DELETE_TUPLE, rm_manager_->disk_manager_->get_file_name(fd_), 
             rid, undolog);
         context->txn_->append_write_record(write_record);
     } else {
@@ -250,14 +252,17 @@ void RmFileHandle::update_record(const Rid &rid, char *buf, Context *context)
     char *data = page_handle.get_slot(rid.slot_no);
     if (txn_mgr->get_concurrency_mode() == ConcurrencyMode::MVCC)
     {
-        if(txn_mgr->is_write_conflict(data, context->txn_))
+        txn_id_t txn_id = txn_mgr->get_record_txn_id(data);
+        Transaction *record_txn = txn_mgr->get_or_create_transaction(txn_id);
+        if (txn_mgr->is_write_conflict(record_txn, context->txn_))
             throw TransactionAbortException(context->txn_->get_transaction_id(), 
                 AbortReason::UPGRADE_CONFLICT);
-        UndoLog *undolog = new UndoLog(false, RmRecord(data, file_hdr_.record_size),
-                                       context->txn_->get_timestame_ref());
+        
+        UndoLog *undolog = new UndoLog(RmRecord(data, file_hdr_.record_size),
+                                       record_txn);
         txn_mgr->UpdateUndoLink(fd_, rid, undolog);
 
-        auto write_record = new WriteRecord(rm_manager_->disk_manager_->get_file_name(fd_), 
+        auto write_record = new WriteRecord(WType::UPDATE_TUPLE, rm_manager_->disk_manager_->get_file_name(fd_), 
             rid, undolog);
         context->txn_->append_write_record(write_record);
     }
@@ -359,4 +364,121 @@ void RmFileHandle::release_page_handle(RmPageHandle &page_handle)
     // 2. 让这个页面指向原来的第一个空闲页面
     page_handle.page_hdr->next_free_page_no = file_hdr_.first_free_page_no;
     file_hdr_.first_free_page_no = page_handle.page->get_page_id().page_no;
+}
+
+void RmFileHandle::abort_insert_record(const Rid &rid)
+{
+    // 1. 获取指定记录所在的page handle
+    RmPageHandle page_handle = fetch_page_handle(rid.page_no);
+    std::unique_lock lock(page_handle.page->latch_);
+
+    // 2. 检查记录是否存在
+    if (!is_record(rid))
+        throw RecordNotFoundError(rid.page_no, rid.slot_no);
+
+    // 3. 更新bitmap，标记slot为空闲
+    // Bitmap::reset(page_handle.bitmap, rid.slot_no);
+    // page_handle.page_hdr->num_records--;
+
+    Bitmap::reset(page_handle.bitmap, rid.slot_no);
+    page_handle.page_hdr->num_records--;
+    // 4. 如果页面从满状态变为未满状态，需要更新空闲页面链表
+    if (page_handle.page_hdr->num_records == file_hdr_.num_records_per_page - 1)
+        release_page_handle(page_handle);
+
+    rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);
+}
+
+void RmFileHandle::abort_delete_record(const Rid &rid, char *buf)
+{
+    // 获取指定记录所在的page handle
+    RmPageHandle page_handle = fetch_page_handle(rid.page_no);
+    std::unique_lock lock(page_handle.page->latch_);
+
+    // 复制数据到指定slot
+    memcpy(page_handle.get_slot(rid.slot_no), buf, file_hdr_.record_size);
+
+    // 更新bitmap和记录数
+    if(!is_record(rid))
+    {
+        ++page_handle.page_hdr->num_records;
+        Bitmap::set(page_handle.bitmap, rid.slot_no);
+        std::lock_guard lock(lock_);
+        if (page_handle.page_hdr->num_records == 1 && file_hdr_.first_free_page_no == rid.page_no)
+            file_hdr_.first_free_page_no = page_handle.page_hdr->next_free_page_no;
+    }
+
+    rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);
+}
+
+void RmFileHandle::abort_update_record(const Rid &rid, char *buf)
+{
+    RmPageHandle page_handle = fetch_page_handle(rid.page_no);
+    std::unique_lock lock(page_handle.page->latch_);
+
+    // 检查记录是否存在
+    if (!is_record(rid))
+        throw RecordNotFoundError(rid.page_no, rid.slot_no);
+
+    memcpy(page_handle.get_slot(rid.slot_no), buf, file_hdr_.record_size);
+    rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);
+}
+
+void RmFileHandle::clean_page(int page_no, TransactionManager* txn_mgr, timestamp_t watermark)
+{
+    RmPageHandle page_handle = fetch_page_handle(page_no);
+    std::vector<int> to_delete;
+    to_delete.reserve(file_hdr_.num_records_per_page);
+    PageId pageid{.fd = fd_, .page_no = page_no};
+
+    {
+        auto version = txn_mgr->GetPageVersionInfo(pageid);
+        Rid rid{.page_no = page_no};
+        int slot_no = -1;
+        std::shared_lock read_lock(page_handle.page->latch_);
+        
+        while (true)
+        {
+            slot_no = Bitmap::next_bit(true, page_handle.bitmap, file_hdr_.num_records_per_page, slot_no);
+            
+            if (slot_no >= file_hdr_.num_records_per_page)
+            {
+                // 如果没有找到空闲位置，则退出循环
+                break;
+            }
+
+            char* data = page_handle.get_slot(slot_no);
+            txn_id_t txn_id = txn_mgr->get_record_txn_id(data);
+            Transaction *record_txn = txn_mgr->get_or_create_transaction(txn_id);
+            rid.slot_no = slot_no;
+            if (txn_mgr->need_clean(record_txn, watermark))
+            {
+                txn_mgr->DeleteVersionChain(fd_, rid);
+            }
+            else
+            {
+                txn_mgr->TruncateVersionChain(fd_, rid, watermark);
+            }
+
+            if(txn_mgr->is_deleted(txn_id)) {
+                to_delete.emplace_back(slot_no);
+            }
+        }
+    }
+
+    bool change = false;
+    if (to_delete.size()){
+        change = true;
+        std::unique_lock write_lock(page_handle.page->latch_);
+        for(auto slot_no : to_delete) {
+            char* data = page_handle.get_slot(slot_no);
+            txn_id_t txn_id = txn_mgr->get_record_txn_id(data);
+            if(txn_mgr->is_deleted(txn_id))
+            {
+                Bitmap::reset(page_handle.bitmap, slot_no);
+            }
+        }
+    }
+
+    rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), change);
 }

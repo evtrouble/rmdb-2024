@@ -54,7 +54,7 @@ private:
     RmManager *rm_manager_; // 记录管理器，用于管理表的数据文件
     int fd_;             // 打开文件后产生的文件句柄
     RmFileHdr file_hdr_; // 文件头，维护当前表文件的元数据
-    std::mutex lock_;    // 锁，用于保护文件头的读写操作
+    std::shared_mutex lock_;    // 锁，用于保护文件头的读写操作
     bool is_deleted_ = false; // 标记文件是否被删除
 
 public:
@@ -86,6 +86,10 @@ public:
     RmFileHdr get_file_hdr() const { return file_hdr_; }
     int GetFd() { return fd_; }
     inline void mark_deleted() { is_deleted_ = true; } // 标记文件为已删除
+    inline int get_page_num() {
+        std::shared_lock lock(lock_);
+        return file_hdr_.num_pages;
+    }
     inline BufferPoolManager *get_buffer_pool_manager() const
     {
         return rm_manager_->buffer_pool_manager_;
@@ -109,12 +113,15 @@ public:
 
     void update_record(const Rid &rid, char *buf, Context *context);
 
+    void abort_insert_record(const Rid &rid);
+    void abort_delete_record(const Rid &rid, char *buf);
+    void abort_update_record(const Rid &rid, char *buf);
+
     RmPageHandle create_new_page_handle();
 
     RmPageHandle fetch_page_handle(int page_no) const;
 
-    // 获取记录的可见版本
-    std::unique_ptr<RmRecord> get_record_version(const Rid &rid, Context *context) const;
+    void clean_page(int page_no, TransactionManager *txn_mgr, timestamp_t watermark);
 
 private:
     RmPageHandle create_page_handle();
