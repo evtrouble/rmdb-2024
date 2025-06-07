@@ -60,6 +60,15 @@ void QlManager::run_mutli_query(std::shared_ptr<Plan> plan, Context *context)
         // 将结果写入context
         memcpy(context->data_send_ + *(context->offset_), result.c_str(), result.length());
         *(context->offset_) += result.length();
+
+        // 将结果写入output.txt文件
+        int fd = ::open("output.txt", O_WRONLY | O_CREAT | O_APPEND, 0644);
+        if (fd != -1)
+        {
+            std::string buffer = result;
+            [[maybe_unused]] ssize_t discard = ::write(fd, buffer.data(), buffer.size());
+            close(fd);
+        }
     }
     else if (auto x = std::dynamic_pointer_cast<DDLPlan>(plan))
     {
