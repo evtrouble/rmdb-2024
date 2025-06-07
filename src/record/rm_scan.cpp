@@ -76,7 +76,7 @@ void RmScan::load_next_page() {
         }
         
         // 尝试在版本链上查找可见版本
-        if(context_ && context_->txn_) {
+        if(version_info) {
             Rid current_rid{rid_.page_no, record_pair.second};
             auto visible_version = txn_manager->GetVisibleRecord(
                 version_info, current_rid, context_->txn_);
