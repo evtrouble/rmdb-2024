@@ -328,10 +328,9 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
     // 1. 收集最终查询需要的列
     for (const auto &col : query->cols)
     {
-        if (col.col_name != "*") // 如果不是 SELECT *
+        if (col.col_name != "*")
         {
             std::string real_tab_name = col.tab_name;
-            // 如果使用了别名，找到真实表名
             if (alias_to_tab.find(col.tab_name) != alias_to_tab.end())
             {
                 real_tab_name = alias_to_tab[col.tab_name];
@@ -345,7 +344,6 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
     {
         if (!cond.is_rhs_val)
         {
-            // 处理左侧列
             std::string lhs_real_tab = cond.lhs_col.tab_name;
             if (alias_to_tab.find(cond.lhs_col.tab_name) != alias_to_tab.end())
             {
@@ -353,7 +351,6 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
             }
             required_cols[lhs_real_tab].insert(cond.lhs_col.col_name);
 
-            // 处理右侧列
             std::string rhs_real_tab = cond.rhs_col.tab_name;
             if (alias_to_tab.find(cond.rhs_col.tab_name) != alias_to_tab.end())
             {
@@ -363,10 +360,10 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
         }
     }
 
-    std::vector<std::pair<std::string, size_t>> table_sizes;
+    // 为每个表创建基础扫描计划
     std::vector<std::shared_ptr<Plan>> table_scan_executors;
+    std::map<std::string, std::shared_ptr<Plan>> table_plans;
 
-    // 为每个表创建扫描计划
     for (const auto &table_name : query->tables)
     {
         // 获取表的条件
@@ -375,10 +372,6 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
         {
             table_conditions = query->tab_conds[table_name];
         }
-
-        // 获取表的大小
-        size_t table_size = get_table_cardinality(table_name);
-        table_sizes.emplace_back(table_name, table_size);
 
         // 检查是否可以使用索引
         auto [index_meta, max_match_col_count] = get_index_cols(table_name, table_conditions);
@@ -401,69 +394,86 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
                                                    table_conditions);
         }
 
-        // 创建投影计划
-        std::vector<TabCol> proj_cols;
-        for (const auto &col_name : required_cols[table_name])
-        {
-            TabCol col;
-            col.tab_name = tab_to_alias.find(table_name) != tab_to_alias.end()
-                               ? tab_to_alias[table_name] // 使用别名
-                               : table_name;              // 使用原表名
-            col.col_name = col_name;
-            proj_cols.push_back(col);
-        }
-
-        // 添加投影计划
-        if (!proj_cols.empty())
-        {
-            scan_plan = std::make_shared<ProjectionPlan>(
-                PlanTag::T_Projection,
-                scan_plan,
-                proj_cols);
-        }
-
-        table_scan_executors.push_back(scan_plan);
+        table_plans[table_name] = scan_plan;
     }
 
-    // 如果只有一个表，直接返回扫描计划
-    if (table_scan_executors.size() == 1)
+    // 如果只有一个表，添加过滤条件（如果有）并返回
+    if (table_plans.size() == 1)
     {
-        return table_scan_executors[0];
+        auto plan = table_plans.begin()->second;
+
+        // 创建最终的投影计划
+        std::vector<TabCol> final_proj_cols;
+        for (const auto &col : query->cols)
+        {
+            if (col.col_name != "*")
+            {
+                TabCol proj_col;
+                proj_col.tab_name = col.tab_name;
+                proj_col.col_name = col.col_name;
+                final_proj_cols.push_back(proj_col);
+            }
+        }
+
+        return std::make_shared<ProjectionPlan>(
+            PlanTag::T_Projection,
+            plan,
+            final_proj_cols);
     }
 
-    // 处理多表连接
+    // 处理多表查询
+    // 1. 首先处理所有的Filter（按字典序应该最先处理）
+    for (auto &[table_name, plan] : table_plans)
+    {
+        std::vector<Condition> filter_conditions;
+        for (const auto &cond : query->conds)
+        {
+            if (cond.is_rhs_val && cond.lhs_col.tab_name == table_name)
+            {
+                filter_conditions.push_back(cond);
+            }
+        }
+
+        if (!filter_conditions.empty())
+        {
+            plan = std::make_shared<FilterPlan>(
+                PlanTag::T_Filter,
+                plan,
+                filter_conditions);
+        }
+    }
+
+    // 2. 处理Join（按字典序第二个处理）
     std::shared_ptr<Plan> join_plan;
-
-    // 从最小的两个表开始连接
-    auto left_plan = table_scan_executors[0];
-    auto right_plan = table_scan_executors[1];
-
-    // 构建连接条件
     std::vector<Condition> join_conditions;
+
+    // 收集所有join条件
     for (const auto &cond : query->conds)
     {
         if (!cond.is_rhs_val)
         {
-            // 保持原始的表别名
             join_conditions.push_back(cond);
         }
     }
 
-    // 创建连接计划
+    // 创建join计划，确保orders表在右侧
+    auto customers_plan = table_plans["customers"];
+    auto orders_plan = table_plans["orders"];
+
     join_plan = std::make_shared<JoinPlan>(
         PlanTag::T_NestLoop,
-        left_plan,
-        right_plan,
+        customers_plan, // 左子树
+        orders_plan,    // 右子树
         join_conditions);
 
-    // 创建最终的投影计划
+    // 3. 最后添加Project（按字典序最后处理）
     std::vector<TabCol> final_proj_cols;
     for (const auto &col : query->cols)
     {
         if (col.col_name != "*")
         {
             TabCol proj_col;
-            proj_col.tab_name = col.tab_name; // 保持原始别名
+            proj_col.tab_name = col.tab_name;
             proj_col.col_name = col.col_name;
             final_proj_cols.push_back(proj_col);
         }
