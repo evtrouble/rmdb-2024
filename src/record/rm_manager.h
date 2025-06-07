@@ -76,5 +76,5 @@ public:
      * @description: 关闭表的数据文件
      * @param {RmFileHandle*} file_handle 要关闭文件的句柄
      */
-    void close_file(const RmFileHandle *file_handle);
+    void close_file(const RmFileHandle *file_handle, bool flush = true);
 };

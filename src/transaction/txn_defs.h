@@ -36,17 +36,23 @@ enum class WType { INSERT_TUPLE = 0, DELETE_TUPLE, UPDATE_TUPLE, IX_INSERT_TUPLE
  * | wtype | tab_name | tuple_rid | tuple_value |
  * ----------------------------------------------
  */
-class WriteRecord {
-   public:
+class UndoLog;
+class WriteRecord
+{
+public:
     WriteRecord() = default;
 
     // constructor for insert operation
     WriteRecord(WType wtype, const std::string &tab_name, const Rid &rid)
         : wtype_(wtype), tab_name_(tab_name), rid_(rid) {}
 
-    // constructor for delete & update operation
+    // constructor for index delete & insert operation
     WriteRecord(WType wtype, const std::string &tab_name, const Rid &rid, const RmRecord &record)
-        : wtype_(wtype), tab_name_(tab_name), rid_(rid), record_(record) {}
+        : wtype_(wtype), tab_name_(tab_name), rid_(rid), record_(std::move(record)) {}
+
+    // onstructor for delete & update operation
+    WriteRecord(const std::string &tab_name, const Rid &rid, UndoLog *undolog)
+        : tab_name_(tab_name), rid_(rid), undolog_(undolog) {}
 
     ~WriteRecord() = default;
 
@@ -58,11 +64,14 @@ class WriteRecord {
 
     inline std::string &GetTableName() { return tab_name_; }
 
-   private:
+    inline UndoLog *GetUndoLog() { return undolog_; }
+
+private:
     WType wtype_;
     std::string tab_name_;
     Rid rid_;
     RmRecord record_;
+    UndoLog *undolog_ = nullptr;
 };
 
 /* 多粒度锁，加锁对象的类型，包括记录和表 */

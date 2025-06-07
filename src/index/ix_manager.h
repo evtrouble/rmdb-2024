@@ -72,5 +72,5 @@ public:
 
     std::shared_ptr<IxIndexHandle> open_index(const std::string &filename, const std::vector<std::string> &index_cols);
 
-    void close_index(const IxIndexHandle *ih);
+    void close_index(const IxIndexHandle *ih, bool flush = true);
 };

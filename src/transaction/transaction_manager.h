@@ -111,7 +111,7 @@ public:
     std::optional<RmRecord> GetVisibleRecord(int fd, const Rid &rid, Transaction *current_txn);
 
     bool UpdateUndoLink(int fd, const Rid &rid, UndoLog* prev_link,
-                                            std::function<bool(UndoLog*)> &&check);
+                                            std::function<bool(UndoLog*)> &&check = nullptr);
     /** 保护版本信息 */
     std::shared_mutex version_info_mutex_;
     /** 存储表堆中每个元组的先前版本。 */
@@ -123,7 +123,7 @@ public:
 
     // 获取MVCC所需的隐藏字段定义
     std::vector<ColDef> get_hidden_columns() const {
-        if (concurrency_mode_ != ConcurrencyMode::MVCC) {
+        if (concurrency_mode_ != ConcurrencyMode::MVCC) [[unlikely]] {
             return {};
         }
         return {
@@ -148,7 +148,7 @@ public:
     }
 
     txn_id_t get_record_txn_id(const char* data) const {
-        if (concurrency_mode_ != ConcurrencyMode::MVCC) {
+        if (concurrency_mode_ != ConcurrencyMode::MVCC) [[unlikely]] {
             return INVALID_TXN_ID;
         }
         txn_id_t txn_id;
@@ -156,18 +156,37 @@ public:
         return txn_id;
     }
 
-    void set_record_txn_id(char* data, txn_id_t txn_id) const {
-        if (concurrency_mode_ != ConcurrencyMode::MVCC) {
+    void set_record_txn_id(char* data, txn_id_t txn_id, bool is_delete = false) const {
+        if (concurrency_mode_ != ConcurrencyMode::MVCC) [[unlikely]] {
             return;
         }
+        if(is_delete)
+            txn_id |= TXN_DELETE_TAG;
         memcpy(data + sizeof(timestamp_t), &txn_id, sizeof(txn_id_t));
     }
 
     void set_record_commit_ts(char* data, timestamp_t commit_ts) const {
-        if (concurrency_mode_ != ConcurrencyMode::MVCC) {
+        if (concurrency_mode_ != ConcurrencyMode::MVCC) [[unlikely]] {
             return;
         }
         memcpy(data, &commit_ts, sizeof(timestamp_t));
+    }
+
+    bool is_write_conflict(const char* data, Transaction* txn) const {
+        if (concurrency_mode_ != ConcurrencyMode::MVCC) [[unlikely]] {
+            return false; // 在非MVCC模式下，不存在写冲突
+        }
+        txn_id_t record_txn_id = get_record_txn_id(data);
+
+        if(record_txn_id == txn->get_transaction_id()){
+            return false;
+        }
+        timestamp_t record_commit_ts = get_record_commit_ts(data);
+
+        if(record_commit_ts == INVALID_TIMESTAMP) {
+            return true; // 记录未提交或不存在
+        }
+        return false;
     }
 
     /**
@@ -175,10 +194,12 @@ public:
      * @return {bool} 如果返回true，表示记录已被删除或当前版本不可见(需要查找版本链)
      */
     bool need_find_version_chain(timestamp_t commit_ts, txn_id_t txn_id, Transaction* txn) const {
-        if (concurrency_mode_ != ConcurrencyMode::MVCC) {
+        if (concurrency_mode_ != ConcurrencyMode::MVCC) [[unlikely]] {
             return false; // 在非MVCC模式下，记录不会被删除或不可见
         }
-        return false;
+        txn_id &= (TXN_DELETE_TAG - 1);
+        if(txn_id == txn->get_transaction_id())
+            return false;
         if (commit_ts == INVALID_TIMESTAMP || commit_ts > txn->get_start_ts())
         {
             return true;
@@ -188,19 +209,27 @@ public:
 
     inline bool is_deleted(timestamp_t commit_ts) const
     {
-        if (concurrency_mode_ != ConcurrencyMode::MVCC) {
+        if (concurrency_mode_ != ConcurrencyMode::MVCC) [[unlikely]] {
             return false; // 在非MVCC模式下，记录不会被删除或不可见
         }
-        return commit_ts == TXN_START_ID;
+        return (commit_ts & TXN_DELETE_TAG);
     }
 
     timestamp_t get_record_commit_ts(const char* data) const {
-        if (concurrency_mode_ != ConcurrencyMode::MVCC) {
+        if (concurrency_mode_ != ConcurrencyMode::MVCC) [[unlikely]] {
             return INVALID_TIMESTAMP;
         }
         timestamp_t commit_ts;
         memcpy(&commit_ts, data, sizeof(timestamp_t));
         return commit_ts;
+    }
+
+    void mark_deleted(char* data) {
+        if (concurrency_mode_ != ConcurrencyMode::MVCC) [[unlikely]] {
+            return;
+        }
+        txn_id_t record_txn_id = get_record_txn_id(data);
+        set_record_txn_id(data, record_txn_id, true);
     }
 
 private:

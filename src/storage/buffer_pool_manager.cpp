@@ -172,7 +172,7 @@ bool BufferPoolManager::delete_page(PageId page_id) {
     return true;
 }
 
-void BufferPoolManager::flush_all_pages(int fd) {
+void BufferPoolManager::flush_all_pages(int fd, bool flush) {
     for (auto& bucket : buckets_) {
         std::unique_lock lock(bucket.latch);
         auto it = bucket.page_table.begin();
@@ -183,7 +183,7 @@ void BufferPoolManager::flush_all_pages(int fd) {
                 continue;
             }
             Page& page = pages_[frame_id];
-            if (page.is_dirty_.exchange(false)) {
+            if (page.is_dirty_.exchange(false) && flush) {
                 disk_manager_->write_page(pid.fd, pid.page_no, page.data_, PAGE_SIZE);
             }
             page.pin_count_.store(0);

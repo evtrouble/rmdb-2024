@@ -174,7 +174,7 @@ public:
     ~IxIndexHandle() { 
         if(is_deleted) {
             auto index_name = ix_manager_->disk_manager_->get_file_name(fd_); // 获取文件名
-            ix_manager_->close_index(this);
+            ix_manager_->close_index(this, false);
             ix_manager_->disk_manager_->destroy_file(index_name); // 删除文件
         }
         else

@@ -24,6 +24,31 @@ See the Mulan PSL v2 for more details. */
 
 class Transaction;
 
+// 时间戳对象
+struct TimestampRef {
+    timestamp_t ts_;
+    std::atomic<int> ref_count_;
+    TimestampRef() : ts_{INVALID_TS}, ref_count_{1}{}
+
+    inline void dup() {
+        ref_count_.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    inline void release() {
+        if(ref_count_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+            delete this;
+        }
+    }
+
+    inline void set_timestamp(timestamp_t commit_ts) {
+        ts_ = commit_ts;
+    }
+
+    // 禁止拷贝和赋值
+    TimestampRef(const TimestampRef&) = delete;
+    TimestampRef& operator=(const TimestampRef&) = delete;
+};
+
 struct UndoLog
 {
   /* 此日志是否为删除标记 */
@@ -34,9 +59,18 @@ struct UndoLog
   // std::vector<Value> tuple_;
   RmRecord tuple_;
   /* 此撤销日志的时间戳 */
-  timestamp_t ts_{INVALID_TS};
+  // timestamp_t ts_{INVALID_TS};
+  TimestampRef *ts_ref_;
   /* 撤销日志的前一个版本 */
   UndoLog* prev_version_{nullptr};
+
+  UndoLog(bool is_deleted, const RmRecord& tuple, TimestampRef *ts_ref)
+   : is_deleted_(is_deleted), tuple_(std::move(tuple)), ts_ref_(ts_ref)
+  {
+    ts_ref_->dup();
+  }
+
+  ~UndoLog() { ts_ref_->release(); }
 };
 
 class TransactionManager;
@@ -48,14 +82,17 @@ public:
       : state_(TransactionState::DEFAULT), isolation_level_(isolation_level), txn_id_(txn_id), txn_manager_(txn_manager)
   {
     write_set_ = std::make_shared<std::deque<WriteRecord *>>();
-    // lock_set_ = std::make_shared<std::unordered_set<LockDataId>>();
+    lock_set_ = std::make_shared<std::unordered_set<LockDataId>>();
     index_latch_page_set_ = std::make_shared<std::deque<Page *>>();
     index_deleted_page_set_ = std::make_shared<std::deque<Page *>>();
     prev_lsn_ = INVALID_LSN;
     thread_id_ = std::this_thread::get_id();
+    ref = new TimestampRef;
   }
 
-  ~Transaction() = default;
+  ~Transaction() {
+    ref->release();
+  }
 
   inline txn_id_t get_transaction_id() { return txn_id_; }
 
@@ -84,10 +121,12 @@ public:
   inline std::shared_ptr<std::deque<Page *>> get_index_latch_page_set() { return index_latch_page_set_; }
   inline void append_index_latch_page_set(Page *page) { index_latch_page_set_->push_back(page); }
 
-  // inline std::shared_ptr<std::unordered_set<LockDataId>> get_lock_set() { return lock_set_; }
+  inline TimestampRef *get_timestame_ref() { return ref; }
+  inline void set_commit_ts(timestamp_t commit_ts) {ref->set_timestamp(commit_ts); }
+  inline std::shared_ptr<std::unordered_set<LockDataId>> get_lock_set() { return lock_set_; }
 
   // inline timestamp_t get_read_ts() const { return read_ts_; }
-  inline timestamp_t get_commit_ts() const { return commit_ts_; }
+  // inline timestamp_t get_commit_ts() const { return commit_ts_; }
   inline TransactionManager *get_txn_manager() const { return txn_manager_; }
 
 private:
@@ -100,13 +139,14 @@ private:
   timestamp_t start_ts_;           // 事务的开始时间戳
 
   std::shared_ptr<std::deque<WriteRecord *>> write_set_;       // 事务包含的所有写操作
-  // std::shared_ptr<std::unordered_set<LockDataId>> lock_set_;   // 事务申请的所有锁
+  std::shared_ptr<std::unordered_set<LockDataId>> lock_set_;   // 事务申请的所有锁
   std::shared_ptr<std::deque<Page *>> index_latch_page_set_;   // 维护事务执行过程中加锁的索引页面
   std::shared_ptr<std::deque<Page *>> index_deleted_page_set_; // 维护事务执行过程中删除的索引页面
 
   // std::atomic<timestamp_t> read_ts_{0};
   /** 提交时间戳 */
-  std::atomic<timestamp_t> commit_ts_{INVALID_TS};
+  // std::atomic<timestamp_t> commit_ts_{INVALID_TS};
+  TimestampRef* ref;
 
   /** 用于访问事务级撤销日志的锁。 */
   std::shared_mutex latch_;

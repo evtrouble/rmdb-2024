@@ -69,6 +69,8 @@ void TransactionManager::commit(Context *context, LogManager *log_manager)
         delete write;
     }
     txn->get_write_set()->clear();
+    txn->set_commit_ts(next_timestamp_++);
+    // __atomic_store_n();
 
     // txn->set_commit_ts(next_timestamp_++); // 设置提交时间戳
 
@@ -250,7 +252,9 @@ std::optional<RmRecord> TransactionManager::GetVisibleRecord(int fd, const Rid& 
     // 遍历版本链找到可见版本
     while (current) {
         // 已提交事务的版本根据时间戳判断可见性
-        if (current->ts_ <= current_txn->get_start_ts()) {
+        int ts = current->ts_ref_->ts_;
+        if (ts != INVALID_TIMESTAMP && ts <= current_txn->get_start_ts())
+        {
             if(current->is_deleted_) {
                 return std::nullopt; // 如果是删除标记，直接返回空
             }
@@ -335,7 +339,8 @@ void TransactionManager::TruncateVersionChain(std::shared_ptr<PageVersionInfo> p
    
     // 遍历版本链找到截断点 - 保持页面级读锁
     while (current) {
-        if (current->ts_ < watermark) {
+        int ts = current->ts_ref_->ts_;
+        if (ts != INVALID_TIMESTAMP && ts < watermark) {
             // 设置截断点的下一个版本为空
             auto next = current->prev_version_;
             current->prev_version_ = nullptr; // 清除当前版本的前一个版本引用

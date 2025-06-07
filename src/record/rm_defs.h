@@ -69,7 +69,7 @@ struct RmRecord
 
     RmRecord &operator=(const RmRecord &other)
     {
-        if (size != other.size)
+        if (size <= other.size)
         {
             size = other.size;
             if (allocated_)

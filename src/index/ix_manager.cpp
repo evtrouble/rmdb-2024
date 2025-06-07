@@ -108,13 +108,16 @@ std::shared_ptr<IxIndexHandle> IxManager::open_index(const std::string &filename
     return std::make_shared<IxIndexHandle>(this, fd);
 }
 
-void IxManager::close_index(const IxIndexHandle *ih)
+void IxManager::close_index(const IxIndexHandle *ih, bool flush)
 {
-    char *data = new char[ih->file_hdr_->tot_len_];
-    ih->file_hdr_->serialize(data);
-    disk_manager_->write_page(ih->fd_, IX_FILE_HDR_PAGE, data, ih->file_hdr_->tot_len_);
+    if(flush)
+    {
+        char *data = new char[ih->file_hdr_->tot_len_];
+        ih->file_hdr_->serialize(data);
+        disk_manager_->write_page(ih->fd_, IX_FILE_HDR_PAGE, data, ih->file_hdr_->tot_len_);
+        delete[] data;
+    }
     // 缓冲区的所有页刷到磁盘，注意这句话必须写在close_file前面
-    buffer_pool_manager_->flush_all_pages(ih->fd_);
+    buffer_pool_manager_->flush_all_pages(ih->fd_, flush);
     disk_manager_->close_file(ih->fd_);
-    delete[] data;
 }

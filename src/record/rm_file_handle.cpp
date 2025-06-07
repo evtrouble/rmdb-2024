@@ -199,12 +199,32 @@ void RmFileHandle::delete_record(const Rid &rid, Context *context)
         throw RecordNotFoundError(rid.page_no, rid.slot_no);
 
     // 3. 更新bitmap，标记slot为空闲
-    Bitmap::reset(page_handle.bitmap, rid.slot_no);
-    page_handle.page_hdr->num_records--;
+    // Bitmap::reset(page_handle.bitmap, rid.slot_no);
+    // page_handle.page_hdr->num_records--;
 
-    // 4. 如果页面从满状态变为未满状态，需要更新空闲页面链表
-    if (page_handle.page_hdr->num_records == file_hdr_.num_records_per_page - 1)
-        release_page_handle(page_handle);
+    TransactionManager *txn_mgr = context->txn_->get_txn_manager();
+    char *data = page_handle.get_slot(rid.slot_no);
+    if (txn_mgr->get_concurrency_mode() == ConcurrencyMode::MVCC)
+    {
+        if(txn_mgr->is_write_conflict(data, context->txn_))
+            throw TransactionAbortException(context->txn_->get_transaction_id(), 
+                AbortReason::UPGRADE_CONFLICT);
+        UndoLog *undolog = new UndoLog(false, RmRecord(data, file_hdr_.record_size),
+                                       context->txn_->get_timestame_ref());
+        txn_mgr->UpdateUndoLink(fd_, rid, undolog);
+        txn_mgr->mark_deleted(data);
+
+        auto write_record = new WriteRecord(rm_manager_->disk_manager_->get_file_name(fd_), 
+            rid, undolog);
+        context->txn_->append_write_record(write_record);
+    } else {
+        Bitmap::reset(page_handle.bitmap, rid.slot_no);
+        page_handle.page_hdr->num_records--;
+            // 4. 如果页面从满状态变为未满状态，需要更新空闲页面链表
+        if (page_handle.page_hdr->num_records == file_hdr_.num_records_per_page - 1)
+            release_page_handle(page_handle);
+    }
+
     rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);
 }
 
@@ -226,38 +246,25 @@ void RmFileHandle::update_record(const Rid &rid, char *buf, Context *context)
         throw RecordNotFoundError(rid.page_no, rid.slot_no);
     }
 
-    // 3. 更新记录数据
+    TransactionManager *txn_mgr = context->txn_->get_txn_manager();
+    char *data = page_handle.get_slot(rid.slot_no);
+    if (txn_mgr->get_concurrency_mode() == ConcurrencyMode::MVCC)
+    {
+        if(txn_mgr->is_write_conflict(data, context->txn_))
+            throw TransactionAbortException(context->txn_->get_transaction_id(), 
+                AbortReason::UPGRADE_CONFLICT);
+        UndoLog *undolog = new UndoLog(false, RmRecord(data, file_hdr_.record_size),
+                                       context->txn_->get_timestame_ref());
+        txn_mgr->UpdateUndoLink(fd_, rid, undolog);
+
+        auto write_record = new WriteRecord(rm_manager_->disk_manager_->get_file_name(fd_), 
+            rid, undolog);
+        context->txn_->append_write_record(write_record);
+    }
+
     memcpy(page_handle.get_slot(rid.slot_no), buf, file_hdr_.record_size);
     rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);
 }
-
-/**
- * @description: 获取记录的可见版本(MVCC)
- * @param {Rid&} rid 记录ID
- * @param {Context*} context 事务上下文
- * @return {unique_ptr<RmRecord>} 记录的可见版本
- */
-// std::unique_ptr<RmRecord> RmFileHandle::get_record_version(const Rid &rid, Context *context) const {
-//     if (context->txn_mgr_->get_concurrency_mode() != ConcurrencyMode::MVCC) {
-//         return get_record(rid, context);
-//     }
-
-//     // 获取磁盘上的版本
-//     auto record = get_record(rid, context);
-//     if (!record) return nullptr;
-
-//     // 检查版本可见性
-//     auto visible_version = context->txn_mgr_->GetVisibleRecord(fd_, rid, context->txn_);
-//     if (!visible_version) {
-//         return record;  // 如果没有可见的历史版本,返回当前版本
-//     }
-
-//     // 返回找到的可见版本
-//     auto visible_record = std::make_unique<RmRecord>(file_hdr_.record_size);
-//     memcpy(visible_record->data, visible_version->tuple_.data(), file_hdr_.record_size);
-//     return visible_record;
-// }
-
 
 /**
  * 以下函数为辅助函数，仅提供参考，可以选择完成如下函数，也可以删除如下函数，在单元测试中不涉及如下函数接口的直接调用

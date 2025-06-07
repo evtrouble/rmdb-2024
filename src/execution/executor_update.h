@@ -99,6 +99,7 @@ public:
             return nullptr;
 
         // 遍历所有需要更新的记录
+        TransactionManager *txn_mgr = context_->txn_->get_txn_manager();
         RmRecord old_rec;
         for (auto &rid : rids_) {
             // 获取原记录
@@ -109,15 +110,21 @@ public:
                 memcpy(rec.data + set_col_metas[i]->offset, set_clauses_[i].rhs.raw->data, set_col_metas[i]->len);
             }
 
+            txn_mgr->set_record_commit_ts(rec.data, INVALID_TIMESTAMP);
+            txn_mgr->set_record_txn_id(rec.data, context_->txn_->get_transaction_id());
+
             // 更新索引
             update_indexes(old_rec, rec, rid);
 
             // 更新记录
             fh_->update_record(rid, rec.data, context_);
 
-            auto write_record = new WriteRecord(WType::UPDATE_TUPLE,
-                                                tab_name_, rid, rec);
-            context_->txn_->append_write_record(write_record);
+            if(txn_mgr->get_concurrency_mode() != ConcurrencyMode::MVCC)
+            {
+                auto write_record = new WriteRecord(WType::UPDATE_TUPLE,
+                    tab_name_, rid, old_rec);
+                context_->txn_->append_write_record(write_record);
+            }
         }
 
         return nullptr;

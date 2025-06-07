@@ -76,7 +76,7 @@ public:
         if(is_deleted_) {
             std::string file_name = disk_manager_->get_file_name(fd_);
             // 如果文件被标记为已删除，则不需要写回file_hdr到磁盘
-            rm_manager_->close_file(this);
+            rm_manager_->close_file(this, false);
             disk_manager_->destroy_file(file_name);
         }
         else

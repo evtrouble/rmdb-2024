@@ -63,12 +63,7 @@ public:
         }
 
         txn_mgr->set_record_commit_ts(rec.data, INVALID_TIMESTAMP);
-        txn_mgr->set_record_txn_id(rec.data, context_->txn_->get_transaction_id());
-
-        // Insert into record file
-        rid_ = fh_->insert_record(rec.data, context_);
-        context_->txn_->append_write_record(new WriteRecord(WType::INSERT_TUPLE,
-                                                            tab_name_, rid_, rec));
+        txn_mgr->set_record_txn_id(rec.data, context_->txn_->get_transaction_id(), false);
 
         // Insert into index
         for (size_t id = 0; id < tab_.indexes.size(); id++) {
@@ -81,6 +76,11 @@ public:
             }
             ihs_[id]->insert_entry(key.get(), rid_, context_->txn_);
         }
+
+        // Insert into record file
+        rid_ = fh_->insert_record(rec.data, context_);
+        context_->txn_->append_write_record(new WriteRecord(WType::INSERT_TUPLE,
+                                                            tab_name_, rid_));
 
         return nullptr;
     }
