@@ -347,10 +347,11 @@ private:
             ss << val.float_val;
             break;
         case TYPE_STRING:
-            ss << val.str_val;
+        case TYPE_DATETIME:
+            ss << "'" << val.str_val << "'";
             break;
         default:
-            ss << "unknown";
+            ss << "unknown_type";
             break;
         }
         return ss.str();
@@ -618,21 +619,8 @@ public:
         }
         if (cond.is_rhs_val)
         {
-            switch (cond.rhs_val.type)
-            {
-            case TYPE_INT:
-                ss << cond.rhs_val.int_val;
-                break;
-            case TYPE_FLOAT:
-                ss << cond.rhs_val.float_val;
-                break;
-            case TYPE_STRING:
-                ss << cond.rhs_val.str_val;
-                break;
-            default:
-                ss << "unknown_type";
-                break;
-            }
+            // 修改：直接调用 get_value_string 函数，确保字符串/日期值有引号
+            ss << get_value_string(cond.rhs_val);
         }
         else
         {
