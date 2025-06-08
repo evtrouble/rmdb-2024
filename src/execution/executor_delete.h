@@ -64,43 +64,34 @@ public:
         if (rids_.empty())
             return nullptr;
 
-        try
+        // 遍历所有需要删除的记录
+        for (auto &rid : rids_)
         {
-            // 遍历所有需要删除的记录
-            for (auto &rid : rids_)
+            // 获取要删除的记录
+            RmRecord rec = *fh_->get_record(rid, context_);
+
+            // 删除相关的索引
+            for (size_t i = 0; i < tab_.indexes.size(); ++i)
             {
-                // 获取要删除的记录
-                RmRecord rec = *fh_->get_record(rid, context_);
+                auto &index = tab_.indexes[i];
+                auto ih = ihs_[i];
 
-                // 删除相关的索引
-                for (size_t i = 0; i < tab_.indexes.size(); ++i)
-                {
-                    auto &index = tab_.indexes[i];
-                    auto ih = ihs_[i];
+                // 构建索引键
+                auto key = build_index_key(index, rec);
 
-                    // 构建索引键
-                    auto key = build_index_key(index, rec);
-
-                    // 删除索引项
-                    ih->delete_entry(key.get(), rid, context_->txn_);
-                }
-
-                // 删除记录
-                fh_->delete_record(rid, context_);
-                if(context_->txn_->get_txn_manager()->get_concurrency_mode() != 
-                    ConcurrencyMode::MVCC)
-                {
-                    auto write_record = new WriteRecord(WType::DELETE_TUPLE,
-                                tab_name_, rid, rec);
-                    context_->txn_->append_write_record(write_record);
-                }
+                // 删除索引项
+                ih->delete_entry(key.get(), rid, context_->txn_);
             }
-        }
-        catch (const std::exception &e)
-        {
-            // 处理异常，例如记录日志
-            std::cerr << "Error in DeleteExecutor: " << e.what() << std::endl;
-            return nullptr;
+
+            // 删除记录
+            fh_->delete_record(rid, context_);
+            if(context_->txn_->get_txn_manager()->get_concurrency_mode() != 
+                ConcurrencyMode::MVCC)
+            {
+                auto write_record = new WriteRecord(WType::DELETE_TUPLE,
+                            tab_name_, rid, rec);
+                context_->txn_->append_write_record(write_record);
+            }
         }
 
         return nullptr;
