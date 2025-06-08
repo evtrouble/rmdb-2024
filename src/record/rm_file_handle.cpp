@@ -459,14 +459,13 @@ void RmFileHandle::clean_page(int page_no, TransactionManager* txn_mgr, timestam
             if (txn_mgr->need_clean(record_txn, watermark))
             {
                 txn_mgr->DeleteVersionChain(fd_, rid);
+                if(txn_mgr->is_deleted(txn_id)) {
+                    to_delete.emplace_back(slot_no);
+            }
             }
             else
             {
                 txn_mgr->TruncateVersionChain(fd_, rid, watermark);
-            }
-
-            if(txn_mgr->is_deleted(txn_id)) {
-                to_delete.emplace_back(slot_no);
             }
         }
     }
@@ -478,7 +477,8 @@ void RmFileHandle::clean_page(int page_no, TransactionManager* txn_mgr, timestam
         for(auto slot_no : to_delete) {
             char* data = page_handle.get_slot(slot_no);
             txn_id_t txn_id = txn_mgr->get_record_txn_id(data);
-            if(txn_mgr->is_deleted(txn_id))
+            Transaction *record_txn = txn_mgr->get_or_create_transaction(txn_id);
+            if(txn_mgr->need_clean(record_txn, watermark) && txn_mgr->is_deleted(txn_id))
             {
                 Bitmap::reset(page_handle.bitmap, slot_no);
             }
