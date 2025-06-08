@@ -139,7 +139,7 @@ int IxNodeHandle::insert(const char *key, const Rid &value)
     // 1. 查找要插入的键值对应该插入到当前节点的哪个位置
     int idx = lower_bound(key);
     // 2. 如果key重复则不插入
-    if (idx != page_hdr->num_key && ix_compare(key, get_key(idx), file_hdr->col_types_, file_hdr->col_lens_) == 0)
+    if (idx != page_hdr->num_key && memcmp(key, get_key(idx), file_hdr->col_tot_len_) == 0)
     {
         throw IndexEntryAlreadyExistError();
     }
@@ -184,7 +184,7 @@ int IxNodeHandle::remove(const char *key)
     int index = lower_bound(key);
     // 2. 如果要删除的键值对存在，删除键值对
     if (index != page_hdr->num_key &&
-        !ix_compare(key, get_key(index), file_hdr->col_types_, file_hdr->col_lens_))
+        memcmp(key, get_key(index), file_hdr->col_tot_len_) == 0)
         erase_pair(index);
     // 3. 返回完成删除操作后的键值对数量
     return page_hdr->num_key;
@@ -464,7 +464,7 @@ bool IxIndexHandle::delete_entry(const char *key, const Rid &value, Transaction 
     int index = leaf_node.lower_bound(key);
 
     bool exist = ((index != leaf_node.page_hdr->num_key) &&
-                  !ix_compare(key, leaf_node.get_key(index), file_hdr_->col_types_, file_hdr_->col_lens_));
+                  memcmp(key, leaf_node.get_key(index), file_hdr_->col_tot_len_) == 0);
 
     if (exist)
     {
@@ -846,13 +846,15 @@ void IxIndexHandle::maintain_parent(IxNodeHandle &node)
         char *child_first_key = curr.get_key(0);
         if (memcmp(parent_key, child_first_key, file_hdr_->col_tot_len_) == 0)
         {
-            assert(buffer_pool_manager_->unpin_page(parent.get_page_id(), true));
+            [[maybe_unused]] bool ret = buffer_pool_manager_->unpin_page(parent.get_page_id(), true);
+            assert(ret);
             break;
         }
         memcpy(parent_key, child_first_key, file_hdr_->col_tot_len_); // 修改了parent node
         curr = parent;
 
-        assert(buffer_pool_manager_->unpin_page(parent.get_page_id(), true));
+        [[maybe_unused]] bool ret = buffer_pool_manager_->unpin_page(parent.get_page_id(), true);
+        assert(ret);
     }
 }
 void IxIndexHandle::maintain_child(IxNodeHandle &node, int child_idx)
