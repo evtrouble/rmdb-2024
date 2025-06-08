@@ -67,6 +67,13 @@ struct RmRecord
         memcpy(data, other.data, size);
     };
 
+    RmRecord(RmRecord &&other) noexcept : data(other.data), size(other.size), allocated_(true)
+    {
+        other.data = nullptr;
+        other.size = 0;
+        other.allocated_ = false;
+    }
+
     RmRecord &operator=(const RmRecord &other)
     {
         if (size <= other.size)

@@ -113,6 +113,7 @@ void *client_handler(void *sock_fd)
         }
         if (strcmp(data_recv, "crash") == 0)
         {
+            txn_manager->StopPurgeCleaner();
             std::cout << "Server crash" << std::endl;
             exit(1);
         }

@@ -31,12 +31,11 @@ Transaction *TransactionManager::begin(Transaction *txn, LogManager *log_manager
     // 如果需要支持MVCC请在上述过程中添加代码
     if (txn == nullptr)
     {
-        // 生成新的事务ID
-        txn_id_t new_txn_id = next_txn_id_++;
         // 创建新事务，使用默认的可串行化隔离级别
+        txn_id_t new_txn_id = next_txn_id_++;
         txn = new Transaction(new_txn_id, this);
         // 设置事务开始时间戳
-        txn->set_start_ts(next_timestamp_++);
+        txn->set_start_ts(next_timestamp_);
     }
 
     // 设置事务状态为GROWING（增长阶段）
@@ -67,13 +66,14 @@ void TransactionManager::commit(Context *context, LogManager *log_manager)
     // 4. 把事务日志刷入磁盘中
     // 5. 更新事务状态
     // 如果需要支持MVCC请在上述过程中添加代码
-    for(auto write : *txn->get_write_set())
+    auto write_set = txn->get_write_set();
+    for(auto write : *write_set)
     {
         delete write;
     }
-    txn->get_write_set().reset();
+    write_set->clear(); // 清空写集
 
-    txn->set_commit_ts(next_timestamp_++); // 设置提交时间戳
+    txn->set_commit_ts(++next_timestamp_); // 设置提交时间戳
 
     // 2. 释放所有锁
     auto lock_set = txn->get_lock_set();
@@ -83,7 +83,7 @@ void TransactionManager::commit(Context *context, LogManager *log_manager)
     }
 
     // 3. 清空事务相关资源
-    lock_set.reset();
+    lock_set->clear(); // 清空锁集
 
     // 4. 把事务日志刷入磁盘
     if (log_manager != nullptr)
@@ -96,6 +96,7 @@ void TransactionManager::commit(Context *context, LogManager *log_manager)
 
     running_txns_.UpdateCommitTs(txn->get_commit_ts());
     running_txns_.RemoveTxn(txn->get_start_ts());
+    txn->reset(); 
 }
 
 /**
@@ -182,7 +183,7 @@ void TransactionManager::abort(Context *context, LogManager *log_manager)
         lock_manager_->unlock(txn, lock_data_id);
     }
     // 3. 清空事务相关资源，eg.锁集
-    lock_set.reset();
+    lock_set->clear(); // 清空锁集
     // 4. 把事务日志刷入磁盘中
     if (log_manager != nullptr)
     {
@@ -191,6 +192,7 @@ void TransactionManager::abort(Context *context, LogManager *log_manager)
     // 5. 更新事务状态
     txn->set_state(TransactionState::ABORTED);
     running_txns_.RemoveTxn(txn->get_start_ts());
+    txn->reset();
 }
 
 bool TransactionManager::UpdateUndoLink(int fd, const Rid &rid, UndoLog* prev_link,
@@ -423,6 +425,7 @@ void TransactionManager::StartPurgeCleaner()
         fin.close();
         next_timestamp_ = init_timestamp;
         next_txn_id_ = init_txn_id;
+        start_txn_id_ = init_txn_id;
     }
     if(concurrency_mode_ == ConcurrencyMode::MVCC)
     {

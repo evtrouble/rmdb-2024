@@ -27,8 +27,8 @@ class TransactionManager;
 class Transaction
 {
 public:
-  explicit Transaction(txn_id_t txn_id, TransactionManager *txn_manager, int ref_cnt = 1, IsolationLevel isolation_level = IsolationLevel::SERIALIZABLE)
-      : state_(TransactionState::DEFAULT), isolation_level_(isolation_level), txn_id_(txn_id), ref_count_{ref_cnt}, txn_manager_(txn_manager)
+  explicit Transaction(txn_id_t txn_id, TransactionManager *txn_manager, IsolationLevel isolation_level = IsolationLevel::SERIALIZABLE)
+      : state_(TransactionState::DEFAULT), isolation_level_(isolation_level), txn_id_(txn_id), txn_manager_(txn_manager)
   {
     write_set_ = std::make_shared<std::deque<WriteRecord *>>();
     lock_set_ = std::make_shared<std::unordered_set<LockDataId>>();
@@ -38,7 +38,10 @@ public:
     thread_id_ = std::this_thread::get_id();
   }
 
-  ~Transaction();
+  explicit Transaction(TransactionManager *txn_manager)
+      : commit_ts_{0}, ref_count_{0}, txn_manager_(txn_manager) {}
+
+  ~Transaction() = default;
 
   inline txn_id_t get_transaction_id() { return txn_id_; }
 
@@ -74,15 +77,18 @@ public:
   // inline timestamp_t get_read_ts() const { return read_ts_; }
   inline timestamp_t get_commit_ts() const { return commit_ts_; }
   inline TransactionManager *get_txn_manager() const { return txn_manager_; }
-  inline void dup() {
-      ref_count_.fetch_add(1, std::memory_order_relaxed);
+  inline void reset() {
+    lock_set_.reset();
+    write_set_.reset();
+    index_latch_page_set_.reset();
+    index_deleted_page_set_.reset();
   }
 
-  inline void release() {
-    if(ref_count_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-      delete this;
-    }
+  inline void dup() {
+    ref_count_.fetch_add(1, std::memory_order_relaxed);
   }
+
+  void release();
 
 private:
   bool txn_mode_;                  // 用于标识当前事务为显式事务还是单条SQL语句的隐式事务
@@ -125,14 +131,8 @@ struct UndoLog
   UndoLog* prev_version_{nullptr};
 
   // 不需要增加引用计数，在写入表中时已经增加过
-  // commit_ts_为0是一种特殊事务，表示数据库启动前表中已经存在的事务
   UndoLog(const RmRecord& tuple, Transaction* txn)
-   : tuple_(std::move(tuple)), txn_(txn), prev_version_{nullptr} {
-    if(txn_->get_commit_ts() == 0)
-    {
-      txn_->dup();
-    }
-  }
+   : tuple_(std::move(tuple)), txn_(txn), prev_version_{nullptr} {}
 
   ~UndoLog() { txn_->release(); }
 };

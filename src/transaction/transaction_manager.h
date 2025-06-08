@@ -49,6 +49,7 @@ public:
         sm_manager_ = sm_manager;
         lock_manager_ = lock_manager;
         concurrency_mode_ = concurrency_mode;
+        start_txn_ = new Transaction(this);
     }
 
     ~TransactionManager() {
@@ -56,6 +57,7 @@ public:
         if (purgeCleaner.joinable()) {
             purgeCleaner.join();
         }
+        delete start_txn_;
     }
 
     Transaction *begin(Transaction *txn, LogManager *log_manager);
@@ -130,6 +132,8 @@ public:
     Transaction* get_or_create_transaction(txn_id_t txn_id)
     {
         txn_id &= TXN_ID_MASK;
+        if(start_txn_id_ > txn_id)
+            return start_txn_;
         {
             std::shared_lock lock(txn_map_mutex_);
             auto iter = txn_map.find(txn_id);
@@ -138,14 +142,7 @@ public:
                 return iter->second;
             }
         }
-
-        Transaction *txn;
-        {
-            std::unique_lock lock(txn_map_mutex_);
-            txn = txn_map.emplace(txn_id, new Transaction(txn_id, this, 0)).first->second;
-        }
-        txn->set_commit_ts(0);
-        return txn;
+        return nullptr;
     }
 
     std::optional<RmRecord> GetVisibleRecord(int fd, const Rid &rid, Transaction *current_txn);
@@ -243,6 +240,8 @@ private:
     LockManager *lock_manager_;
     std::thread purgeCleaner;
     bool terminate_purge_cleaner_{false}; // 用于终止清理线程
+    txn_id_t start_txn_id_{0};
+    Transaction *start_txn_{nullptr}; // 特殊事务，用于处理数据库启动前的事务
 
     // std::atomic<timestamp_t> last_commit_ts_{0}; // 最后提交的时间戳,仅用于MVCC
     Watermark running_txns_{0};                  // 存储所有正在运行事务的读取时间戳，以便于垃圾回收，仅用于MVCC

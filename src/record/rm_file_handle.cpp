@@ -427,7 +427,7 @@ void RmFileHandle::abort_update_record(const Rid &rid, char *buf)
 void RmFileHandle::clean_page(int page_no, TransactionManager* txn_mgr, timestamp_t watermark)
 {
     RmPageHandle page_handle = fetch_page_handle(page_no);
-    std::vector<int> to_delete;
+    std::vector<std::pair<Transaction*,int>> to_delete;
     to_delete.reserve(file_hdr_.num_records_per_page);
     PageId pageid{.fd = fd_, .page_no = page_no};
 
@@ -460,7 +460,7 @@ void RmFileHandle::clean_page(int page_no, TransactionManager* txn_mgr, timestam
             {
                 txn_mgr->DeleteVersionChain(fd_, rid);
                 if(txn_mgr->is_deleted(txn_id)) {
-                    to_delete.emplace_back(slot_no);
+                    to_delete.emplace_back(std::make_pair(record_txn, slot_no));
             }
             }
             else
@@ -474,14 +474,9 @@ void RmFileHandle::clean_page(int page_no, TransactionManager* txn_mgr, timestam
     if (to_delete.size()){
         change = true;
         std::unique_lock write_lock(page_handle.page->latch_);
-        for(auto slot_no : to_delete) {
-            char* data = page_handle.get_slot(slot_no);
-            txn_id_t txn_id = txn_mgr->get_record_txn_id(data);
-            Transaction *record_txn = txn_mgr->get_or_create_transaction(txn_id);
-            if(txn_mgr->need_clean(record_txn, watermark) && txn_mgr->is_deleted(txn_id))
-            {
-                Bitmap::reset(page_handle.bitmap, slot_no);
-            }
+        for(auto& [txn, slot_no] : to_delete) {
+            Bitmap::reset(page_handle.bitmap, slot_no);
+            txn->release();
         }
     }
 
