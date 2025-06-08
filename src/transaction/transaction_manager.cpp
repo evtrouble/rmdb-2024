@@ -83,7 +83,7 @@ void TransactionManager::commit(Context *context, LogManager *log_manager)
     }
 
     // 3. 清空事务相关资源
-    lock_set->clear();
+    lock_set.reset();
 
     // 4. 把事务日志刷入磁盘
     if (log_manager != nullptr)
@@ -96,7 +96,6 @@ void TransactionManager::commit(Context *context, LogManager *log_manager)
 
     running_txns_.UpdateCommitTs(txn->get_commit_ts());
     running_txns_.RemoveTxn(txn->get_start_ts());
-    txn->release();
 }
 
 /**
@@ -134,7 +133,6 @@ void TransactionManager::abort(Context *context, LogManager *log_manager)
             case WType::DELETE_TUPLE: {
                 if(abort_set.count(rid))break;
                 abort_set.emplace(rid);
-                txn->release();
                 auto undolog = write_record->GetUndoLog();
                 auto fh = sm_manager_->get_table_handle(write_record->GetTableName());
                 if (undolog == nullptr)
@@ -145,13 +143,13 @@ void TransactionManager::abort(Context *context, LogManager *log_manager)
                 {
                     undolog->txn_->dup(); // 增加引用计数
                     fh->abort_delete_record(rid, undolog->tuple_.data);
+                    txn->release();
                 }
             }
                 break;
             case WType::UPDATE_TUPLE:{
                 if(abort_set.count(rid))break;
                 abort_set.emplace(rid);
-                txn->release();
                 auto undolog = write_record->GetUndoLog();
                 auto fh = sm_manager_->get_table_handle(write_record->GetTableName());
                 if (undolog == nullptr)
@@ -162,6 +160,7 @@ void TransactionManager::abort(Context *context, LogManager *log_manager)
                 {
                     undolog->txn_->dup(); // 增加引用计数
                     fh->abort_update_record(rid, undolog->tuple_.data);
+                    txn->release();
                 }
             }
                 break;
@@ -183,7 +182,7 @@ void TransactionManager::abort(Context *context, LogManager *log_manager)
         lock_manager_->unlock(txn, lock_data_id);
     }
     // 3. 清空事务相关资源，eg.锁集
-    lock_set->clear();
+    lock_set.reset();
     // 4. 把事务日志刷入磁盘中
     if (log_manager != nullptr)
     {
@@ -192,7 +191,6 @@ void TransactionManager::abort(Context *context, LogManager *log_manager)
     // 5. 更新事务状态
     txn->set_state(TransactionState::ABORTED);
     running_txns_.RemoveTxn(txn->get_start_ts());
-    txn->release();
 }
 
 bool TransactionManager::UpdateUndoLink(int fd, const Rid &rid, UndoLog* prev_link,

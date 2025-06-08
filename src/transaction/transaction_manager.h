@@ -52,11 +52,9 @@ public:
     }
 
     ~TransactionManager() {
-        if(!terminate_purge_cleaner_) {
-            terminate_purge_cleaner_ = true;
-            if (purgeCleaner.joinable()) {
-                purgeCleaner.join();
-            }
+        terminate_purge_cleaner_ = true;
+        if (purgeCleaner.joinable()) {
+            purgeCleaner.join();
         }
     }
 
@@ -94,7 +92,9 @@ public:
         auto iter = txn_map.find(txn_id);
         assert(iter != TransactionManager::txn_map.end());
         auto *res = iter->second;
-        lock.unlock();
+        if(res->get_state() == TransactionState::COMMITTED ||
+            res->get_state() == TransactionState::ABORTED)
+            return nullptr;
         assert(res != nullptr);
         assert(res->get_thread_id() == std::this_thread::get_id());
 
@@ -116,7 +116,7 @@ public:
 
     void StartPurgeCleaner();
     inline void StopPurgeCleaner() { 
-        terminate_purge_cleaner_ = false;
+        terminate_purge_cleaner_ = true;
         std::ofstream fout("txn_map.txt", std::ios::out | std::ios::trunc);
         fout << next_timestamp_ << " " << next_txn_id_ << std::endl;
         fout.close();

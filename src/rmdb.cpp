@@ -60,8 +60,7 @@ void sigint_handler(int signo)
 void SetTransaction(txn_id_t *txn_id, Context *context)
 {
     context->txn_ = txn_manager->get_transaction(*txn_id);
-    if (context->txn_ == nullptr || context->txn_->get_state() == TransactionState::COMMITTED ||
-        context->txn_->get_state() == TransactionState::ABORTED)
+    if (context->txn_ == nullptr)
     {
         context->txn_ = txn_manager->begin(nullptr, context->log_mgr_);
         // printf("context->txn_->get_transaction_id(): %d\n", context->txn_->get_transaction_id());
@@ -157,7 +156,6 @@ void *client_handler(void *sock_fd)
 
                     // 回滚事务
                     txn_manager->abort(context.get(), log_manager.get());
-                    txn_id = INVALID_TXN_ID;
                     std::cout << e.GetInfo() << std::endl;
 
                     std::fstream outfile;
@@ -183,7 +181,6 @@ void *client_handler(void *sock_fd)
 
                     // // 回滚事务
                     txn_manager->abort(context.get(), log_manager.get());
-                    txn_id = INVALID_TXN_ID;
                 }
             }
         }
@@ -214,11 +211,17 @@ void *client_handler(void *sock_fd)
             break;
         }
         // 如果是单条语句，需要按照一个完整的事务来执行，所以执行完当前语句后，自动提交事务
-        if(context->txn_->get_state() == TransactionState::ABORTED)
-            continue;
-        if (!context->txn_->get_txn_mode())
+        if(context->txn_->get_state() == TransactionState::ABORTED || 
+           context->txn_->get_state() == TransactionState::COMMITTED)
+        {
+            // 事务已经结束，释放事务对象
+            context->txn_->release();
+            txn_id = INVALID_TXN_ID;
+        }
+        else if (!context->txn_->get_txn_mode())
         {
             txn_manager->commit(context.get(), context->log_mgr_);
+            context->txn_->release();
             txn_id = INVALID_TXN_ID;
         }
     }
