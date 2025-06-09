@@ -255,11 +255,14 @@ IxNodeHandle IxIndexHandle::find_leaf_page(const char *key, Operation operation,
     }
 
     auto next_page_id = file_hdr_->root_page_;
-    Page *prev_page = nullptr;
+    IxNodeHandle prev_node{};
+    prev_node.page = nullptr;
+    int prev_id = 0;
     // 2. 从根节点开始不断向下查找目标key
     while (true)
     {
         auto node = fetch_node(next_page_id);
+        auto prev_page = prev_node.page;
         if (find_first)
         {
             if (node.is_leaf_page() && operation != Operation::FIND)
@@ -280,6 +283,12 @@ IxNodeHandle IxIndexHandle::find_leaf_page(const char *key, Operation operation,
         }
         else
         {
+            if (node.is_leaf_page() && operation == Operation::DELETE && prev_id > 0)
+            {
+                auto left_sibling = fetch_node(prev_node.value_at(prev_id - 1));
+                left_sibling.page->latch_.lock();
+                transaction->append_index_latch_page_set(left_sibling.page);
+            }
             node.page->latch_.lock();
             if (node.is_safe(operation))
                 release_all_xlock(transaction->get_index_latch_page_set(), true);
@@ -294,8 +303,10 @@ IxNodeHandle IxIndexHandle::find_leaf_page(const char *key, Operation operation,
             }
             return node;
         }
-        next_page_id = node.internal_lookup(key);
-        prev_page = node.page;
+        prev_id = node.upper_bound(key) - 1;
+        next_page_id = node.value_at(prev_id);
+        prev_node = node;
+        // prev_page = node.page;
     }
 }
 
@@ -492,20 +503,9 @@ bool IxIndexHandle::delete_entry(const char *key, const Rid &value, Transaction 
     return exist;
 }
 
-/**
- * @brief 用于处理合并和重分配的逻辑，用于删除键值对后调用
- *
- * @param node 执行完删除操作的结点
- * @param transaction 事务指针
- * @param root_is_latched 传出参数：根节点是否上锁，用于并发操作
- * @return 是否需要删除结点
- * @note User needs to first find the sibling of input page.
- * If sibling's size + input page's size >= 2 * page's minsize, then redistribute.
- * Otherwise, merge(Coalesce).
- */
-bool IxIndexHandle::coalesce_or_redistribute(IxNodeHandle &node, Transaction *transaction)
+bool IxIndexHandle::coalesce_or_redistribute_internal(IxNodeHandle &node, Transaction *transaction)
 {
-    // 1. 判断node结点是否为根节点
+        // 1. 判断node结点是否为根节点
     //    1.1 如果是根节点，需要调用AdjustRoot() 函数来进行处理，返回根节点是否需要被删除
     if (node.is_root_page())
         return adjust_root(node);
@@ -542,6 +542,65 @@ bool IxIndexHandle::coalesce_or_redistribute(IxNodeHandle &node, Transaction *tr
     coalesce(neighbor_node, node, parent_node, idx, transaction);
 
     neighbor_node.page->latch_.unlock();
+    buffer_pool_manager_->unpin_page(parent_node.get_page_id(), true);
+    buffer_pool_manager_->unpin_page(neighbor_node.get_page_id(), true);
+    return true;
+}
+
+/**
+ * @brief 用于处理合并和重分配的逻辑，用于删除键值对后调用
+ *
+ * @param node 执行完删除操作的结点
+ * @param transaction 事务指针
+ * @param root_is_latched 传出参数：根节点是否上锁，用于并发操作
+ * @return 是否需要删除结点
+ * @note User needs to first find the sibling of input page.
+ * If sibling's size + input page's size >= 2 * page's minsize, then redistribute.
+ * Otherwise, merge(Coalesce).
+ */
+bool IxIndexHandle::coalesce_or_redistribute(IxNodeHandle &node, Transaction *transaction)
+{
+    // 1. 判断node结点是否为根节点
+    //    1.1 如果是根节点，需要调用AdjustRoot() 函数来进行处理，返回根节点是否需要被删除
+    if (node.is_root_page())
+        return adjust_root(node);
+    //    1.2 如果不是根节点，并且不需要执行合并或重分配操作，则直接返回false，否则执行2
+    if (node.page_hdr->num_key >= node.get_min_size())
+    {
+        maintain_parent(node);
+        return false;
+    }
+
+    // 2. 获取node结点的父亲结点
+    auto parent_node = fetch_node(node.get_parent_page_no());
+
+    auto idx = parent_node.find_child(node);
+    // 3. 寻找node结点的兄弟结点（优先选取前驱结点）
+    IxNodeHandle neighbor_node;
+    if (idx)
+        neighbor_node = fetch_node(parent_node.get_rid(idx - 1)->page_no);
+    else
+    {
+        neighbor_node = fetch_node(parent_node.get_rid(idx + 1)->page_no);
+        neighbor_node.page->latch_.lock();
+    }
+
+    BufferPoolManager *buffer_pool_manager_ = ix_manager_->buffer_pool_manager_;
+    // 4. 如果node结点和兄弟结点的键值对数量之和，能够支撑两个B+树结点（即node.size+neighbor.size >=
+    // NodeMinSize*2)，则只需要重新分配键值对（调用Redistribute函数）
+    if (node.page_hdr->num_key + neighbor_node.page_hdr->num_key >= (node.get_min_size() << 1))
+    {
+        redistribute(neighbor_node, node, parent_node, idx);
+        if(idx == 0)
+            neighbor_node.page->latch_.unlock();
+        buffer_pool_manager_->unpin_page(neighbor_node.get_page_id(), true);
+        return false;
+    }
+    // 5. 如果不满足上述条件，则需要合并两个结点，将右边的结点合并到左边的结点（调用Coalesce函数）
+    coalesce(neighbor_node, node, parent_node, idx, transaction);
+
+    if(idx == 0)
+        neighbor_node.page->latch_.unlock();
     buffer_pool_manager_->unpin_page(parent_node.get_page_id(), true);
     buffer_pool_manager_->unpin_page(neighbor_node.get_page_id(), true);
     return true;
@@ -646,7 +705,7 @@ bool IxIndexHandle::coalesce(IxNodeHandle neighbor_node, IxNodeHandle node, IxNo
     }
 
     parent.erase_pair(index);
-    if (coalesce_or_redistribute(parent, transaction))
+    if (coalesce_or_redistribute_internal(parent, transaction))
     {
         transaction->append_index_deleted_page(parent.page);
         return true;

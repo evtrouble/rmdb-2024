@@ -205,6 +205,7 @@ public:
     bool delete_entry(const char *key, const Rid &value, Transaction *transaction, bool abort = false);
 
     bool coalesce_or_redistribute(IxNodeHandle &node, Transaction *transaction);
+    bool coalesce_or_redistribute_internal(IxNodeHandle &node, Transaction *transaction);
     bool adjust_root(IxNodeHandle &old_root_node);
 
     void redistribute(IxNodeHandle &neighbor_node, IxNodeHandle &node, IxNodeHandle &parent, int index);

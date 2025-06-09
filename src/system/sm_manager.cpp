@@ -255,7 +255,7 @@ void SmManager::create_table(const std::string& tab_name, const std::vector<ColD
     rm_manager_->create_file(tab_name, curr_offset);
     
     {
-        std::unique_lock lock(fhs_latch_);
+        std::lock_guard lock(fhs_latch_);
         fhs_.emplace(tab_name, rm_manager_->open_file(tab_name));
     }
     db_.tabs_.emplace(std::move(tab_name), std::move(tab));
@@ -276,7 +276,7 @@ void SmManager::drop_table(const std::string& tab_name, Context* context) {
     auto &tab = db_.get_table(tab_name);
 
     {
-        std::unique_lock lock(ihs_latch_);
+        std::lock_guard lock(ihs_latch_);
         for(auto& index : tab.indexes) {
             auto index_iter = ihs_.find(ix_manager_->get_index_name(tab_name, index.cols));
             index_iter->second->mark_deleted(); // 标记为已删除
@@ -292,7 +292,7 @@ void SmManager::drop_table(const std::string& tab_name, Context* context) {
     db_.tabs_.erase(tab_name);
 
     {
-        std::unique_lock lock(fhs_latch_);
+        std::lock_guard lock(fhs_latch_);
         fhs_.erase(record_iter);
     }
     
@@ -350,7 +350,7 @@ void SmManager::create_index(const std::string& tab_name, const std::vector<std:
     }
 
     {
-        std::unique_lock lock(ihs_latch_);
+        std::lock_guard lock(ihs_latch_);
         ihs_.emplace(index_name, std::move(ih));
     }
     
@@ -377,7 +377,7 @@ void SmManager::drop_index(const std::string& tab_name, const std::vector<std::s
     index_iter->second->mark_deleted(); // 标记为已删除
 
     {
-        std::unique_lock lock(ihs_latch_);
+        std::lock_guard lock(ihs_latch_);
         ihs_.erase(index_iter);
     }
     

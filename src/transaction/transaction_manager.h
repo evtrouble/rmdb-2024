@@ -58,6 +58,9 @@ public:
             purgeCleaner.join();
         }
         delete start_txn_;
+        for (auto &pair : txn_map) {
+            delete pair.second; // 删除事务对象
+        }
     }
 
     Transaction *begin(Transaction *txn, LogManager *log_manager);
@@ -125,7 +128,7 @@ public:
     }
 
     void remove_txn(txn_id_t txn_id) {
-        std::unique_lock lock(txn_map_mutex_);
+        std::lock_guard lock(txn_map_mutex_);
         txn_map.erase(txn_id);
     }
 
@@ -134,15 +137,11 @@ public:
         txn_id &= TXN_ID_MASK;
         if(start_txn_id_ > txn_id)
             return start_txn_;
-        {
-            std::shared_lock lock(txn_map_mutex_);
-            auto iter = txn_map.find(txn_id);
-            if(iter != txn_map.end())
-            {
-                return iter->second;
-            }
-        }
-        return nullptr;
+        
+        std::shared_lock lock(txn_map_mutex_);
+        auto iter = txn_map.find(txn_id);
+        assert(iter != TransactionManager::txn_map.end());
+        return iter->second;
     }
 
     std::optional<RmRecord> GetVisibleRecord(int fd, const Rid &rid, Transaction *current_txn);

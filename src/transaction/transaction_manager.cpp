@@ -43,7 +43,7 @@ Transaction *TransactionManager::begin(Transaction *txn, LogManager *log_manager
 
     // 将事务加入全局事务表
     {
-        std::unique_lock lock(txn_map_mutex_);
+        std::lock_guard lock(txn_map_mutex_);
         txn_map.emplace(txn->get_transaction_id(), txn);
     }
 
@@ -215,12 +215,12 @@ bool TransactionManager::UpdateUndoLink(int fd, const Rid &rid, UndoLog* prev_li
     
     // 3. 如果需要创建新页面，使用写锁重新检查和创建
     if (!page_info) {
-        std::unique_lock global_lock(version_info_mutex_);
+        std::lock_guard global_lock(version_info_mutex_);
         page_info = version_info_.try_emplace(page_id, std::make_shared<PageVersionInfo>()).first->second;
     }
     
     // 4. 更新版本链 - 使用页面级锁
-    std::unique_lock page_lock(page_info->mutex_);
+    std::lock_guard page_lock(page_info->mutex_);
     
     // 5. 获取当前版本用于check
     UndoLog* current_version = nullptr;
@@ -333,7 +333,7 @@ void TransactionManager::DeleteVersionChain(std::shared_ptr<PageVersionInfo> pag
         bool is_empty = page_info->prev_version_.empty();
         page_lock.unlock();  // 释放页面锁以避免长时间持有
         if (is_empty) {
-            std::unique_lock global_write_lock(version_info_mutex_);
+            std::lock_guard global_write_lock(version_info_mutex_);
             // 二次检查,因为可能在释放页面锁后其他线程添加了记录
             if (page_info->prev_version_.empty()) {
                 version_info_.erase(page_id);
@@ -394,24 +394,48 @@ std::shared_ptr<PageVersionInfo> TransactionManager::GetPageVersionInfo(const Pa
 void TransactionManager::PurgeCleaning()
 {
     std::vector<std::shared_ptr<RmFileHandle>> tables;
-    int delay = 0;
+    bool all_tables_done = true;
+    
+    // 自适应休眠时间参数
+    int base_sleep_ms = 100;   // 基础休眠时间(ms)
+    int max_sleep_ms = 5000;   // 最大休眠时间(ms)
+    int min_sleep_ms = 50;     // 最小休眠时间(ms)
+    int current_sleep_ms = base_sleep_ms;
+
     while (!terminate_purge_cleaner_)
     {
-        std::this_thread::sleep_for(std::chrono::milliseconds(std::max(1, 10 - delay) * 10));
-        delay = 0;
-        tables = sm_manager_->get_all_table_handle();
         timestamp_t watermark = running_txns_.GetWatermark();
-
+        tables = sm_manager_->get_all_table_handle();
+        
+        size_t tables_with_work = 0;  // 有工作要做的表数量
+        all_tables_done = true;
+        
         for(auto& fh : tables) {
-            if(terminate_purge_cleaner_)
+            if(terminate_purge_cleaner_) [[unlikely]]
                 break;
-            int page_num = fh->get_page_num();
-            delay += page_num * 10; // 每个表的页数乘以10ms的延迟
-            for (int page_no = RM_FIRST_RECORD_PAGE; page_no < page_num && !terminate_purge_cleaner_; ++page_no)
-            {
-                fh->clean_page(page_no, this, watermark);
+                
+            // 清理当前表的一批页面
+            bool table_done = fh->clean_pages(this, watermark);
+            if (!table_done) {
+                all_tables_done = false;
+                tables_with_work++;
             }
         }
+
+        // 动态调整休眠时间
+        if (all_tables_done) {
+            // 如果所有表都清理完成,增加休眠时间
+            current_sleep_ms = std::min(current_sleep_ms * 2, max_sleep_ms);
+        } else {
+            if (tables_with_work > tables.size() / 2) {
+                // 如果超过一半的表都有工作要做,减少休眠时间
+                current_sleep_ms = std::max(current_sleep_ms / 2, min_sleep_ms);
+            }
+        }
+
+        if(terminate_purge_cleaner_) [[unlikely]]
+            break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(current_sleep_ms));
     }
 }
 

@@ -156,7 +156,7 @@ int DiskManager::open_file(const std::string &path)
     if (!is_file(path))
         throw FileNotFoundError(path);
 
-    std::unique_lock lock(path2fd_mutex_);
+    std::lock_guard lock(path2fd_mutex_);
     if (path2fd_.count(path))
         return path2fd_[path];
     int fd = ::open(path.c_str(), O_RDWR);
@@ -178,7 +178,7 @@ void DiskManager::close_file(int fd)
     // 注意不能关闭未打开的文件，并且需要更新文件打开列表
     std::unique_lock lock(path2fd_mutex_);
     auto iter = fd2path_.find(fd);
-    if (iter == fd2path_.end())
+    if (iter == fd2path_.end()) [[unlikely]]
         throw FileNotOpenError(fd);
 
     path2fd_.erase(iter->second);

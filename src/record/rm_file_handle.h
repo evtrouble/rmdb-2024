@@ -57,6 +57,13 @@ private:
     std::shared_mutex lock_;    // 锁，用于保护文件头的读写操作
     bool is_deleted_ = false; // 标记文件是否被删除
 
+    struct CleaningProgress {
+        int current_page{RM_FIRST_RECORD_PAGE};  // 当前清理到的页面编号
+        size_t pages_scanned{0};                 // 本轮已扫描的页面数
+        static constexpr size_t MAX_PAGES_PER_SCAN = 100;  // 每轮最大扫描页数
+    };
+    CleaningProgress cleaning_progress_;        // 清理进度记录
+
 public:
     RmFileHandle(RmManager *rm_manager, int fd)
         : rm_manager_(rm_manager), fd_(fd)
@@ -96,14 +103,14 @@ public:
     }
 
     /* 判断指定位置上是否已经存在一条记录，通过Bitmap来判断 */
-    bool is_record(const Rid &rid) const
+    bool is_record(const Rid &rid)
     {
         RmPageHandle page_handle = fetch_page_handle(rid.page_no);
         return Bitmap::is_set(page_handle.bitmap, rid.slot_no); // page的slot_no位置上是否有record
     }
 
-    std::unique_ptr<RmRecord> get_record(const Rid &rid, Context *context) const;
-    std::vector<std::pair<std::unique_ptr<RmRecord>, int>> get_records(int page_no, Context *context) const;
+    std::unique_ptr<RmRecord> get_record(const Rid &rid, Context *context);
+    std::vector<std::pair<std::unique_ptr<RmRecord>, int>> get_records(int page_no, Context *context);
 
     Rid insert_record(char *buf, Context *context);
 
@@ -119,9 +126,17 @@ public:
 
     RmPageHandle create_new_page_handle();
 
-    RmPageHandle fetch_page_handle(int page_no) const;
+    RmPageHandle fetch_page_handle(int page_no);
 
     void clean_page(int page_no, TransactionManager *txn_mgr, timestamp_t watermark);
+
+    /**
+     * @brief 清理表中一批页面的过期版本
+     * @param txn_mgr 事务管理器
+     * @param watermark 水位线时间戳
+     * @return 是否完成了当前表的一轮完整扫描
+     */
+    bool clean_pages(TransactionManager* txn_mgr, timestamp_t watermark);
 
 private:
     RmPageHandle create_page_handle();

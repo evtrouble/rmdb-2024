@@ -17,7 +17,7 @@ See the Mulan PSL v2 for more details. */
  * @param {Context*} context
  * @return {unique_ptr<RmRecord>} rid对应的记录对象指针
  */
-std::unique_ptr<RmRecord> RmFileHandle::get_record(const Rid &rid, Context *context) const
+std::unique_ptr<RmRecord> RmFileHandle::get_record(const Rid &rid, Context *context)
 {
     // 1. 获取指定记录所在的page handle
     RmPageHandle page_handle = fetch_page_handle(rid.page_no);
@@ -37,7 +37,7 @@ std::unique_ptr<RmRecord> RmFileHandle::get_record(const Rid &rid, Context *cont
     return record;
 }
 
-std::vector<std::pair<std::unique_ptr<RmRecord>, int>> RmFileHandle::get_records(int page_no, Context *context) const
+std::vector<std::pair<std::unique_ptr<RmRecord>, int>> RmFileHandle::get_records(int page_no, Context *context)
 {
     // 1. 获取指定记录所在的page handle
     RmPageHandle page_handle = fetch_page_handle(page_no);
@@ -159,7 +159,7 @@ void RmFileHandle::insert_record(const Rid &rid, char *buf)
 {
     // 1. 获取页面句柄
     RmPageHandle page_handle = fetch_page_handle(rid.page_no);
-    std::unique_lock lock(page_handle.page->latch_);
+    std::lock_guard lock(page_handle.page->latch_);
 
     // 2. 检查该位置是否已经有记录
     bool is_occupied = is_record(rid);
@@ -192,7 +192,7 @@ void RmFileHandle::delete_record(const Rid &rid, Context *context)
 {
     // 1. 获取指定记录所在的page handle
     RmPageHandle page_handle = fetch_page_handle(rid.page_no);
-    std::unique_lock lock(page_handle.page->latch_);
+    std::lock_guard lock(page_handle.page->latch_);
 
     // 2. 检查记录是否存在
     if (!is_record(rid))
@@ -240,7 +240,7 @@ void RmFileHandle::update_record(const Rid &rid, char *buf, Context *context)
 {
     // 1. 获取指定记录所在的page handle
     RmPageHandle page_handle = fetch_page_handle(rid.page_no);
-    std::unique_lock lock(page_handle.page->latch_);
+    std::lock_guard lock(page_handle.page->latch_);
 
     // 2. 检查记录是否存在
     if (!is_record(rid))
@@ -279,12 +279,13 @@ void RmFileHandle::update_record(const Rid &rid, char *buf, Context *context)
  * @param {int} page_no 页面号
  * @return {RmPageHandle} 指定页面的句柄
  */
-RmPageHandle RmFileHandle::fetch_page_handle(int page_no) const
-{
+RmPageHandle RmFileHandle::fetch_page_handle(int page_no) {
     // 检查page_no的有效性
-    if (page_no >= file_hdr_.num_pages)
     {
-        throw PageNotExistError(std::string("Record File"), page_no);
+        std::shared_lock lock(lock_);  // 添加共享锁保护file_hdr_访问
+        if (page_no >= file_hdr_.num_pages) {
+            throw PageNotExistError(std::string("Record File"), page_no);
+        }
     }
 
     // 使用缓冲池获取指定页面
@@ -347,11 +348,16 @@ RmPageHandle RmFileHandle::create_page_handle()
         file_hdr_.first_free_page_no = file_hdr_.num_pages - 1;
         return new_handle;
     }
-    else
+    // 1.2 有空闲页：直接获取第一个空闲页
+    // 使用缓冲池获取指定页面
+    Page *page = rm_manager_->buffer_pool_manager_->fetch_page(PageId{fd_, file_hdr_.first_free_page_no});
+    if (page == nullptr)
     {
-        // 1.2 有空闲页：直接获取第一个空闲页
-        return fetch_page_handle(file_hdr_.first_free_page_no);
+        throw PageNotExistError(std::string("Record File"), file_hdr_.first_free_page_no);
     }
+
+    // 生成并返回page handle
+    return RmPageHandle(&file_hdr_, page);
 }
 
 /**
@@ -362,6 +368,7 @@ void RmFileHandle::release_page_handle(RmPageHandle &page_handle)
     // 当page从已满变成未满，考虑如何更新：
     // 1. 将这个新的空闲页面插入到空闲页面链表的头部
     // 2. 让这个页面指向原来的第一个空闲页面
+    std::lock_guard lock(lock_);
     page_handle.page_hdr->next_free_page_no = file_hdr_.first_free_page_no;
     file_hdr_.first_free_page_no = page_handle.page->get_page_id().page_no;
 }
@@ -370,7 +377,7 @@ void RmFileHandle::abort_insert_record(const Rid &rid)
 {
     // 1. 获取指定记录所在的page handle
     RmPageHandle page_handle = fetch_page_handle(rid.page_no);
-    std::unique_lock lock(page_handle.page->latch_);
+    std::lock_guard lock(page_handle.page->latch_);
 
     // 2. 检查记录是否存在
     if (!is_record(rid))
@@ -393,7 +400,7 @@ void RmFileHandle::abort_delete_record(const Rid &rid, char *buf)
 {
     // 获取指定记录所在的page handle
     RmPageHandle page_handle = fetch_page_handle(rid.page_no);
-    std::unique_lock lock(page_handle.page->latch_);
+    std::lock_guard lock(page_handle.page->latch_);
 
     // 复制数据到指定slot
     memcpy(page_handle.get_slot(rid.slot_no), buf, file_hdr_.record_size);
@@ -414,7 +421,7 @@ void RmFileHandle::abort_delete_record(const Rid &rid, char *buf)
 void RmFileHandle::abort_update_record(const Rid &rid, char *buf)
 {
     RmPageHandle page_handle = fetch_page_handle(rid.page_no);
-    std::unique_lock lock(page_handle.page->latch_);
+    std::lock_guard lock(page_handle.page->latch_);
 
     // 检查记录是否存在
     if (!is_record(rid))
@@ -424,31 +431,35 @@ void RmFileHandle::abort_update_record(const Rid &rid, char *buf)
     rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);
 }
 
-void RmFileHandle::clean_page(int page_no, TransactionManager* txn_mgr, timestamp_t watermark)
-{
+void RmFileHandle::clean_page(int page_no, TransactionManager* txn_mgr, timestamp_t watermark) {
+    // 清理当前页面
     RmPageHandle page_handle = fetch_page_handle(page_no);
     std::vector<std::pair<Transaction*,int>> to_delete;
     to_delete.reserve(file_hdr_.num_records_per_page);
     PageId pageid{.fd = fd_, .page_no = page_no};
 
+    // 获取页面版本信息
+    auto version = txn_mgr->GetPageVersionInfo(pageid);
+    if(version == nullptr) {
+        rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), false);
+        return;
+    }
+
+    // 扫描页面中的所有槽位
+    Rid rid{.page_no = page_no};
+    int slot_no = -1;
     {
-        auto version = txn_mgr->GetPageVersionInfo(pageid);
-        if(version == nullptr) {
-            // 如果没有版本信息，直接返回
+        std::shared_lock read_lock(page_handle.page->latch_);
+        if(page_handle.page_hdr->num_records == 0) {
+            // 如果页面没有记录，直接解锁并返回
             rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), false);
             return;
         }
-        Rid rid{.page_no = page_no};
-        int slot_no = -1;
-        std::shared_lock read_lock(page_handle.page->latch_);
         
-        while (true)
-        {
+        while (true) {
             slot_no = Bitmap::next_bit(true, page_handle.bitmap, file_hdr_.num_records_per_page, slot_no);
             
-            if (slot_no >= file_hdr_.num_records_per_page)
-            {
-                // 如果没有找到空闲位置，则退出循环
+            if (slot_no >= file_hdr_.num_records_per_page) {
                 break;
             }
 
@@ -456,29 +467,65 @@ void RmFileHandle::clean_page(int page_no, TransactionManager* txn_mgr, timestam
             txn_id_t txn_id = txn_mgr->get_record_txn_id(data);
             Transaction *record_txn = txn_mgr->get_or_create_transaction(txn_id);
             rid.slot_no = slot_no;
-            if (txn_mgr->need_clean(record_txn, watermark))
-            {
+            
+            if (txn_mgr->need_clean(record_txn, watermark)) {
                 txn_mgr->DeleteVersionChain(fd_, rid);
                 if(txn_mgr->is_deleted(txn_id)) {
                     to_delete.emplace_back(std::make_pair(record_txn, slot_no));
-            }
-            }
-            else
-            {
+                }
+            } else {
                 txn_mgr->TruncateVersionChain(fd_, rid, watermark);
             }
         }
     }
 
+    // 处理需要删除的记录
     bool change = false;
-    if (to_delete.size()){
+    if (to_delete.size()) {
         change = true;
-        std::unique_lock write_lock(page_handle.page->latch_);
+        bool was_full = (page_handle.page_hdr->num_records == file_hdr_.num_records_per_page);
+        std::lock_guard write_lock(page_handle.page->latch_);
         for(auto& [txn, slot_no] : to_delete) {
             Bitmap::reset(page_handle.bitmap, slot_no);
             txn->release();
         }
+        page_handle.page_hdr->num_records -= to_delete.size();
+        // 如果页面从满状态变为未满状态，需要更新空闲页面链表
+        if (was_full) {
+            release_page_handle(page_handle);
+        }
     }
 
     rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), change);
+}
+
+bool RmFileHandle::clean_pages(TransactionManager* txn_mgr, timestamp_t watermark) {
+    int num_pages = get_page_num();
+
+    while (cleaning_progress_.current_page < num_pages && 
+           cleaning_progress_.pages_scanned < CleaningProgress::MAX_PAGES_PER_SCAN) {
+        
+        clean_page(cleaning_progress_.current_page, txn_mgr, watermark);
+        
+        cleaning_progress_.current_page++;
+        cleaning_progress_.pages_scanned++;
+    }
+
+    // 如果完成了所有页面的扫描,重置进度
+    if (cleaning_progress_.current_page >= num_pages) {
+        std::shared_lock file_lock(lock_);  // 再次检查表头,因为可能已经发生变化
+        if (cleaning_progress_.current_page > file_hdr_.num_pages) {
+            cleaning_progress_.current_page = RM_FIRST_RECORD_PAGE;
+            cleaning_progress_.pages_scanned = 0;
+            return true;  // 表示完成了一轮完整扫描
+        }
+    }
+
+    // 如果达到了本轮最大页面扫描限制
+    if (cleaning_progress_.pages_scanned >= CleaningProgress::MAX_PAGES_PER_SCAN) {
+        cleaning_progress_.pages_scanned = 0;
+        return false;  // 表示本轮扫描未完成
+    }
+
+    return true;
 }
