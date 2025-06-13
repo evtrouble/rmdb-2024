@@ -442,14 +442,12 @@ void TransactionManager::PurgeCleaning()
 void TransactionManager::StartPurgeCleaner()
 {
     std::ifstream fin("txn_map.txt");
-    if(!fin) {
+    if(fin) {
         timestamp_t init_timestamp = 0;
-        txn_id_t init_txn_id = 0;
-        fin >> init_timestamp >> init_txn_id;
+        fin >> init_timestamp >> start_txn_id_;
         fin.close();
         next_timestamp_ = init_timestamp;
-        next_txn_id_ = init_txn_id;
-        start_txn_id_ = init_txn_id;
+        next_txn_id_ = start_txn_id_;
     }
     if(concurrency_mode_ == ConcurrencyMode::MVCC)
     {
