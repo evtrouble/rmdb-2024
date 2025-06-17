@@ -21,119 +21,119 @@ void RecoveryManager::analyze() {
  * @description: 重做所有未落盘的操作
  */
 void RecoveryManager::redo() {
-    // long long offset = 0;
-    // LogRecord *log_record = nullptr;
-    // while(true){
-    //     log_record = read_log(offset);
-    //     if(log_record == nullptr){
-    //         break;
-    //     }
-    //     offset += log_record->log_tot_len_;
-    //     switch(log_record->log_type_){
-    //         case BEGIN:{
-    //             BeginLogRecord* begin_log_record = static_cast<BeginLogRecord*>(log_record); 
-    //             auto txn = std::make_unique<Transaction> (begin_log_record->log_tid_, nullptr);
-    //             txn->set_state(TransactionState::DEFAULT);
-    //             temp_txns_[begin_log_record->log_tid_] = std::move(txn);
-    //             break;
-    //         }
-    //         case COMMIT :{
-    //             CommitLogRecord* commit_log_record = static_cast<CommitLogRecord*>(log_record);
-    //             auto &txn = temp_txns_[commit_log_record->log_tid_];
-    //             auto write_set = txn->get_write_set();
-    //             for(auto &write_record : *write_set){
-    //                 delete write_record; // 清理写集中的记录
-    //             }
-    //             temp_txns_.erase(commit_log_record->log_tid_);
-    //             break;
-    //         }
-    //         case ABORT:{
-    //             AbortLogRecord* abort_log_record = static_cast<AbortLogRecord*>(log_record);
-    //             auto &txn = temp_txns_[abort_log_record->log_tid_];
-    //             auto write_set = txn->get_write_set();
-    //             std::unordered_set<Rid, RidHash> abort_set;
-    //             while (!write_set->empty())
-    //             {
-    //                 auto write_record = write_set->front();
-    //                 write_set->pop_front();
-    //                 Rid rid = write_record->GetRid();
-    //                 // 根据写操作类型进行回滚
-    //                 switch (write_record->GetWriteType())
-    //                 {
-    //                     case WType::INSERT_TUPLE:
-    //                         abort_set.emplace(rid);
-    //                         sm_manager_->get_table_handle(write_record->GetTableName())
-    //                             ->abort_insert_record(rid);
-    //                         break;
-    //                     case WType::DELETE_TUPLE: {
-    //                         if(abort_set.count(rid))break;
-    //                         abort_set.emplace(rid);
-    //                         auto fh = sm_manager_->get_table_handle(write_record->GetTableName());
-    //                         fh->abort_delete_record(rid, write_record->GetRecord().data);
-    //                     }
-    //                         break;
-    //                     case WType::UPDATE_TUPLE:{
-    //                         if(abort_set.count(rid))break;
-    //                         abort_set.emplace(rid);
-    //                         auto fh = sm_manager_->get_table_handle(write_record->GetTableName());
-    //                         fh->abort_update_record(rid, write_record->GetRecord().data);
-    //                     }
-    //                     default:
-    //                         break;
-    //                 }
-    //                 delete write_record;
-    //             }
-    //             temp_txns_.erase(abort_log_record->log_tid_);
-    //             break;
-    //         }
-    //         case UPDATE:{
-    //             UpdateLogRecord* update_log_record = static_cast<UpdateLogRecord*>(log_record);
-    //             std::string table_name(update_log_record->table_name_, update_log_record->table_name_size_);
-    //             RmFileHandle *fh_ = sm_manager_->fhs_.at(table_name).get();
-    //             while (fh_->file_hdr_.num_pages <= update_log_record->rid_.page_no)
-    //             {
-    //                 auto page_hdr_ = fh_->create_new_page_handle();
-    //                 buffer_pool_manager_->unpin_page(page_hdr_.page->get_page_id(), false);
-    //             }
-    //             auto &txn = temp_txns_[update_log_record->log_tid_];
-    //             fh_->recovery_insert_record(update_log_record->rid_, update_log_record->after_value_.data);
-    //             txn->append_write_record(new WriteRecord(WType::UPDATE_TUPLE,
-    //                         table_name, update_log_record->rid_, update_log_record->before_value_));
-    //             break;
-    //         }  
-    //         case INSERT:{
-    //             InsertLogRecord* insert_log_record = static_cast<InsertLogRecord*>(log_record);
-    //             std::string table_name(insert_log_record->table_name_, insert_log_record->table_name_size_);
-    //             RmFileHandle *fh_ = sm_manager_->fhs_.at(table_name).get();
-    //             while (fh_->file_hdr_.num_pages <= insert_log_record->rid_.page_no)
-    //             {
-    //                 auto page_hdr_ = fh_->create_new_page_handle();
-    //                 buffer_pool_manager_->unpin_page(page_hdr_.page->get_page_id(), false);
-    //             }
-    //             auto &txn = temp_txns_[insert_log_record->log_tid_];
-    //             fh_->recovery_insert_record(insert_log_record->rid_, insert_log_record->insert_value_.data);
-    //             txn->append_write_record(new WriteRecord(WType::INSERT_TUPLE,
-    //                         table_name, insert_log_record->rid_));
-    //             break;
-    //         }    
-    //         case DELETE:{
-    //             DeleteLogRecord* delete_log_record = static_cast<DeleteLogRecord*>(log_record);
-    //             std::string table_name(delete_log_record->table_name_, delete_log_record->table_name_size_);
-    //             RmFileHandle *fh_ = sm_manager_->fhs_.at(table_name).get();
-    //             while (fh_->file_hdr_.num_pages <= delete_log_record->rid_.page_no)
-    //             {
-    //                 auto page_hdr_ = fh_->create_new_page_handle();
-    //                 buffer_pool_manager_->unpin_page(page_hdr_.page->get_page_id(), false);
-    //             }
-    //             auto &txn = temp_txns_[delete_log_record->log_tid_];
-    //             fh_->recovery_delete_record(delete_log_record->rid_);
-    //             txn->append_write_record(new WriteRecord(WType::DELETE_TUPLE,
-    //                         table_name, delete_log_record->rid_, delete_log_record->delete_value_));
-    //             break;
-    //         }
-    //     }
-    //     delete log_record;
-    // }
+    long long offset = 0;
+    LogRecord *log_record = nullptr;
+    while(true){
+        log_record = read_log(offset);
+        if(log_record == nullptr){
+            break;
+        }
+        offset += log_record->log_tot_len_;
+        switch(log_record->log_type_){
+            case BEGIN:{
+                BeginLogRecord* begin_log_record = static_cast<BeginLogRecord*>(log_record); 
+                auto txn = std::make_unique<Transaction> (begin_log_record->log_tid_, nullptr);
+                txn->set_state(TransactionState::DEFAULT);
+                temp_txns_[begin_log_record->log_tid_] = std::move(txn);
+                break;
+            }
+            case COMMIT :{
+                CommitLogRecord* commit_log_record = static_cast<CommitLogRecord*>(log_record);
+                auto &txn = temp_txns_[commit_log_record->log_tid_];
+                auto write_set = txn->get_write_set();
+                for(auto &write_record : *write_set){
+                    delete write_record; // 清理写集中的记录
+                }
+                temp_txns_.erase(commit_log_record->log_tid_);
+                break;
+            }
+            case ABORT:{
+                AbortLogRecord* abort_log_record = static_cast<AbortLogRecord*>(log_record);
+                auto &txn = temp_txns_[abort_log_record->log_tid_];
+                auto write_set = txn->get_write_set();
+                std::unordered_set<Rid, RidHash> abort_set;
+                while (!write_set->empty())
+                {
+                    auto write_record = write_set->front();
+                    write_set->pop_front();
+                    Rid rid = write_record->GetRid();
+                    // 根据写操作类型进行回滚
+                    switch (write_record->GetWriteType())
+                    {
+                        case WType::INSERT_TUPLE:
+                            abort_set.emplace(rid);
+                            sm_manager_->get_table_handle(write_record->GetTableName())
+                                ->abort_insert_record(rid);
+                            break;
+                        case WType::DELETE_TUPLE: {
+                            if(abort_set.count(rid))break;
+                            abort_set.emplace(rid);
+                            auto fh = sm_manager_->get_table_handle(write_record->GetTableName());
+                            fh->abort_delete_record(rid, write_record->GetRecord().data);
+                        }
+                            break;
+                        case WType::UPDATE_TUPLE:{
+                            if(abort_set.count(rid))break;
+                            abort_set.emplace(rid);
+                            auto fh = sm_manager_->get_table_handle(write_record->GetTableName());
+                            fh->abort_update_record(rid, write_record->GetRecord().data);
+                        }
+                        default:
+                            break;
+                    }
+                    delete write_record;
+                }
+                temp_txns_.erase(abort_log_record->log_tid_);
+                break;
+            }
+            case UPDATE:{
+                UpdateLogRecord* update_log_record = static_cast<UpdateLogRecord*>(log_record);
+                std::string table_name(update_log_record->table_name_, update_log_record->table_name_size_);
+                RmFileHandle *fh_ = sm_manager_->fhs_.at(table_name).get();
+                while (fh_->file_hdr_.num_pages <= update_log_record->rid_.page_no)
+                {
+                    auto page_hdr_ = fh_->create_new_page_handle();
+                    buffer_pool_manager_->unpin_page(page_hdr_.page->get_page_id(), false);
+                }
+                auto &txn = temp_txns_[update_log_record->log_tid_];
+                fh_->recovery_insert_record(update_log_record->rid_, update_log_record->after_value_.data);
+                txn->append_write_record(new WriteRecord(WType::UPDATE_TUPLE,
+                            table_name, update_log_record->rid_, update_log_record->before_value_));
+                break;
+            }  
+            case INSERT:{
+                InsertLogRecord* insert_log_record = static_cast<InsertLogRecord*>(log_record);
+                std::string table_name(insert_log_record->table_name_, insert_log_record->table_name_size_);
+                RmFileHandle *fh_ = sm_manager_->fhs_.at(table_name).get();
+                while (fh_->file_hdr_.num_pages <= insert_log_record->rid_.page_no)
+                {
+                    auto page_hdr_ = fh_->create_new_page_handle();
+                    buffer_pool_manager_->unpin_page(page_hdr_.page->get_page_id(), false);
+                }
+                auto &txn = temp_txns_[insert_log_record->log_tid_];
+                fh_->recovery_insert_record(insert_log_record->rid_, insert_log_record->insert_value_.data);
+                txn->append_write_record(new WriteRecord(WType::INSERT_TUPLE,
+                            table_name, insert_log_record->rid_));
+                break;
+            }    
+            case DELETE:{
+                DeleteLogRecord* delete_log_record = static_cast<DeleteLogRecord*>(log_record);
+                std::string table_name(delete_log_record->table_name_, delete_log_record->table_name_size_);
+                RmFileHandle *fh_ = sm_manager_->fhs_.at(table_name).get();
+                while (fh_->file_hdr_.num_pages <= delete_log_record->rid_.page_no)
+                {
+                    auto page_hdr_ = fh_->create_new_page_handle();
+                    buffer_pool_manager_->unpin_page(page_hdr_.page->get_page_id(), false);
+                }
+                auto &txn = temp_txns_[delete_log_record->log_tid_];
+                fh_->recovery_delete_record(delete_log_record->rid_);
+                txn->append_write_record(new WriteRecord(WType::DELETE_TUPLE,
+                            table_name, delete_log_record->rid_, delete_log_record->delete_value_));
+                break;
+            }
+        }
+        delete log_record;
+    }
 }
 
 /**
@@ -149,29 +149,29 @@ void RecoveryManager::undo() {
             write_set->pop_front();
             Rid rid = write_record->GetRid();
             // 根据写操作类型进行回滚
-            // switch (write_record->GetWriteType())
-            // {
-            //     case WType::INSERT_TUPLE:
-            //         abort_set.emplace(rid);
-            //         sm_manager_->get_table_handle(write_record->GetTableName())
-            //             ->abort_insert_record(rid);
-            //         break;
-            //     case WType::DELETE_TUPLE: {
-            //         if(abort_set.count(rid))break;
-            //         abort_set.emplace(rid);
-            //         auto fh = sm_manager_->get_table_handle(write_record->GetTableName());
-            //         fh->abort_delete_record(rid, write_record->GetRecord().data);
-            //     }
-            //         break;
-            //     case WType::UPDATE_TUPLE:{
-            //         if(abort_set.count(rid))break;
-            //         abort_set.emplace(rid);
-            //         auto fh = sm_manager_->get_table_handle(write_record->GetTableName());
-            //         fh->abort_update_record(rid, write_record->GetRecord().data);
-            //     }
-            //     default:
-            //         break;
-            // }
+            switch (write_record->GetWriteType())
+            {
+                case WType::INSERT_TUPLE:
+                    abort_set.emplace(rid);
+                    sm_manager_->get_table_handle(write_record->GetTableName())
+                        ->abort_insert_record(rid);
+                    break;
+                case WType::DELETE_TUPLE: {
+                    if(abort_set.count(rid))break;
+                    abort_set.emplace(rid);
+                    auto fh = sm_manager_->get_table_handle(write_record->GetTableName());
+                    fh->abort_delete_record(rid, write_record->GetRecord().data);
+                }
+                    break;
+                case WType::UPDATE_TUPLE:{
+                    if(abort_set.count(rid))break;
+                    abort_set.emplace(rid);
+                    auto fh = sm_manager_->get_table_handle(write_record->GetTableName());
+                    fh->abort_update_record(rid, write_record->GetRecord().data);
+                }
+                default:
+                    break;
+            }
             delete write_record;
         }
     }
