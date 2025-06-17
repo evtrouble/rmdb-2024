@@ -19,19 +19,23 @@ See the Mulan PSL v2 for more details. */
  */
 lsn_t LogManager::add_log_to_buffer(LogRecord *log_record)
 {
-  // 争用互斥锁
-    std::unique_lock lock(latch_);
-    if(log_buffer_.is_full(log_record->log_tot_len_)){//如果缓冲区已满
-        latch_.unlock();
-        flush_log_to_disk();
-        latch_.lock();
+    std::lock_guard lock(latch_);
+    
+    // 如果缓冲区已满，先刷盘
+    while (log_buffer_.is_full(log_record->log_tot_len_)) {
+        flush_log_to_disk_without_lock();
     }
-    // 分配一个日志记录号
+    
+    // 分配日志记录号并写入缓冲区
     log_record->lsn_ = global_lsn_++;
-    // 将日志记录添加到缓冲区中
     log_buffer_.append(log_record);
-    // 设置脏标志
     is_dirty_ = true;
+
+    // 如果写入后缓冲区太满，主动触发刷盘
+    if (log_buffer_.offset_ >= LOG_BUFFER_SIZE / 2) {
+        flush_log_to_disk_without_lock();
+    }
+    
     return log_record->lsn_;
 }
 
@@ -75,11 +79,15 @@ void LogManager::flush_log_to_disk_without_lock()
 /**
  * @description: 周期性的把日志缓冲区的内容刷到磁盘中
  */
-void LogManager::flush_log_to_disk_periodically(){
-    while(!shutdown_){
-        if(is_dirty_){
-            flush_log_to_disk();
+void LogManager::flush_log_to_disk_periodically() {
+    while (!shutdown_) {
+        {
+            std::lock_guard lock(latch_);
+            if (is_dirty_) {
+                flush_log_to_disk_without_lock();
+            }
         }
+        // 释放锁后再sleep，避免长时间持有锁
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 }

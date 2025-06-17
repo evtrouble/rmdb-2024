@@ -220,15 +220,33 @@ public:
     // 从src中反序列化出一条Insert日志记录
     size_t deserialize(const char *src) override
     {
-        LogRecord::deserialize(src);
-        insert_value_.Deserialize(src + OFFSET_LOG_DATA);
-        int offset = OFFSET_LOG_DATA + insert_value_.size + sizeof(int);
-        rid_ = *reinterpret_cast<const Rid *>(src + offset);
+        // 先反序列化基类部分
+        int offset = LogRecord::deserialize(src);
+        
+        // 反序列化记录内容
+        int size = *reinterpret_cast<const int*>(src + offset);
+        insert_value_.size = size;
+        insert_value_.data = new char[size];
+        memcpy(insert_value_.data, src + offset + sizeof(int), size);
+        offset += sizeof(int) + size;
+        
+        // 反序列化RID
+        rid_ = *reinterpret_cast<const Rid*>(src + offset);
         offset += sizeof(Rid);
-        table_name_size_ = *reinterpret_cast<const size_t *>(src + offset);
+        
+        // 反序列化表名
+        table_name_size_ = *reinterpret_cast<const size_t*>(src + offset);
         offset += sizeof(size_t);
+        
+        // 释放旧的表名内存（如果存在）
+        if (table_name_ != nullptr) {
+            delete[] table_name_;
+        }
+        
+        // 分配新的表名内存并复制
         table_name_ = new char[table_name_size_];
         memcpy(table_name_, src + offset, table_name_size_);
+        
         return offset + table_name_size_;
     }
     void format_print() override
@@ -244,7 +262,6 @@ public:
     Rid rid_;                // 记录插入的位置
     char *table_name_;       // 插入记录的表名称
     size_t table_name_size_; // 表名称的大小
-    lsn_t prev_lsn_;
 };
 
 /**
@@ -291,15 +308,33 @@ class DeleteLogRecord : public LogRecord
     }
     // 从src中反序列化出一条Delete日志记录
     size_t deserialize(const char* src) override {
-        LogRecord::deserialize(src);  
-        delete_value_.Deserialize(src + OFFSET_LOG_DATA);
-        int offset = OFFSET_LOG_DATA + delete_value_.size + sizeof(int);
+        // 先反序列化基类部分
+        int offset = LogRecord::deserialize(src);
+        
+        // 反序列化删除的记录
+        int size = *reinterpret_cast<const int*>(src + offset);
+        delete_value_.size = size;
+        delete_value_.data = new char[size];
+        memcpy(delete_value_.data, src + offset + sizeof(int), size);
+        offset += sizeof(int) + size;
+        
+        // 反序列化RID
         rid_ = *reinterpret_cast<const Rid*>(src + offset);
         offset += sizeof(Rid);
+        
+        // 反序列化表名
         table_name_size_ = *reinterpret_cast<const size_t*>(src + offset);
         offset += sizeof(size_t);
+        
+        // 释放旧的表名内存（如果存在）
+        if (table_name_ != nullptr) {
+            delete[] table_name_;
+        }
+        
+        // 分配新的表名内存并复制
         table_name_ = new char[table_name_size_];
         memcpy(table_name_, src + offset, table_name_size_);
+        
         return offset + table_name_size_;
     }
     void format_print() override {
@@ -372,17 +407,40 @@ class UpdateLogRecord : public LogRecord
     }
     // 从src中反序列化出一条Update日志记录
     size_t deserialize(const char* src) override {
-        LogRecord::deserialize(src);  
-        before_value_.Deserialize(src + OFFSET_LOG_DATA);
-        int offset = OFFSET_LOG_DATA + before_value_.size + sizeof(int);
-        after_value_.Deserialize(src + offset);
-        offset += after_value_.size + sizeof(int);
+        // 先反序列化基类部分
+        int offset = LogRecord::deserialize(src);
+        
+        // 反序列化更新前的记录
+        int before_size = *reinterpret_cast<const int*>(src + offset);
+        before_value_.size = before_size;
+        before_value_.data = new char[before_size];
+        memcpy(before_value_.data, src + offset + sizeof(int), before_size);
+        offset += sizeof(int) + before_size;
+        
+        // 反序列化更新后的记录
+        int after_size = *reinterpret_cast<const int*>(src + offset);
+        after_value_.size = after_size;
+        after_value_.data = new char[after_size];
+        memcpy(after_value_.data, src + offset + sizeof(int), after_size);
+        offset += sizeof(int) + after_size;
+        
+        // 反序列化RID
         rid_ = *reinterpret_cast<const Rid*>(src + offset);
         offset += sizeof(Rid);
+        
+        // 反序列化表名
         table_name_size_ = *reinterpret_cast<const size_t*>(src + offset);
         offset += sizeof(size_t);
+        
+        // 释放旧的表名内存（如果存在）
+        if (table_name_ != nullptr) {
+            delete[] table_name_;
+        }
+        
+        // 分配新的表名内存并复制
         table_name_ = new char[table_name_size_];
         memcpy(table_name_, src + offset, table_name_size_);
+        
         return offset + table_name_size_;
     }
     void format_print() override {
