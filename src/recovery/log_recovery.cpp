@@ -89,7 +89,6 @@ void RecoveryManager::redo() {
             case UPDATE:{
                 UpdateLogRecord* update_log_record = static_cast<UpdateLogRecord*>(log_record);
                 std::string table_name(update_log_record->table_name_, update_log_record->table_name_size_);
-                PageId page_id;
                 RmFileHandle *fh_ = sm_manager_->fhs_.at(table_name).get();
                 while (fh_->file_hdr_.num_pages <= update_log_record->rid_.page_no)
                 {
@@ -150,29 +149,29 @@ void RecoveryManager::undo() {
             write_set->pop_front();
             Rid rid = write_record->GetRid();
             // 根据写操作类型进行回滚
-            switch (write_record->GetWriteType())
-            {
-                case WType::INSERT_TUPLE:
-                    abort_set.emplace(rid);
-                    sm_manager_->get_table_handle(write_record->GetTableName())
-                        ->abort_insert_record(rid);
-                    break;
-                case WType::DELETE_TUPLE: {
-                    if(abort_set.count(rid))break;
-                    abort_set.emplace(rid);
-                    auto fh = sm_manager_->get_table_handle(write_record->GetTableName());
-                    fh->abort_delete_record(rid, write_record->GetRecord().data);
-                }
-                    break;
-                case WType::UPDATE_TUPLE:{
-                    if(abort_set.count(rid))break;
-                    abort_set.emplace(rid);
-                    auto fh = sm_manager_->get_table_handle(write_record->GetTableName());
-                    fh->abort_update_record(rid, write_record->GetRecord().data);
-                }
-                default:
-                    break;
-            }
+            // switch (write_record->GetWriteType())
+            // {
+            //     case WType::INSERT_TUPLE:
+            //         abort_set.emplace(rid);
+            //         sm_manager_->get_table_handle(write_record->GetTableName())
+            //             ->abort_insert_record(rid);
+            //         break;
+            //     case WType::DELETE_TUPLE: {
+            //         if(abort_set.count(rid))break;
+            //         abort_set.emplace(rid);
+            //         auto fh = sm_manager_->get_table_handle(write_record->GetTableName());
+            //         fh->abort_delete_record(rid, write_record->GetRecord().data);
+            //     }
+            //         break;
+            //     case WType::UPDATE_TUPLE:{
+            //         if(abort_set.count(rid))break;
+            //         abort_set.emplace(rid);
+            //         auto fh = sm_manager_->get_table_handle(write_record->GetTableName());
+            //         fh->abort_update_record(rid, write_record->GetRecord().data);
+            //     }
+            //     default:
+            //         break;
+            // }
             delete write_record;
         }
     }

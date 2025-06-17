@@ -46,6 +46,8 @@ struct PortalStmt
     std::shared_ptr<Plan> plan;
 
     PortalStmt(portalTag tag_, std::vector<TabCol> sel_cols_, std::unique_ptr<AbstractExecutor> root_, std::shared_ptr<Plan> plan_) : tag(tag_), sel_cols(std::move(sel_cols_)), root(std::move(root_)), plan(std::move(plan_)) {}
+    PortalStmt(portalTag tag_, std::unique_ptr<AbstractExecutor> root_, std::shared_ptr<Plan> plan_) : tag(tag_), root(std::move(root_)), plan(std::move(plan_)) {}
+    PortalStmt(portalTag tag_, std::shared_ptr<Plan> plan_) : tag(tag_), plan(std::move(plan_)) {}
 };
 
 class Portal
@@ -63,68 +65,68 @@ public:
         // 这里可以将select进行拆分，例如：一个select，带有return的select等
         switch (plan->tag)
         {
-        case PlanTag::T_Help:
-        case PlanTag::T_ShowTable:
-        case PlanTag::T_DescTable:
-        case PlanTag::T_Transaction_begin:
-        case PlanTag::T_Transaction_abort:
-        case PlanTag::T_Transaction_commit:
-        case PlanTag::T_Transaction_rollback:
-        case PlanTag::T_SetKnob:
-        case PlanTag::T_Create_StaticCheckPoint:
-            return std::make_shared<PortalStmt>(PORTAL_CMD_UTILITY, std::vector<TabCol>(), std::unique_ptr<AbstractExecutor>(), plan);
-        case PlanTag::T_CreateTable:
-        case PlanTag::T_DropTable:
-        case PlanTag::T_CreateIndex:
-        case PlanTag::T_DropIndex:
-        case PlanTag::T_ShowIndex:
-            return std::make_shared<PortalStmt>(PORTAL_MULTI_QUERY, std::vector<TabCol>(), std::unique_ptr<AbstractExecutor>(), plan);
-        case T_select:
-        {
-            auto x = std::static_pointer_cast<DMLPlan>(plan);
-            std::shared_ptr<ProjectionPlan> p = std::static_pointer_cast<ProjectionPlan>(x->subplan_);
-            std::unique_ptr<AbstractExecutor> root = convert_plan_executor(p, context);
-            return std::make_shared<PortalStmt>(PORTAL_ONE_SELECT, std::move(p->sel_cols_), std::move(root), plan);
-        }
-        case T_Update:
-        {
-            auto x = std::static_pointer_cast<DMLPlan>(plan);
-            std::unique_ptr<AbstractExecutor> scan = convert_plan_executor(x->subplan_, context);
-            std::vector<Rid> rids;
-            for (scan->beginTuple(); !scan->is_end(); scan->nextTuple())
+            case PlanTag::T_Help:
+            case PlanTag::T_ShowTable:
+            case PlanTag::T_DescTable:
+            case PlanTag::T_Transaction_begin:
+            case PlanTag::T_Transaction_abort:
+            case PlanTag::T_Transaction_commit:
+            case PlanTag::T_Transaction_rollback:
+            case PlanTag::T_SetKnob:
+            case PlanTag::T_Create_StaticCheckPoint:
+                return std::make_shared<PortalStmt>(PORTAL_CMD_UTILITY, plan);
+            case PlanTag::T_CreateTable:
+            case PlanTag::T_DropTable:
+            case PlanTag::T_CreateIndex:
+            case PlanTag::T_DropIndex:
+            case PlanTag::T_ShowIndex:
+                return std::make_shared<PortalStmt>(PORTAL_MULTI_QUERY, plan);
+            case T_select:
             {
-                rids.emplace_back(scan->rid());
+                auto x = std::static_pointer_cast<DMLPlan>(plan);
+                std::shared_ptr<ProjectionPlan> p = std::static_pointer_cast<ProjectionPlan>(x->subplan_);
+                std::unique_ptr<AbstractExecutor> root = convert_plan_executor(p, context);
+                return std::make_shared<PortalStmt>(PORTAL_ONE_SELECT, std::move(p->sel_cols_), std::move(root), plan);
             }
-            std::unique_ptr<AbstractExecutor> root = std::make_unique<UpdateExecutor>(sm_manager_,
-                                                                                      x->tab_name_, x->set_clauses_, rids, context);
-            return std::make_shared<PortalStmt>(PORTAL_DML_WITHOUT_SELECT, std::vector<TabCol>(), std::move(root), plan);
-        }
-        case T_Delete:
-        {
-            auto x = std::static_pointer_cast<DMLPlan>(plan);
-            std::unique_ptr<AbstractExecutor> scan = convert_plan_executor(x->subplan_, context);
-            std::vector<Rid> rids;
-            for (scan->beginTuple(); !scan->is_end(); scan->nextTuple())
+            case T_Update:
             {
-                rids.emplace_back(scan->rid());
+                auto x = std::static_pointer_cast<DMLPlan>(plan);
+                std::unique_ptr<AbstractExecutor> scan = convert_plan_executor(x->subplan_, context);
+                std::vector<Rid> rids;
+                for (scan->beginTuple(); !scan->is_end(); scan->nextTuple())
+                {
+                    rids.emplace_back(scan->rid());
+                }
+                std::unique_ptr<AbstractExecutor> root = std::make_unique<UpdateExecutor>(sm_manager_,
+                                                                                        x->tab_name_, x->set_clauses_, rids, context);
+                return std::make_shared<PortalStmt>(PORTAL_DML_WITHOUT_SELECT, std::move(root), plan);
             }
+            case T_Delete:
+            {
+                auto x = std::static_pointer_cast<DMLPlan>(plan);
+                std::unique_ptr<AbstractExecutor> scan = convert_plan_executor(x->subplan_, context);
+                std::vector<Rid> rids;
+                for (scan->beginTuple(); !scan->is_end(); scan->nextTuple())
+                {
+                    rids.emplace_back(scan->rid());
+                }
 
-            std::unique_ptr<AbstractExecutor> root =
-                std::make_unique<DeleteExecutor>(sm_manager_, x->tab_name_, rids, context);
+                std::unique_ptr<AbstractExecutor> root =
+                    std::make_unique<DeleteExecutor>(sm_manager_, x->tab_name_, rids, context);
 
-            return std::make_shared<PortalStmt>(PORTAL_DML_WITHOUT_SELECT, std::vector<TabCol>(), std::move(root), plan);
-        }
-        case T_Insert:
-        {
-            auto x = std::static_pointer_cast<DMLPlan>(plan);
-            std::unique_ptr<AbstractExecutor> root =
-                std::make_unique<InsertExecutor>(sm_manager_, x->tab_name_, x->values_, context);
+                return std::make_shared<PortalStmt>(PORTAL_DML_WITHOUT_SELECT, std::move(root), plan);
+            }
+            case T_Insert:
+            {
+                auto x = std::static_pointer_cast<DMLPlan>(plan);
+                std::unique_ptr<AbstractExecutor> root =
+                    std::make_unique<InsertExecutor>(sm_manager_, x->tab_name_, x->values_, context);
 
-            return std::make_shared<PortalStmt>(PORTAL_DML_WITHOUT_SELECT, std::vector<TabCol>(), std::move(root), plan);
-        }
-        default:
-            throw InternalError("Unexpected field type");
-            break;
+                return std::make_shared<PortalStmt>(PORTAL_DML_WITHOUT_SELECT, std::move(root), plan);
+            }
+            default:
+                throw InternalError("Unexpected field type");
+                break;
         }
 
         return nullptr;
@@ -135,31 +137,31 @@ public:
     {
         switch (portal->tag)
         {
-        case PORTAL_ONE_SELECT:
-        {
-            ql->select_from(std::move(portal->root), std::move(portal->sel_cols), context);
-            break;
-        }
+            case PORTAL_ONE_SELECT:
+            {
+                ql->select_from(std::move(portal->root), std::move(portal->sel_cols), context);
+                break;
+            }
 
-        case PORTAL_DML_WITHOUT_SELECT:
-        {
-            ql->run_dml(std::move(portal->root));
-            break;
-        }
-        case PORTAL_MULTI_QUERY:
-        {
-            ql->run_mutli_query(portal->plan, context);
-            break;
-        }
-        case PORTAL_CMD_UTILITY:
-        {
-            ql->run_cmd_utility(portal->plan, txn_id, context);
-            break;
-        }
-        default:
-        {
-            throw InternalError("Unexpected field type");
-        }
+            case PORTAL_DML_WITHOUT_SELECT:
+            {
+                ql->run_dml(std::move(portal->root));
+                break;
+            }
+            case PORTAL_MULTI_QUERY:
+            {
+                ql->run_mutli_query(portal->plan, context);
+                break;
+            }
+            case PORTAL_CMD_UTILITY:
+            {
+                ql->run_cmd_utility(portal->plan, txn_id, context);
+                break;
+            }
+            default:
+            {
+                throw InternalError("Unexpected field type");
+            }
         }
     }
 
