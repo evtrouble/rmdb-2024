@@ -35,8 +35,9 @@ void DiskManager::write_page(int fd, page_id_t page_no, const char *offset, int 
     // 2.调用write()函数
     // 注意write返回值与num_bytes不等时 throw InternalError("DiskManager::write_page Error");
     ::lseek(fd, page_no * PAGE_SIZE, SEEK_SET);
-    if (::write(fd, offset, num_bytes) != num_bytes)
+    if (::write(fd, offset, num_bytes) != num_bytes) {
         throw InternalError("DiskManager::write_page Error");
+    }
 }
 
 /**
@@ -52,8 +53,9 @@ void DiskManager::read_page(int fd, page_id_t page_no, char *offset, int num_byt
     // 2.调用read()函数
     // 注意read返回值与num_bytes不等时，throw InternalError("DiskManager::read_page Error");
     ::lseek(fd, page_no * PAGE_SIZE, SEEK_SET);
-    if (::read(fd, offset, num_bytes) != num_bytes)
+    if (::read(fd, offset, num_bytes) != num_bytes) {
         throw InternalError("DiskManager::read_page Error");
+    }
 }
 
 /**
@@ -116,12 +118,14 @@ void DiskManager::create_file(const std::string &path)
 {
     // 调用open()函数，使用O_CREAT模式
     // 注意不能重复创建相同文件
-    if (is_file(path))
+    if (is_file(path)) {
         throw FileExistsError(path);
+    }
 
     int fd = ::open(path.c_str(), O_CREAT | O_EXCL, 0600);
-    if (fd == -1)
+    if (fd == -1) {
         throw InternalError("file creates error");
+    }
     ::close(fd);
 }
 
@@ -133,13 +137,15 @@ void DiskManager::destroy_file(const std::string &path)
 {
     // 调用unlink()函数
     // 注意不能删除未关闭的文件
-    if (!is_file(path))
+    if (!is_file(path)) {
         throw FileNotFoundError(path);
+    }
     
     {
         std::shared_lock lock(path2fd_mutex_);
-        if (path2fd_.count(path))
+        if (path2fd_.count(path)) {
             throw FileNotClosedError(path);
+        }
     }
     ::unlink(path.c_str());
 }
@@ -153,8 +159,9 @@ int DiskManager::open_file(const std::string &path)
 {
     // 调用open()函数，使用O_RDWR模式
     // 注意不能重复打开相同文件，并且需要更新文件打开列表
-    if (!is_file(path))
+    if (!is_file(path)) {
         throw FileNotFoundError(path);
+    }
 
     std::lock_guard lock(path2fd_mutex_);
     if (path2fd_.count(path))
@@ -178,8 +185,9 @@ void DiskManager::close_file(int fd)
     // 注意不能关闭未打开的文件，并且需要更新文件打开列表
     std::unique_lock lock(path2fd_mutex_);
     auto iter = fd2path_.find(fd);
-    if (iter == fd2path_.end()) 
+    if (iter == fd2path_.end()) {
         throw FileNotOpenError(fd);
+    }
 
     path2fd_.erase(iter->second);
     fd2path_.erase(iter);

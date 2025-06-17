@@ -217,7 +217,9 @@ void RmFileHandle::delete_record(const Rid &rid, Context *context)
 
     // 2. 检查记录是否存在
     if (!is_record(rid))
+    {
         throw RecordNotFoundError(rid.page_no, rid.slot_no);
+    }
 
     // 3. 更新bitmap，标记slot为空闲
     // Bitmap::reset(page_handle.bitmap, rid.slot_no);
@@ -229,9 +231,11 @@ void RmFileHandle::delete_record(const Rid &rid, Context *context)
     {
         txn_id_t txn_id = txn_mgr->get_record_txn_id(data);
         Transaction *record_txn = txn_mgr->get_or_create_transaction(txn_id);
-        if(txn_mgr->is_write_conflict(record_txn, context->txn_))
+        if(txn_mgr->is_write_conflict(record_txn, context->txn_)) {
             throw TransactionAbortException(context->txn_->get_transaction_id(), 
                 AbortReason::UPGRADE_CONFLICT);
+        }
+
         UndoLog *undolog = new UndoLog(RmRecord(data, file_hdr_.record_size),
                                        record_txn);
         txn_mgr->UpdateUndoLink(fd_, rid, undolog);
@@ -292,9 +296,10 @@ void RmFileHandle::update_record(const Rid &rid, char *buf, Context *context)
     {
         txn_id_t txn_id = txn_mgr->get_record_txn_id(data);
         Transaction *record_txn = txn_mgr->get_or_create_transaction(txn_id);
-        if (txn_mgr->is_write_conflict(record_txn, context->txn_))
+        if (txn_mgr->is_write_conflict(record_txn, context->txn_)) {
             throw TransactionAbortException(context->txn_->get_transaction_id(), 
                 AbortReason::UPGRADE_CONFLICT);
+        }
         
         UndoLog *undolog = new UndoLog(RmRecord(data, file_hdr_.record_size),
                                        record_txn);
@@ -418,8 +423,9 @@ void RmFileHandle::abort_insert_record(const Rid &rid)
     std::lock_guard lock(page_handle.page->latch_);
 
     // 2. 检查记录是否存在
-    if (!is_record(rid))
+    if (!is_record(rid)) {
         throw RecordNotFoundError(rid.page_no, rid.slot_no);
+    }
 
     // 3. 更新bitmap，标记slot为空闲
     // Bitmap::reset(page_handle.bitmap, rid.slot_no);
@@ -462,8 +468,9 @@ void RmFileHandle::abort_update_record(const Rid &rid, char *buf)
     std::lock_guard lock(page_handle.page->latch_);
 
     // 检查记录是否存在
-    if (!is_record(rid))
+    if (!is_record(rid)) {
         throw RecordNotFoundError(rid.page_no, rid.slot_no);
+    }
 
     memcpy(page_handle.get_slot(rid.slot_no), buf, file_hdr_.record_size);
     rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);

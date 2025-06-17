@@ -125,8 +125,9 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
                 {
                     col_agg_map[sel_col.col_name] = true;
                 }
-                else if (col_agg_map.try_emplace(sel_col.col_name, false).first->second)
+                else if (col_agg_map.try_emplace(sel_col.col_name, false).first->second) {
                     throw RMDBError("Column '" + sel_col.col_name + "' appears both as non-aggregated and aggregated");
+                }
             }
         }
         if (x->has_groupby)
