@@ -21,8 +21,14 @@ void RecoveryManager::analyze() {
  * @description: 重做所有未落盘的操作
  */
 void RecoveryManager::redo() {
+    for(auto& pair : sm_manager_->fhs_) {
+        // 确保每个表的文件大小足够
+        pair.second->ensure_file_size();
+    }
+
     long long offset = 0;
     LogRecord *log_record = nullptr;
+    
     while(true){
         log_record = read_log(offset);
         if(log_record == nullptr){

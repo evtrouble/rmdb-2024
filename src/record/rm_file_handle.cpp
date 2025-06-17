@@ -574,3 +574,9 @@ bool RmFileHandle::clean_pages(TransactionManager* txn_mgr, timestamp_t watermar
 
     return true;
 }
+
+void RmFileHandle::ensure_file_size()
+{
+    DiskManager *disk_manager = rm_manager_->disk_manager_;
+    disk_manager->ensure_file_size(fd_, file_hdr_.num_pages);
+}

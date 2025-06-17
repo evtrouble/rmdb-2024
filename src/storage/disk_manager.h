@@ -96,6 +96,13 @@ public:
          */
         page_id_t get_fd2pageno(int fd) { return fd2pageno_[fd]; }
 
+        /**
+         * @description: 确保文件大小足够容纳指定的页面
+         * @param {int} fd 文件句柄
+         * @param {page_id_t} page_no 页面编号
+         */
+        void ensure_file_size(int fd, page_id_t page_no);
+
         static constexpr int MAX_FD = 8192;
 
 private:

@@ -131,7 +131,7 @@ public:
     RmPageHandle create_new_page_handle();
 
     RmPageHandle fetch_page_handle(int page_no);
-    RmPageHandle fetch_or_create_page_handle(int page_no);
+    void ensure_file_size();
 
     void clean_page(int page_no, TransactionManager *txn_mgr, timestamp_t watermark);
 

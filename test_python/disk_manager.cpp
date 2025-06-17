@@ -255,7 +255,7 @@ int DiskManager::read_log(char *log_data, int size, int offset)
         {
             create_file(LOG_FILE_NAME);
         }
-        log_fd_ = open_file(LOG_FILE_NAME);
+        log_fd_ = ::open(LOG_FILE_NAME.c_str(), O_RDWR);
     }
     int file_size = get_file_size(LOG_FILE_NAME);
     if (offset > file_size)
@@ -285,7 +285,7 @@ void DiskManager::write_log(char *log_data, int size)
         {
             create_file(LOG_FILE_NAME);
         }
-        log_fd_ = open_file(LOG_FILE_NAME);
+        log_fd_ = ::open(LOG_FILE_NAME.c_str(), O_RDWR);
     }
 
     // write from the file_end
