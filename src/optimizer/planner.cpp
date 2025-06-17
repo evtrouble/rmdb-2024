@@ -357,30 +357,56 @@ std::vector<TabCol> Planner::compute_required_columns(const std::string &table_n
     return result;
 }
 
-std::shared_ptr<Plan> Planner::add_leaf_projections(std::shared_ptr<Plan> plan, const std::shared_ptr<Query> &query)
+std::shared_ptr<Plan> Planner::apply_projection_pushdown(std::shared_ptr<Plan> plan, const std::shared_ptr<Query> &query)
+{
+    auto select_stmt = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
+
+    // 如果是SELECT *，只在最顶层添加投影节点
+    if (select_stmt && select_stmt->cols.size() == 1 && select_stmt->cols[0]->col_name == "*")
+    {
+        return plan;
+    }
+
+    // 收集所有需要的列（包括SELECT列、JOIN条件列和WHERE条件列）
+    std::set<TabCol> required_cols;
+
+    // 添加SELECT中需要的列
+    for (const auto &col : query->cols)
+    {
+        required_cols.insert(col);
+    }
+
+    // 添加JOIN条件中需要的列
+    for (const auto &cond : query->conds)
+    {
+        required_cols.insert(cond.lhs_col);
+        if (!cond.is_rhs_val)
+        {
+            required_cols.insert(cond.rhs_col);
+        }
+    }
+
+    // 添加WHERE条件中需要的列
+    for (const auto &[table_name, conds] : query->tab_conds)
+    {
+        for (const auto &cond : conds)
+        {
+            required_cols.insert(cond.lhs_col);
+            if (!cond.is_rhs_val)
+            {
+                required_cols.insert(cond.rhs_col);
+            }
+        }
+    }
+
+    return add_leaf_projections(plan, std::vector<TabCol>(required_cols.begin(), required_cols.end()));
+}
+
+std::shared_ptr<Plan> Planner::add_leaf_projections(std::shared_ptr<Plan> plan, const std::vector<TabCol> &required_cols)
 {
     if (!plan)
         return nullptr;
 
-    auto select_stmt = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
-    if (select_stmt && select_stmt->is_select_star_query())
-    {
-        // 对于 SELECT * 查询，不添加任何中间投影节点
-        switch (plan->tag)
-        {
-        case PlanTag::T_NestLoop:
-        {
-            auto join_plan = std::dynamic_pointer_cast<JoinPlan>(plan);
-            join_plan->left_ = add_leaf_projections(join_plan->left_, query);
-            join_plan->right_ = add_leaf_projections(join_plan->right_, query);
-            return plan;
-        }
-        default:
-            return plan;
-        }
-    }
-
-    // 对于非 SELECT * 查询，添加必要的投影节点
     switch (plan->tag)
     {
     case PlanTag::T_SeqScan:
@@ -388,43 +414,47 @@ std::shared_ptr<Plan> Planner::add_leaf_projections(std::shared_ptr<Plan> plan, 
     {
         auto scan_plan = std::dynamic_pointer_cast<ScanPlan>(plan);
 
-        // 计算该表需要的列集合
-        std::vector<TabCol> required_cols = compute_required_columns(scan_plan->tab_name_, query);
-
-        if (!required_cols.empty())
+        // 找出这个表需要的列
+        std::vector<TabCol> table_cols;
+        for (const auto &col : required_cols)
         {
-            return std::make_shared<ProjectionPlan>(PlanTag::T_Projection, plan, required_cols);
+            if (col.tab_name == scan_plan->tab_name_)
+            {
+                table_cols.push_back(col);
+            }
+        }
+
+        // 如果有需要的列，添加投影节点
+        if (!table_cols.empty())
+        {
+            return std::make_shared<ProjectionPlan>(PlanTag::T_Projection, plan, table_cols);
         }
         return plan;
     }
+
     case PlanTag::T_NestLoop:
     {
         auto join_plan = std::dynamic_pointer_cast<JoinPlan>(plan);
-        join_plan->left_ = add_leaf_projections(join_plan->left_, query);
-        join_plan->right_ = add_leaf_projections(join_plan->right_, query);
+        join_plan->left_ = add_leaf_projections(join_plan->left_, required_cols);
+        join_plan->right_ = add_leaf_projections(join_plan->right_, required_cols);
         return plan;
     }
+
+    case PlanTag::T_Filter:
+    {
+        auto filter_plan = std::dynamic_pointer_cast<FilterPlan>(plan);
+        filter_plan->subplan_ = add_leaf_projections(filter_plan->subplan_, required_cols);
+        return plan;
+    }
+
     default:
         return plan;
     }
 }
 
-std::shared_ptr<Plan> Planner::apply_projection_pushdown(std::shared_ptr<Plan> plan, const std::shared_ptr<Query> &query)
-{
-    auto select_stmt = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
-
-    // 对于 SELECT * 查询，我们只在最顶层添加投影节点
-    if (select_stmt && select_stmt->is_select_star_query())
-    {
-        return plan;
-    }
-
-    // 对于非 SELECT * 查询，在叶子节点添加投影
-    return add_leaf_projections(plan, query);
-}
-
 std::shared_ptr<Plan> Planner::physical_optimization(std::shared_ptr<Query> query, Context *context)
 {
+    // 生成基本的查询计划
     std::shared_ptr<Plan> plan = make_one_rel(query, context);
 
     // 应用投影下推优化
@@ -440,7 +470,7 @@ std::shared_ptr<Plan> Planner::physical_optimization(std::shared_ptr<Query> quer
     auto select_stmt = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
     if (select_stmt)
     {
-        if (select_stmt->is_select_star_query())
+        if (select_stmt->cols.size() == 1 && select_stmt->cols[0]->col_name == "*")
         {
             // 对于 SELECT * 查询，获取所有表的所有列
             std::vector<TabCol> all_cols;
@@ -452,12 +482,33 @@ std::shared_ptr<Plan> Planner::physical_optimization(std::shared_ptr<Query> quer
                     all_cols.emplace_back(TabCol{table, col.name});
                 }
             }
+            // 按字母顺序排序列
+            std::sort(all_cols.begin(), all_cols.end(),
+                      [](const TabCol &a, const TabCol &b)
+                      {
+                          if (a.tab_name != b.tab_name)
+                          {
+                              return a.tab_name < b.tab_name;
+                          }
+                          return a.col_name < b.col_name;
+                      });
             plan = std::make_shared<ProjectionPlan>(PlanTag::T_Projection, plan, all_cols);
         }
         else
         {
             // SELECT 具体列情况：使用查询中指定的列
-            plan = std::make_shared<ProjectionPlan>(PlanTag::T_Projection, plan, query->cols);
+            std::vector<TabCol> final_cols = query->cols;
+            // 按字母顺序排序列
+            std::sort(final_cols.begin(), final_cols.end(),
+                      [](const TabCol &a, const TabCol &b)
+                      {
+                          if (a.tab_name != b.tab_name)
+                          {
+                              return a.tab_name < b.tab_name;
+                          }
+                          return a.col_name < b.col_name;
+                      });
+            plan = std::make_shared<ProjectionPlan>(PlanTag::T_Projection, plan, final_cols);
         }
     }
 
@@ -1221,4 +1272,28 @@ std::shared_ptr<Plan> Planner::do_planner(std::shared_ptr<Query> query, Context 
         break;
     }
     return nullptr;
+}
+
+size_t Planner::get_table_cardinality(const std::string &table_name)
+{
+    try
+    {
+        auto &table = sm_manager_->db_.get_table(table_name);
+        size_t num_pages = table.file_hdr.num_pages;
+        size_t num_records = 0;
+
+        // 遍历所有数据页来计算记录数
+        for (size_t page_no = 1; page_no < num_pages; page_no++)
+        {
+            auto page_handle = sm_manager_->fhs_.at(table_name)->fetch_page_handle(page_no);
+            num_records += page_handle.page_hdr->num_records;
+        }
+
+        return num_records;
+    }
+    catch (const std::exception &e)
+    {
+        std::cout << "Error getting cardinality for table " << table_name << ": " << e.what() << std::endl;
+        return 1000; // 默认估计值
+    }
 }
