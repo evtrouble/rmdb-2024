@@ -80,6 +80,10 @@ public:
         rid_ = fh_->insert_record(rec.data, context_);
         context_->txn_->append_write_record(new WriteRecord(WType::INSERT_TUPLE,
                                                             tab_name_, rid_));
+        
+        //记录日志
+        InsertLogRecord log_record(context_->txn_->get_transaction_id(), rec, rid_, tab_name_);
+        context_->log_mgr_->add_log_to_buffer(&log_record);
 
         return nullptr;
     }

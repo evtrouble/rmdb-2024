@@ -124,6 +124,10 @@ public:
                     tab_name_, rid, old_rec);
                 context_->txn_->append_write_record(write_record);
             }
+
+            // 记录日志
+            UpdateLogRecord log_record(context_->txn_->get_transaction_id(), rid, old_rec, rec, tab_name_);
+            context_->log_mgr_->add_log_to_buffer(&log_record);
         }
 
         return nullptr;

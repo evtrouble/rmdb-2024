@@ -23,16 +23,11 @@ public:
     Page* new_page(PageId* page_id);
     bool delete_page(PageId page_id);
     void flush_all_pages(int fd, bool flush = true);
+    void force_flush_all_pages();  // 强制刷新所有脏页到磁盘
 
 private:
-    struct Bucket {
-        std::shared_mutex latch;
-        std::unordered_map<PageId, frame_id_t, PageIdHash> page_table;
-    };
-
-    static constexpr int BUCKET_COUNT = 16;
-    static constexpr int BUCKET_MASK = BUCKET_COUNT - 1;
-    std::vector<Bucket> buckets_;
+    std::shared_mutex table_latch_;    // 保护 page_table
+    std::unordered_map<PageId, frame_id_t, PageIdHash> page_table_;
     std::vector<Page> pages_;
     std::mutex free_list_mutex_;  // 保护 free_list_
     std::list<frame_id_t> free_list_; // 空闲帧编号的链表
@@ -46,12 +41,6 @@ private:
     std::condition_variable flush_cond_;
     std::atomic<bool> terminate_{false};
     std::thread flush_thread_;
-
-    Bucket& get_bucket(const PageId& page_id) {
-        size_t hash = std::hash<int>{}(page_id.fd) ^ 
-                      (std::hash<page_id_t>{}(page_id.page_no) << 1);
-        return buckets_[hash & BUCKET_MASK];
-    }
 
     void background_flush();
     bool find_victim_page(frame_id_t* frame_id);

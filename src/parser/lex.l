@@ -100,6 +100,7 @@ value_path [\.|\/][^ \t]+\.csv
 "MIN" { return MIN; }
 "AVG" { return AVG; }
 "AS" { return AS; }
+"STATIC_CHECKPOINT" { return STATIC_CHECKPOINT; }
 "ENABLE_NESTLOOP" { return ENABLE_NESTLOOP; }
 "ENABLE_SORTMERGE" { return ENABLE_SORTMERGE; }
 "TRUE" {

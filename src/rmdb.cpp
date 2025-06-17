@@ -40,7 +40,7 @@ auto txn_manager = std::make_unique<TransactionManager>(lock_manager.get(), sm_m
 auto planner = std::make_unique<Planner>(sm_manager.get());
 auto optimizer = std::make_unique<Optimizer>(sm_manager.get(), planner.get());
 auto ql_manager = std::make_unique<QlManager>(sm_manager.get(), txn_manager.get(), planner.get());
-auto log_manager = std::make_unique<LogManager>(disk_manager.get());
+auto log_manager = std::make_unique<LogManager>(disk_manager.get(), buffer_pool_manager.get());
 auto recovery = std::make_unique<RecoveryManager>(disk_manager.get(), buffer_pool_manager.get(), sm_manager.get());
 auto portal = std::make_unique<Portal>(sm_manager.get());
 auto analyze = std::make_unique<Analyze>(sm_manager.get());
@@ -113,6 +113,7 @@ void *client_handler(void *sock_fd)
         }
         if (strcmp(data_recv, "crash") == 0)
         {
+            log_manager->flush_log_to_disk();
             txn_manager->StopPurgeCleaner();
             std::cout << "Server crash" << std::endl;
             exit(1);

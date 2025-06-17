@@ -215,6 +215,10 @@ namespace ast
             {
                 std::cout << "ROLLBACK\n";
             }
+            else if (auto x = std::dynamic_pointer_cast<CreateStaticCheckpoint>(node))
+            {
+                std::cout << "CREATE_STATIC_CHECKPOINT\n";
+            }
             else
             {
                 assert(0);

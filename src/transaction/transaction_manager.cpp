@@ -38,6 +38,9 @@ Transaction *TransactionManager::begin(Transaction *txn, LogManager *log_manager
         txn->set_start_ts(next_timestamp_);
     }
 
+    BeginLogRecord log_record(txn->get_transaction_id());
+    log_manager->add_log_to_buffer(&log_record);
+
     // 设置事务状态为GROWING（增长阶段）
     txn->set_state(TransactionState::GROWING);
 
@@ -59,7 +62,6 @@ Transaction *TransactionManager::begin(Transaction *txn, LogManager *log_manager
 void TransactionManager::commit(Context *context, LogManager *log_manager)
 {
     Transaction *txn = context->txn_;
-    // Todo:
     // 1. 如果存在未提交的写操作，提交所有的写操作
     // 2. 释放所有锁
     // 3. 释放事务相关资源，eg.锁集
@@ -88,7 +90,9 @@ void TransactionManager::commit(Context *context, LogManager *log_manager)
     // 4. 把事务日志刷入磁盘
     if (log_manager != nullptr)
     {
-        log_manager->flush_log_to_disk();
+        CommitLogRecord log_record(context->txn_->get_transaction_id());
+        // log_manager->flush_log_to_disk();
+        log_manager->add_log_to_buffer(&log_record);
     }
 
     // 5. 更新事务状态为已提交
@@ -119,7 +123,7 @@ void TransactionManager::abort(Context *context, LogManager *log_manager)
     std::unordered_set<Rid, RidHash> abort_set;
     while (!write_set->empty())
     {
-        auto write_record = std::move(write_set->front()); // 获取最后一个写记录
+        auto write_record = write_set->front(); // 获取最后一个写记录
         write_set->pop_front();      // 移除最后一个写记录
         Rid rid = write_record->GetRid();
         // 根据写操作类型进行回滚
@@ -187,7 +191,10 @@ void TransactionManager::abort(Context *context, LogManager *log_manager)
     // 4. 把事务日志刷入磁盘中
     if (log_manager != nullptr)
     {
-        log_manager->flush_log_to_disk();
+        AbortLogRecord log_record(context->txn_->get_transaction_id());
+        // log_manager->flush_log_to_disk();
+        log_manager->add_log_to_buffer(&log_record);
+        // log_manager->flush_log_to_disk();
     }
     // 5. 更新事务状态
     txn->set_state(TransactionState::ABORTED);

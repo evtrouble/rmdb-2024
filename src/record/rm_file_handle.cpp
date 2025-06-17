@@ -183,6 +183,27 @@ void RmFileHandle::insert_record(const Rid &rid, char *buf)
     rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);
 }
 
+void RmFileHandle::recovery_insert_record(const Rid &rid, char *buf)
+{
+    // 1. 获取页面句柄
+    RmPageHandle page_handle = fetch_page_handle(rid.page_no);
+
+    bool is_occupied = is_record(rid);
+    // 2. 复制数据到指定slot
+    memcpy(page_handle.get_slot(rid.slot_no), buf, file_hdr_.record_size);
+
+    // 3. 更新bitmap和记录数
+    Bitmap::set(page_handle.bitmap, rid.slot_no);
+    if(!is_occupied)
+    {
+        ++page_handle.page_hdr->num_records;
+
+        if (page_handle.page_hdr->num_records == 1 && file_hdr_.first_free_page_no == rid.page_no)
+                file_hdr_.first_free_page_no = page_handle.page_hdr->next_free_page_no;
+    }
+    rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);
+}
+
 /**
  * @description: 删除记录文件中记录号为rid的记录
  * @param {Rid&} rid 要删除的记录的记录号（位置）
@@ -228,6 +249,23 @@ void RmFileHandle::delete_record(const Rid &rid, Context *context)
     }
 
     rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);
+}
+
+void RmFileHandle::recovery_delete_record(const Rid &rid)
+{
+    // 1. 获取页面句柄
+    RmPageHandle page_handle = fetch_page_handle(rid.page_no);
+
+    bool is_occupied = is_record(rid);
+    // 2. 更新bitmap和记录数
+    Bitmap::reset(page_handle.bitmap, rid.slot_no);
+    if(is_occupied) {
+        page_handle.page_hdr->num_records--;
+
+        // 3. 如果页面从满状态变为未满状态，需要更新空闲页面链表
+        if (page_handle.page_hdr->num_records == file_hdr_.num_records_per_page - 1)
+            release_page_handle(page_handle);
+    }
 }
 
 /**

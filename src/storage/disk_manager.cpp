@@ -243,6 +243,10 @@ int DiskManager::read_log(char *log_data, int size, int offset)
     // read log file from the previous end
     if (log_fd_ == -1)
     {
+        if(!is_file(LOG_FILE_NAME))
+        {
+            create_file(LOG_FILE_NAME);
+        }
         log_fd_ = open_file(LOG_FILE_NAME);
     }
     int file_size = get_file_size(LOG_FILE_NAME);
@@ -269,6 +273,10 @@ void DiskManager::write_log(char *log_data, int size)
 {
     if (log_fd_ == -1)
     {
+        if(!is_file(LOG_FILE_NAME))
+        {
+            create_file(LOG_FILE_NAME);
+        }
         log_fd_ = open_file(LOG_FILE_NAME);
     }
 

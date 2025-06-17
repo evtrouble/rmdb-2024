@@ -343,7 +343,7 @@ void SmManager::create_index(const std::string& tab_name, const std::vector<std:
             }
             try
             {
-                ih->insert_entry(insert_data.get(), {rid.page_no, rid.slot_no}, context->txn_);
+                ih->insert_entry_without_lock(insert_data.get(), {rid.page_no, rid.slot_no});
             }
             catch (IndexEntryAlreadyExistError &) {}
         }

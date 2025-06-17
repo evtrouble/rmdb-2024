@@ -39,6 +39,7 @@ typedef enum PlanTag
     T_Transaction_commit,
     T_Transaction_abort,
     T_Transaction_rollback,
+    T_Create_StaticCheckPoint,
     T_SeqScan,
     T_IndexScan,
     T_NestLoop,
@@ -192,6 +193,8 @@ class OtherPlan : public Plan
 public:
     OtherPlan(PlanTag tag, const std::string &tab_name)
         : Plan(tag), tab_name_(std::move(tab_name)) {}
+    OtherPlan(PlanTag tag)
+        : Plan(tag) {}
     ~OtherPlan() {}
     std::string tab_name_;
 };

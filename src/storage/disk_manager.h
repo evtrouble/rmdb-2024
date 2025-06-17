@@ -55,6 +55,12 @@ public:
 
         void create_file(const std::string &path);
 
+        inline void clear_log() {
+                if(log_fd_ != -1) {
+                        ftruncate(log_fd_, 0);
+                }
+        }
+
         void destroy_file(const std::string &path);
 
         int open_file(const std::string &path);

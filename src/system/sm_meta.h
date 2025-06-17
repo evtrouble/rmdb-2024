@@ -224,6 +224,7 @@ struct TabMeta {
 /* 数据库元数据 */
 class DbMeta {
     friend class SmManager;
+    friend class RecoveryManager;
 
    private:
     std::string name_;                      // 数据库名称

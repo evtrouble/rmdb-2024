@@ -35,8 +35,8 @@
    especially those whose name start with YY_ or yy_.  They are
    private implementation details that can be changed or removed.  */
 
-#ifndef YY_YY_HOME_GYL_CPP_DB2025_SRC_PARSER_YACC_TAB_H_INCLUDED
-# define YY_YY_HOME_GYL_CPP_DB2025_SRC_PARSER_YACC_TAB_H_INCLUDED
+#ifndef YY_YY_YACC_TAB_H_INCLUDED
+# define YY_YY_YACC_TAB_H_INCLUDED
 /* Debug traces.  */
 #ifndef YYDEBUG
 # define YYDEBUG 0
@@ -95,22 +95,23 @@ extern int yydebug;
     ORDER_BY = 296,                /* ORDER_BY  */
     ENABLE_NESTLOOP = 297,         /* ENABLE_NESTLOOP  */
     ENABLE_SORTMERGE = 298,        /* ENABLE_SORTMERGE  */
-    SUM = 299,                     /* SUM  */
-    COUNT = 300,                   /* COUNT  */
-    MAX = 301,                     /* MAX  */
-    MIN = 302,                     /* MIN  */
-    AVG = 303,                     /* AVG  */
-    AS = 304,                      /* AS  */
-    LEQ = 305,                     /* LEQ  */
-    NEQ = 306,                     /* NEQ  */
-    GEQ = 307,                     /* GEQ  */
-    T_EOF = 308,                   /* T_EOF  */
-    IDENTIFIER = 309,              /* IDENTIFIER  */
-    VALUE_STRING = 310,            /* VALUE_STRING  */
-    VALUE_PATH = 311,              /* VALUE_PATH  */
-    VALUE_INT = 312,               /* VALUE_INT  */
-    VALUE_FLOAT = 313,             /* VALUE_FLOAT  */
-    VALUE_BOOL = 314               /* VALUE_BOOL  */
+    STATIC_CHECKPOINT = 299,       /* STATIC_CHECKPOINT  */
+    SUM = 300,                     /* SUM  */
+    COUNT = 301,                   /* COUNT  */
+    MAX = 302,                     /* MAX  */
+    MIN = 303,                     /* MIN  */
+    AVG = 304,                     /* AVG  */
+    AS = 305,                      /* AS  */
+    LEQ = 306,                     /* LEQ  */
+    NEQ = 307,                     /* NEQ  */
+    GEQ = 308,                     /* GEQ  */
+    T_EOF = 309,                   /* T_EOF  */
+    IDENTIFIER = 310,              /* IDENTIFIER  */
+    VALUE_STRING = 311,            /* VALUE_STRING  */
+    VALUE_PATH = 312,              /* VALUE_PATH  */
+    VALUE_INT = 313,               /* VALUE_INT  */
+    VALUE_FLOAT = 314,             /* VALUE_FLOAT  */
+    VALUE_BOOL = 315               /* VALUE_BOOL  */
   };
   typedef enum yytokentype yytoken_kind_t;
 #endif
@@ -137,4 +138,4 @@ struct YYLTYPE
 int yyparse (void);
 
 
-#endif /* !YY_YY_HOME_GYL_CPP_DB2025_SRC_PARSER_YACC_TAB_H_INCLUDED  */
+#endif /* !YY_YY_YACC_TAB_H_INCLUDED  */

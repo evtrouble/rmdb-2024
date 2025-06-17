@@ -98,7 +98,8 @@ namespace ast
         JoinExpr,
         SelectStmt,
         SetStmt,
-        InExpr
+        InExpr,
+        CreateStaticCheckpoint
     };
     // Base class for tree nodes
     struct TreeNode
@@ -443,8 +444,14 @@ namespace ast
         } sv_table_list;
     };
 
+    struct CreateStaticCheckpoint : public TreeNode
+    {
+        public:
+            virtual TreeNodeType Nodetype() const override { return TreeNodeType::CreateStaticCheckpoint; }
+    };
+
+
     extern std::shared_ptr<ast::TreeNode> parse_tree;
 
 }
-
 #define YYSTYPE ast::SemValue

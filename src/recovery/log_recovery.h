@@ -34,9 +34,15 @@ public:
     void analyze();
     void redo();
     void undo();
+
+private:
+    LogRecord *read_log(long long offset);
+
 private:
     LogBuffer buffer_;                                              // 读入日志
     DiskManager* disk_manager_;                                     // 用来读写文件
     BufferPoolManager* buffer_pool_manager_;                        // 对页面进行读写
     SmManager* sm_manager_;                                         // 访问数据库元数据
+    // std::unordered_map<txn_id_t, lsn_t> undo_list_;                 // 崩溃前未完成事务列表
+    std::unordered_map<txn_id_t,std::unique_ptr<Transaction>> temp_txns_;// 临时事务列表
 };

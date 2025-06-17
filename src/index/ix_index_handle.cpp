@@ -254,59 +254,75 @@ IxNodeHandle IxIndexHandle::find_leaf_page(const char *key, Operation operation,
         transaction->append_index_latch_page_set(nullptr);
     }
 
+        auto next_page_id = file_hdr_->root_page_;
+        IxNodeHandle prev_node{};
+        prev_node.page = nullptr;
+        int prev_id = 0;
+        // 2. 从根节点开始不断向下查找目标key
+        while (true)
+        {
+            auto node = fetch_node(next_page_id);
+            auto prev_page = prev_node.page;
+            if (find_first)
+            {
+                if (node.is_leaf_page() && operation != Operation::FIND)
+                {
+                    node.page->latch_.lock();
+                    transaction->append_index_latch_page_set(node.page);
+                }
+                else
+                    node.page->latch_.lock_shared();
+
+                if (prev_page != nullptr)
+                {
+                    prev_page->latch_.unlock_shared();
+                    ix_manager_->buffer_pool_manager_->unpin_page(prev_page->get_page_id(), false);
+                }
+                else
+                    root_lacth_.unlock_shared();
+            }
+            else
+            {
+                if (node.is_leaf_page() && operation == Operation::DELETE && prev_id > 0)
+                {
+                    auto left_sibling = fetch_node(prev_node.value_at(prev_id - 1));
+                    left_sibling.page->latch_.lock();
+                    transaction->append_index_latch_page_set(left_sibling.page);
+                }
+                node.page->latch_.lock();
+                if (node.is_safe(operation))
+                    release_all_xlock(transaction->get_index_latch_page_set(), true);
+                transaction->append_index_latch_page_set(node.page);
+            }
+            if (node.is_leaf_page())
+            {
+                if (find_first && !node.is_safe(operation))
+                {
+                    release_all_xlock(transaction->get_index_latch_page_set(), false);
+                    return find_leaf_page(key, operation, transaction, false);
+                }
+                return node;
+            }
+            prev_id = node.upper_bound(key) - 1;
+            next_page_id = node.value_at(prev_id);
+            prev_node = node;
+            // prev_page = node.page;
+        }
+}
+
+IxNodeHandle IxIndexHandle::find_leaf_page_without_lock(const char *key)
+{
     auto next_page_id = file_hdr_->root_page_;
-    IxNodeHandle prev_node{};
-    prev_node.page = nullptr;
     int prev_id = 0;
-    // 2. 从根节点开始不断向下查找目标key
     while (true)
     {
         auto node = fetch_node(next_page_id);
-        auto prev_page = prev_node.page;
-        if (find_first)
-        {
-            if (node.is_leaf_page() && operation != Operation::FIND)
-            {
-                node.page->latch_.lock();
-                transaction->append_index_latch_page_set(node.page);
-            }
-            else
-                node.page->latch_.lock_shared();
-
-            if (prev_page != nullptr)
-            {
-                prev_page->latch_.unlock_shared();
-                ix_manager_->buffer_pool_manager_->unpin_page(prev_page->get_page_id(), false);
-            }
-            else
-                root_lacth_.unlock_shared();
-        }
-        else
-        {
-            if (node.is_leaf_page() && operation == Operation::DELETE && prev_id > 0)
-            {
-                auto left_sibling = fetch_node(prev_node.value_at(prev_id - 1));
-                left_sibling.page->latch_.lock();
-                transaction->append_index_latch_page_set(left_sibling.page);
-            }
-            node.page->latch_.lock();
-            if (node.is_safe(operation))
-                release_all_xlock(transaction->get_index_latch_page_set(), true);
-            transaction->append_index_latch_page_set(node.page);
-        }
         if (node.is_leaf_page())
         {
-            if (find_first && !node.is_safe(operation))
-            {
-                release_all_xlock(transaction->get_index_latch_page_set(), false);
-                return find_leaf_page(key, operation, transaction, false);
-            }
             return node;
         }
         prev_id = node.upper_bound(key) - 1;
         next_page_id = node.value_at(prev_id);
-        prev_node = node;
-        // prev_page = node.page;
     }
 }
 
@@ -458,6 +474,31 @@ page_id_t IxIndexHandle::insert_entry(const char *key, const Rid &value, Transac
     }
     auto ret = leaf_node.get_page_id().page_no;
     release_all_xlock(transaction->get_index_latch_page_set(), true);
+    return ret;
+}
+
+page_id_t IxIndexHandle::insert_entry_without_lock(const char *key, const Rid &value)
+{
+    // 1. 查找key值应该插入到哪个叶子节点
+    auto leaf_node = find_leaf_page_without_lock(key);
+    // 2. 在该叶子节点中插入键值对
+    try
+    {
+        leaf_node.insert(key, value);
+    }
+    catch (const IndexEntryAlreadyExistError &)
+    {
+        return 0;
+    }
+    // 3. 如果结点已满，分裂结点，并把新结点的相关信息插入父节点
+    // 提示：记得unpin page；若当前叶子节点是最右叶子节点，则需要更新file_hdr_.last_leaf；记得处理并发的上锁
+    if (leaf_node.page_hdr->num_key == leaf_node.get_max_size())
+    {
+        auto split_node = split(leaf_node);
+        insert_into_parent(leaf_node, split_node.get_key(0), split_node);
+        ix_manager_->buffer_pool_manager_->unpin_page(split_node.get_page_id(), true);
+    }
+    auto ret = leaf_node.get_page_id().page_no;
     return ret;
 }
 

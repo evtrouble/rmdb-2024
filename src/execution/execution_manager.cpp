@@ -136,6 +136,11 @@ void QlManager::run_cmd_utility(std::shared_ptr<Plan> plan, txn_id_t *txn_id, Co
         txn_mgr_->abort(context, context->log_mgr_);
         break;
     }
+    case T_Create_StaticCheckPoint:
+    {
+        context->log_mgr_->create_static_check_point();
+        break;
+    }
     case T_SetKnob:
     {
         auto x = std::static_pointer_cast<SetKnobPlan>(plan);

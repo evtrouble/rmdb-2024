@@ -38,22 +38,24 @@ public:
         switch (query->parse->Nodetype())
         {
         case ast::TreeNodeType::Help:
-            return std::make_shared<OtherPlan>(T_Help, std::string());
+            return std::make_shared<OtherPlan>(T_Help);
         case ast::TreeNodeType::ShowTables:
-            return std::make_shared<OtherPlan>(T_ShowTable, std::string());
+            return std::make_shared<OtherPlan>(T_ShowTable);
         case ast::TreeNodeType::DescTable:
         {
             auto x = std::static_pointer_cast<ast::DescTable>(query->parse);
             return std::make_shared<OtherPlan>(T_DescTable, x->tab_name);
         }
         case ast::TreeNodeType::TxnBegin:
-            return std::make_shared<OtherPlan>(T_Transaction_begin, std::string());
+            return std::make_shared<OtherPlan>(T_Transaction_begin);
         case ast::TreeNodeType::TxnAbort:
-            return std::make_shared<OtherPlan>(T_Transaction_abort, std::string());
+            return std::make_shared<OtherPlan>(T_Transaction_abort);
         case ast::TreeNodeType::TxnCommit:
-            return std::make_shared<OtherPlan>(T_Transaction_commit, std::string());
+            return std::make_shared<OtherPlan>(T_Transaction_commit);
         case ast::TreeNodeType::TxnRollback:
-            return std::make_shared<OtherPlan>(T_Transaction_rollback, std::string());
+            return std::make_shared<OtherPlan>(T_Transaction_rollback);
+        case ast::TreeNodeType::CreateStaticCheckpoint:
+            return std::make_shared<OtherPlan>(T_Create_StaticCheckPoint);
         case ast::TreeNodeType::SetStmt:
         {
             auto x = std::static_pointer_cast<ast::SetStmt>(query->parse);
