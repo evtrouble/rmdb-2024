@@ -370,36 +370,134 @@ std::shared_ptr<Plan> Planner::apply_projection_pushdown(std::shared_ptr<Plan> p
     // 收集所有需要的列（包括SELECT列、JOIN条件列和WHERE条件列）
     std::set<TabCol> required_cols;
 
-    // 添加SELECT中需要的列
-    for (const auto &col : query->cols)
+    // 建立别名映射
+    std::map<std::string, std::string> tab_to_alias;
+    std::map<std::string, std::string> alias_to_tab;
+    if (select_stmt)
     {
-        required_cols.insert(col);
-    }
-
-    // 添加JOIN条件中需要的列
-    for (const auto &cond : query->conds)
-    {
-        required_cols.insert(cond.lhs_col);
-        if (!cond.is_rhs_val)
+        for (size_t i = 0; i < select_stmt->tabs.size(); i++)
         {
-            required_cols.insert(cond.rhs_col);
-        }
-    }
-
-    // 添加WHERE条件中需要的列
-    for (const auto &[table_name, conds] : query->tab_conds)
-    {
-        for (const auto &cond : conds)
-        {
-            required_cols.insert(cond.lhs_col);
-            if (!cond.is_rhs_val)
+            if (i < select_stmt->tab_aliases.size() && !select_stmt->tab_aliases[i].empty())
             {
-                required_cols.insert(cond.rhs_col);
+                tab_to_alias[select_stmt->tabs[i]] = select_stmt->tab_aliases[i];
+                alias_to_tab[select_stmt->tab_aliases[i]] = select_stmt->tabs[i];
             }
         }
     }
 
-    return add_leaf_projections(plan, std::vector<TabCol>(required_cols.begin(), required_cols.end()));
+    // 1. 添加SELECT中需要的列
+    for (const auto &col : query->cols)
+    {
+        if (col.col_name != "*")
+        {
+            std::string real_tab_name = col.tab_name;
+            if (alias_to_tab.find(col.tab_name) != alias_to_tab.end())
+            {
+                real_tab_name = alias_to_tab[col.tab_name];
+            }
+            required_cols.insert(TabCol{real_tab_name, col.col_name});
+        }
+    }
+
+    // 2. 添加JOIN条件中需要的列
+    for (const auto &cond : query->conds)
+    {
+        if (!cond.is_rhs_val)
+        {
+            std::string lhs_tab = cond.lhs_col.tab_name;
+            std::string rhs_tab = cond.rhs_col.tab_name;
+
+            // 处理表别名
+            if (alias_to_tab.find(lhs_tab) != alias_to_tab.end())
+            {
+                lhs_tab = alias_to_tab[lhs_tab];
+            }
+            if (alias_to_tab.find(rhs_tab) != alias_to_tab.end())
+            {
+                rhs_tab = alias_to_tab[rhs_tab];
+            }
+
+            required_cols.insert(TabCol{lhs_tab, cond.lhs_col.col_name});
+            required_cols.insert(TabCol{rhs_tab, cond.rhs_col.col_name});
+        }
+    }
+
+    // 3. 添加WHERE条件中需要的列
+    for (const auto &[table_name, conds] : query->tab_conds)
+    {
+        std::string real_tab_name = table_name;
+        if (alias_to_tab.find(table_name) != alias_to_tab.end())
+        {
+            real_tab_name = alias_to_tab[table_name];
+        }
+
+        for (const auto &cond : conds)
+        {
+            required_cols.insert(TabCol{real_tab_name, cond.lhs_col.col_name});
+            if (!cond.is_rhs_val)
+            {
+                required_cols.insert(TabCol{real_tab_name, cond.rhs_col.col_name});
+            }
+        }
+    }
+
+    // 根据计划类型处理投影下推
+    switch (plan->tag)
+    {
+    case T_SeqScan:
+    case T_IndexScan:
+    {
+        auto scan_plan = std::dynamic_pointer_cast<ScanPlan>(plan);
+        std::vector<TabCol> scan_cols;
+
+        // 只保留当前表需要的列
+        for (const auto &col : required_cols)
+        {
+            if (col.tab_name == scan_plan->tab_name_)
+            {
+                scan_cols.push_back(col);
+            }
+        }
+
+        // 如果没有需要的列，返回所有列（这种情况不应该发生）
+        if (scan_cols.empty())
+        {
+            const auto &table_cols = sm_manager_->db_.get_table(scan_plan->tab_name_).cols;
+            for (const auto &col : table_cols)
+            {
+                scan_cols.emplace_back(TabCol{scan_plan->tab_name_, col.name});
+            }
+        }
+
+        // 按字母顺序排序列
+        std::sort(scan_cols.begin(), scan_cols.end(),
+                  [](const TabCol &a, const TabCol &b)
+                  {
+                      return a.col_name < b.col_name;
+                  });
+
+        return std::make_shared<ProjectionPlan>(PlanTag::T_Projection, plan, scan_cols);
+    }
+    case T_NestLoop:
+    case T_SortMerge:
+    {
+        auto join_plan = std::dynamic_pointer_cast<JoinPlan>(plan);
+
+        // 递归处理左右子树
+        join_plan->left_ = apply_projection_pushdown(join_plan->left_, query);
+        join_plan->right_ = apply_projection_pushdown(join_plan->right_, query);
+
+        return plan;
+    }
+    case T_Projection:
+    {
+        auto proj_plan = std::dynamic_pointer_cast<ProjectionPlan>(plan);
+        proj_plan->subplan_ = apply_projection_pushdown(proj_plan->subplan_, query);
+        return plan;
+    }
+    default:
+        return plan;
+    }
 }
 
 std::shared_ptr<Plan> Planner::add_leaf_projections(std::shared_ptr<Plan> plan, const std::vector<TabCol> &required_cols)
@@ -466,8 +564,23 @@ std::shared_ptr<Plan> Planner::physical_optimization(std::shared_ptr<Query> quer
     // 处理orderby
     plan = generate_sort_plan(query, std::move(plan));
 
-    // 添加最终的投影节点
+    // 建立别名映射
+    std::map<std::string, std::string> tab_to_alias;
+    std::map<std::string, std::string> alias_to_tab;
     auto select_stmt = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
+    if (select_stmt)
+    {
+        for (size_t i = 0; i < select_stmt->tabs.size(); i++)
+        {
+            if (i < select_stmt->tab_aliases.size() && !select_stmt->tab_aliases[i].empty())
+            {
+                tab_to_alias[select_stmt->tabs[i]] = select_stmt->tab_aliases[i];
+                alias_to_tab[select_stmt->tab_aliases[i]] = select_stmt->tabs[i];
+            }
+        }
+    }
+
+    // 添加最终的投影节点
     if (select_stmt)
     {
         if (select_stmt->cols.size() == 1 && select_stmt->cols[0]->col_name == "*")
@@ -476,13 +589,21 @@ std::shared_ptr<Plan> Planner::physical_optimization(std::shared_ptr<Query> quer
             std::vector<TabCol> all_cols;
             for (const auto &table : query->tables)
             {
+                std::string display_name = table;
+                // 如果表有别名，使用别名
+                if (tab_to_alias.find(table) != tab_to_alias.end())
+                {
+                    display_name = tab_to_alias[table];
+                }
+
                 const auto &table_cols = sm_manager_->db_.get_table(table).cols;
                 for (const auto &col : table_cols)
                 {
-                    all_cols.emplace_back(TabCol{table, col.name});
+                    all_cols.emplace_back(TabCol{display_name, col.name});
                 }
             }
-            // 按字母顺序排序列
+
+            // 按字母顺序排序列（先按表名，再按列名）
             std::sort(all_cols.begin(), all_cols.end(),
                       [](const TabCol &a, const TabCol &b)
                       {
@@ -492,13 +613,32 @@ std::shared_ptr<Plan> Planner::physical_optimization(std::shared_ptr<Query> quer
                           }
                           return a.col_name < b.col_name;
                       });
+
             plan = std::make_shared<ProjectionPlan>(PlanTag::T_Projection, plan, all_cols);
         }
         else
         {
-            // SELECT 具体列情况：使用查询中指定的列
-            std::vector<TabCol> final_cols = query->cols;
-            // 按字母顺序排序列
+            // SELECT 具体列情况
+            std::vector<TabCol> final_cols;
+            for (const auto &col : query->cols)
+            {
+                std::string display_name = col.tab_name;
+                std::string real_tab_name = col.tab_name;
+
+                // 处理表别名
+                if (alias_to_tab.find(col.tab_name) != alias_to_tab.end())
+                {
+                    real_tab_name = alias_to_tab[col.tab_name];
+                }
+                else if (tab_to_alias.find(col.tab_name) != tab_to_alias.end())
+                {
+                    display_name = tab_to_alias[col.tab_name];
+                }
+
+                final_cols.emplace_back(TabCol{display_name, col.col_name});
+            }
+
+            // 按字母顺序排序列（先按表名，再按列名）
             std::sort(final_cols.begin(), final_cols.end(),
                       [](const TabCol &a, const TabCol &b)
                       {
@@ -508,6 +648,7 @@ std::shared_ptr<Plan> Planner::physical_optimization(std::shared_ptr<Query> quer
                           }
                           return a.col_name < b.col_name;
                       });
+
             plan = std::make_shared<ProjectionPlan>(PlanTag::T_Projection, plan, final_cols);
         }
     }
@@ -535,48 +676,8 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
         }
     }
 
-    // 收集每个表需要的列
-    std::map<std::string, std::set<std::string>> required_cols;
-
-    // 1. 收集最终查询需要的列
-    for (const auto &col : query->cols)
-    {
-        if (col.col_name != "*")
-        {
-            std::string real_tab_name = col.tab_name;
-            if (alias_to_tab.find(col.tab_name) != alias_to_tab.end())
-            {
-                real_tab_name = alias_to_tab[col.tab_name];
-            }
-            required_cols[real_tab_name].insert(col.col_name);
-        }
-    }
-
-    // 2. 收集连接条件中用到的列
-    for (const auto &cond : query->conds)
-    {
-        if (!cond.is_rhs_val)
-        {
-            std::string lhs_real_tab = cond.lhs_col.tab_name;
-            if (alias_to_tab.find(cond.lhs_col.tab_name) != alias_to_tab.end())
-            {
-                lhs_real_tab = alias_to_tab[cond.lhs_col.tab_name];
-            }
-            required_cols[lhs_real_tab].insert(cond.lhs_col.col_name);
-
-            std::string rhs_real_tab = cond.rhs_col.tab_name;
-            if (alias_to_tab.find(cond.rhs_col.tab_name) != alias_to_tab.end())
-            {
-                rhs_real_tab = alias_to_tab[cond.rhs_col.tab_name];
-            }
-            required_cols[rhs_real_tab].insert(cond.rhs_col.col_name);
-        }
-    }
-
     // 为每个表创建基础扫描计划
-    std::vector<std::shared_ptr<Plan>> table_scan_executors;
-    std::map<std::string, std::shared_ptr<Plan>> table_plans;
-
+    std::vector<std::shared_ptr<Plan>> table_plans;
     for (const auto &table : query->tables)
     {
         auto [index_meta, max_match_col_count] = get_index_cols(table, query->tab_conds[table]);
@@ -600,38 +701,141 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
                 query->tab_conds[table]);
         }
 
-        table_plans[table] = scan_plan;
+        table_plans.push_back(scan_plan);
     }
 
     // 如果只有一个表，直接返回其扫描计划
-    if (query->tables.size() == 1)
+    if (table_plans.size() == 1)
     {
-        return table_plans[query->tables[0]];
+        return table_plans[0];
     }
 
-    // 处理多表连接
-    auto plan = table_plans[query->tables[0]];
-    for (size_t i = 1; i < query->tables.size(); i++)
+    // 使用贪心算法选择连接顺序
+    // 1. 找到基数最小的两个表作为起点
+    size_t min_i = 0, min_j = 1;
+    size_t min_card = SIZE_MAX;
+
+    for (size_t i = 0; i < table_plans.size(); i++)
     {
-        std::vector<Condition> join_conds;
-        for (const auto &cond : query->conds)
+        for (size_t j = i + 1; j < table_plans.size(); j++)
         {
-            if (!cond.is_rhs_val &&
-                ((cond.lhs_col.tab_name == query->tables[i - 1] && cond.rhs_col.tab_name == query->tables[i]) ||
-                 (cond.lhs_col.tab_name == query->tables[i] && cond.rhs_col.tab_name == query->tables[i - 1])))
+            auto scan_i = std::dynamic_pointer_cast<ScanPlan>(table_plans[i]);
+            auto scan_j = std::dynamic_pointer_cast<ScanPlan>(table_plans[j]);
+            size_t card_i = get_table_cardinality(scan_i->tab_name_);
+            size_t card_j = get_table_cardinality(scan_j->tab_name_);
+            size_t join_card = card_i * card_j; // 简单估计连接基数
+
+            if (join_card < min_card)
+            {
+                min_card = join_card;
+                min_i = i;
+                min_j = j;
+            }
+        }
+    }
+
+    // 2. 创建初始连接
+    std::vector<Condition> join_conds;
+    for (const auto &cond : query->conds)
+    {
+        if (!cond.is_rhs_val)
+        {
+            std::string lhs_tab = cond.lhs_col.tab_name;
+            std::string rhs_tab = cond.rhs_col.tab_name;
+
+            // 处理表别名
+            if (alias_to_tab.find(lhs_tab) != alias_to_tab.end())
+            {
+                lhs_tab = alias_to_tab[lhs_tab];
+            }
+            if (alias_to_tab.find(rhs_tab) != alias_to_tab.end())
+            {
+                rhs_tab = alias_to_tab[rhs_tab];
+            }
+
+            auto scan_i = std::dynamic_pointer_cast<ScanPlan>(table_plans[min_i]);
+            auto scan_j = std::dynamic_pointer_cast<ScanPlan>(table_plans[min_j]);
+
+            if ((lhs_tab == scan_i->tab_name_ && rhs_tab == scan_j->tab_name_) ||
+                (lhs_tab == scan_j->tab_name_ && rhs_tab == scan_i->tab_name_))
             {
                 join_conds.push_back(cond);
             }
         }
-
-        plan = std::make_shared<JoinPlan>(
-            enable_nestedloop_join ? T_NestLoop : T_SortMerge,
-            plan,
-            table_plans[query->tables[i]],
-            join_conds);
     }
 
-    return plan;
+    auto current_plan = std::make_shared<JoinPlan>(
+        enable_nestedloop_join ? T_NestLoop : T_SortMerge,
+        table_plans[min_i],
+        table_plans[min_j],
+        join_conds);
+
+    // 3. 移除已使用的表
+    table_plans.erase(table_plans.begin() + std::max(min_i, min_j));
+    table_plans.erase(table_plans.begin() + std::min(min_i, min_j));
+
+    // 4. 逐个添加剩余的表
+    while (!table_plans.empty())
+    {
+        size_t best_idx = 0;
+        size_t min_result_card = SIZE_MAX;
+        std::vector<Condition> best_conds;
+
+        // 找到添加后产生最小中间结果的表
+        for (size_t i = 0; i < table_plans.size(); i++)
+        {
+            auto scan_plan = std::dynamic_pointer_cast<ScanPlan>(table_plans[i]);
+            size_t table_card = get_table_cardinality(scan_plan->tab_name_);
+
+            // 收集与当前表相关的连接条件
+            std::vector<Condition> curr_conds;
+            for (const auto &cond : query->conds)
+            {
+                if (!cond.is_rhs_val)
+                {
+                    std::string lhs_tab = cond.lhs_col.tab_name;
+                    std::string rhs_tab = cond.rhs_col.tab_name;
+
+                    // 处理表别名
+                    if (alias_to_tab.find(lhs_tab) != alias_to_tab.end())
+                    {
+                        lhs_tab = alias_to_tab[lhs_tab];
+                    }
+                    if (alias_to_tab.find(rhs_tab) != alias_to_tab.end())
+                    {
+                        rhs_tab = alias_to_tab[rhs_tab];
+                    }
+
+                    if (lhs_tab == scan_plan->tab_name_ || rhs_tab == scan_plan->tab_name_)
+                    {
+                        curr_conds.push_back(cond);
+                    }
+                }
+            }
+
+            // 简单估计连接结果的基数
+            size_t result_card = table_card; // 可以在这里添加更复杂的基数估计
+
+            if (result_card < min_result_card)
+            {
+                min_result_card = result_card;
+                best_idx = i;
+                best_conds = curr_conds;
+            }
+        }
+
+        // 添加选中的表
+        current_plan = std::make_shared<JoinPlan>(
+            enable_nestedloop_join ? T_NestLoop : T_SortMerge,
+            current_plan,
+            table_plans[best_idx],
+            best_conds);
+
+        // 移除已使用的表
+        table_plans.erase(table_plans.begin() + best_idx);
+    }
+
+    return current_plan;
 }
 
 std::shared_ptr<Plan> Planner::generate_agg_plan(const std::shared_ptr<Query> &query, std::shared_ptr<Plan> plan)
