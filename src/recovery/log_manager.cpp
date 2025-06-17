@@ -88,84 +88,79 @@ void LogManager::create_static_check_point()
 {
     std::lock_guard lock(latch_);
     flush_log_to_disk_without_lock();
-    auto log_records_ = read_logs_from_disk_without_lock();
-    disk_manager_->clear_log();
+
+    int offset = 0;
     buffer_pool_manager_->force_flush_all_pages();
 
     std::unordered_set<int> finish_txns_;
-    for (const auto &log_record : log_records_)
-    {
-        if (log_record->log_type_ == LogType::COMMIT)
-        {
-            finish_txns_.insert(log_record->log_tid_);
+    LogRecord* log_record = nullptr;
+    while(true){
+        log_record = read_log(offset);
+        if(log_record == nullptr){
+            break;
         }
+        offset += log_record->log_tot_len_;
+        if(log_record->log_type_ == LogType::COMMIT || log_record->log_type_ == LogType::ABORT){
+           finish_txns_.insert(log_record->log_tid_);
+        }
+        delete log_record;
     }
 
-    for (const auto &log_record : log_records_)
-    {
+    offset = 0;
+    while(true){
+        log_record = read_log(offset);
+        if(log_record == nullptr){
+            break;
+        }
+        offset += log_record->log_tot_len_;
         if (finish_txns_.find(log_record->log_tid_) == finish_txns_.end())
         {
             add_log_to_buffer_without_lock(log_record);
         }
         delete log_record;
     }
+    disk_manager_->clear_log();
     flush_log_to_disk_without_lock();
 }
 
-std::vector<LogRecord *> LogManager::read_logs_from_disk_without_lock()
-{
-  std::vector<LogRecord *> log_records_;
-  const auto file_size_ = disk_manager_->get_file_size(LOG_FILE_NAME);
-  auto buffer = new char[std::max(file_size_, 1)];
-  disk_manager_->read_log(buffer, file_size_, 0);
-  auto *tmp_log_ = new LogRecord();
-  int offset = 0;
+LogRecord *LogManager::read_log(long long offset) {
+    // 读取日志记录头
+    char log_header[LOG_HEADER_SIZE];
+    if(disk_manager_->read_log(log_header, LOG_HEADER_SIZE, offset) == 0){
+        return nullptr;
+    }
+    // 解析日志记录头
+    LogType log_type = *reinterpret_cast<const LogType*>(log_header); 
+    uint32_t log_size = *reinterpret_cast<const uint32_t*>(log_header + OFFSET_LOG_TOT_LEN);
+    // 读取日志记录
+    char log_data[log_size];
+    disk_manager_->read_log(log_data, log_size, offset);
+    // 解析日志记录
+    LogRecord *log_record = nullptr;
+    switch (log_type)
+    {
+        case BEGIN:
+            log_record = new BeginLogRecord();
+            break;
+        case COMMIT:
+            log_record = new CommitLogRecord();
+            break;
+        case ABORT:
+            log_record = new AbortLogRecord();
+            break;
+        case UPDATE:
+            log_record = new UpdateLogRecord();
+            break;
+        case INSERT:
+            log_record = new InsertLogRecord();
+            break;
+        case DELETE:
+            log_record = new DeleteLogRecord();
+            break;
+    }
 
-  while (offset < file_size_)
-  {
-      tmp_log_->deserialize(buffer + offset);
-      switch (tmp_log_->log_type_)
-      {
-        case LogType::BEGIN:
-        {
-            auto log_record_ = new BeginLogRecord();
-            offset += log_record_->deserialize(buffer + offset);
-            log_records_.emplace_back(log_record_);
-        }
-        break;
-        case LogType::COMMIT:
-        {
-            auto log_record_ = new CommitLogRecord();
-            offset += log_record_->deserialize(buffer + offset);
-            log_records_.emplace_back(log_record_);
-        }
-        break;
-        case LogType::DELETE:
-        {
-            auto log_record_ = new DeleteLogRecord();
-            offset += log_record_->deserialize(buffer + offset);
-            log_records_.emplace_back(log_record_);
-        }
-        break;
-        case LogType::INSERT:
-        {
-            auto log_record_ = new InsertLogRecord();
-            offset += log_record_->deserialize(buffer + offset);
-            log_records_.emplace_back(log_record_);
-        }
-        break;
-        case LogType::UPDATE:
-        {
-            auto log_record_ = new UpdateLogRecord();
-            offset += log_record_->deserialize(buffer + offset);
-            log_records_.emplace_back(log_record_);
-        }
-        break;
-      default:
-        break;
-      }
-  }
-
-  delete tmp_log_;
-  return log_records_;
+    if(log_record != nullptr){
+        log_record->deserialize(log_data);
+    }
+    return log_record;
 }

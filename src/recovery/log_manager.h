@@ -456,7 +456,7 @@ public:
 
 private:
     void flush_log_to_disk_periodically();
-    std::vector<LogRecord *> read_logs_from_disk_without_lock();
+    LogRecord *read_log(long long offset);
     void flush_log_to_disk_without_lock();
     lsn_t add_log_to_buffer_without_lock(LogRecord *log_record);
 

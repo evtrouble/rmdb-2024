@@ -270,7 +270,9 @@ void SmManager::create_table(const std::string& tab_name, const std::vector<ColD
  */
 void SmManager::drop_table(const std::string& tab_name, Context* context) {
     if (!db_.is_table(tab_name)) 
+    {
         throw TableNotFoundError(tab_name);
+    }
 
     // delete index file
     auto &tab = db_.get_table(tab_name);
@@ -309,7 +311,9 @@ void SmManager::create_index(const std::string& tab_name, const std::vector<std:
     TabMeta &tab = db_.get_table(tab_name);
     auto index_name = ix_manager_->get_index_name(tab_name, col_names);
     if (ihs_.count(index_name))
+    {
         throw IndexExistsError(tab_name, col_names);
+    }
     
     // Create index meta
     std::vector<ColMeta> cols;
@@ -367,7 +371,9 @@ void SmManager::create_index(const std::string& tab_name, const std::vector<std:
  */
 void SmManager::drop_index(const std::string& tab_name, const std::vector<std::string>& col_names, Context* context) {
     if (!db_.is_table(tab_name)) 
+    {
         throw TableNotFoundError(tab_name);
+    }
 
     // delete index file
     auto index_iter = ihs_.find(ix_manager_->get_index_name(tab_name, col_names));
@@ -395,7 +401,9 @@ void SmManager::drop_index(const std::string& tab_name, const std::vector<std::s
  */
 void SmManager::drop_index(const std::string& tab_name, const std::vector<ColMeta>& cols, Context* context) {
     if (!db_.is_table(tab_name)) 
+    {
         throw TableNotFoundError(tab_name);
+    }
 
     // delete index file
     auto index_iter = ihs_.find(ix_manager_->get_index_name(tab_name, cols));
