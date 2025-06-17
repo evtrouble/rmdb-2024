@@ -169,7 +169,7 @@ public:
     }
 
     txn_id_t get_record_txn_id(const char* data) const {
-        if (concurrency_mode_ != ConcurrencyMode::MVCC)  {
+        if (concurrency_mode_ != ConcurrencyMode::MVCC) [[unlikely]] {
             return INVALID_TXN_ID;
         }
         txn_id_t txn_id;
@@ -178,7 +178,7 @@ public:
     }
 
     void set_record_txn_id(char* data, Transaction* txn, bool is_delete = false) const {
-        if (concurrency_mode_ != ConcurrencyMode::MVCC)  {
+        if (concurrency_mode_ != ConcurrencyMode::MVCC) [[unlikely]] {
             return;
         }
         txn_id_t txn_id = txn->get_transaction_id();
@@ -197,7 +197,7 @@ public:
      * @return {bool} 如果返回true，表示记录已被删除或当前版本不可见(需要查找版本链)
      */
     bool need_find_version_chain(Transaction* record_txn , Transaction* txn) const {
-        if (concurrency_mode_ != ConcurrencyMode::MVCC)  {
+        if (concurrency_mode_ != ConcurrencyMode::MVCC) [[unlikely]] {
             return false; // 在非MVCC模式下，记录不会被删除或不可见
         }
         if(record_txn == txn)
@@ -212,7 +212,7 @@ public:
     }
 
     inline bool need_clean(Transaction* record_txn , timestamp_t watermark) {
-        if (concurrency_mode_ != ConcurrencyMode::MVCC)  {
+        if (concurrency_mode_ != ConcurrencyMode::MVCC) [[unlikely]] {
             return false; // 在非MVCC模式下，记录不会被删除或不可见
         }
         
@@ -222,7 +222,7 @@ public:
 
     inline bool is_deleted(txn_id_t txn_id) const
     {
-        if (concurrency_mode_ != ConcurrencyMode::MVCC)  {
+        if (concurrency_mode_ != ConcurrencyMode::MVCC) [[unlikely]] {
             return false; // 在非MVCC模式下，记录不会被删除或不可见
         }
         return (txn_id & TXN_DELETE_TAG);

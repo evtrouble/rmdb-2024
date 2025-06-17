@@ -86,41 +86,41 @@ void LogManager::flush_log_to_disk_periodically(){
 
 void LogManager::create_static_check_point()
 {
-    std::lock_guard lock(latch_);
-    flush_log_to_disk_without_lock();
+    // std::lock_guard lock(latch_);
+    // flush_log_to_disk_without_lock();
 
-    int offset = 0;
-    buffer_pool_manager_->force_flush_all_pages();
+    // int offset = 0;
+    // buffer_pool_manager_->force_flush_all_pages();
 
-    std::unordered_set<int> finish_txns_;
-    LogRecord* log_record = nullptr;
-    while(true){
-        log_record = read_log(offset);
-        if(log_record == nullptr){
-            break;
-        }
-        offset += log_record->log_tot_len_;
-        if(log_record->log_type_ == LogType::COMMIT || log_record->log_type_ == LogType::ABORT){
-           finish_txns_.insert(log_record->log_tid_);
-        }
-        delete log_record;
-    }
+    // std::unordered_set<int> finish_txns_;
+    // LogRecord* log_record = nullptr;
+    // while(true){
+    //     log_record = read_log(offset);
+    //     if(log_record == nullptr){
+    //         break;
+    //     }
+    //     offset += log_record->log_tot_len_;
+    //     if(log_record->log_type_ == LogType::COMMIT || log_record->log_type_ == LogType::ABORT){
+    //        finish_txns_.insert(log_record->log_tid_);
+    //     }
+    //     delete log_record;
+    // }
 
-    offset = 0;
-    while(true){
-        log_record = read_log(offset);
-        if(log_record == nullptr){
-            break;
-        }
-        offset += log_record->log_tot_len_;
-        if (finish_txns_.find(log_record->log_tid_) == finish_txns_.end())
-        {
-            add_log_to_buffer_without_lock(log_record);
-        }
-        delete log_record;
-    }
-    disk_manager_->clear_log();
-    flush_log_to_disk_without_lock();
+    // offset = 0;
+    // while(true){
+    //     log_record = read_log(offset);
+    //     if(log_record == nullptr){
+    //         break;
+    //     }
+    //     offset += log_record->log_tot_len_;
+    //     if (finish_txns_.find(log_record->log_tid_) == finish_txns_.end())
+    //     {
+    //         add_log_to_buffer_without_lock(log_record);
+    //     }
+    //     delete log_record;
+    // }
+    // disk_manager_->clear_log();
+    // flush_log_to_disk_without_lock();
 }
 
 LogRecord *LogManager::read_log(long long offset) {
