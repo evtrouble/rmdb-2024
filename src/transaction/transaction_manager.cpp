@@ -418,7 +418,7 @@ void TransactionManager::PurgeCleaning()
         all_tables_done = true;
         
         for(auto& fh : tables) {
-            if(terminate_purge_cleaner_) [[unlikely]]
+            if(terminate_purge_cleaner_) 
                 break;
                 
             // 清理当前表的一批页面
@@ -440,7 +440,7 @@ void TransactionManager::PurgeCleaning()
             }
         }
 
-        if(terminate_purge_cleaner_) [[unlikely]]
+        if(terminate_purge_cleaner_) 
             break;
         std::this_thread::sleep_for(std::chrono::milliseconds(current_sleep_ms));
     }

@@ -178,7 +178,7 @@ void DiskManager::close_file(int fd)
     // 注意不能关闭未打开的文件，并且需要更新文件打开列表
     std::unique_lock lock(path2fd_mutex_);
     auto iter = fd2path_.find(fd);
-    if (iter == fd2path_.end()) [[unlikely]]
+    if (iter == fd2path_.end()) 
         throw FileNotOpenError(fd);
 
     path2fd_.erase(iter->second);

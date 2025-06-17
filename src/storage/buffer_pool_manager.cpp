@@ -116,7 +116,7 @@ bool BufferPoolManager::unpin_page(PageId page_id, bool is_dirty) {
     int prev = page.pin_count_.fetch_sub(1);
     if (prev == 1) {
         replacer_->unpin(frame_id);
-    } else if(prev <= 0) [[unlikely]] {
+    } else if(prev <= 0)  {
         page.pin_count_.fetch_add(1);
         return false;
     }
@@ -270,7 +270,7 @@ void BufferPoolManager::collect_dirty_pages(std::vector<frame_id_t>& batch) {
 }
 
 void BufferPoolManager::flush_batch(const std::vector<frame_id_t>& batch) {
-    if(batch.empty())[[unlikely]] return;
+    if(batch.empty()) return;
     
     // 直接遍历所有页面进行刷盘
     for (frame_id_t fid : batch) {
