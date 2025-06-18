@@ -108,10 +108,10 @@ struct RmRecord
         memcpy(data, data_, size_);
     }
 
-    void SetData(char *data_)
-    {
-        memcpy(data, data_, size);
-    }
+    // void SetData(char *data_)
+    // {
+    //     memcpy(data, data_, size);
+    // }
 
     void Deserialize(const char *data_)
     {

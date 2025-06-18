@@ -482,7 +482,9 @@ public:
 
     ~LogManager() {
         shutdown_.store(true);
-        flush_thread_.join();
+        if(flush_thread_.joinable()) {
+            flush_thread_.join();
+        }
         flush_log_to_disk();
     }
 
