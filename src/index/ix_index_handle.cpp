@@ -704,7 +704,6 @@ bool IxIndexHandle::coalesce(IxNodeHandle neighbor_node, IxNodeHandle node, IxNo
     if (node.is_leaf_page())
     {
         neighbor_node.set_next_leaf(node.get_next_leaf());
-        ix_manager_->buffer_pool_manager_->unpin_page(node.get_page_id(), true);
     }
 
     parent.erase_pair(index);

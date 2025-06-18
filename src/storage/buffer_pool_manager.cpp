@@ -117,6 +117,7 @@ bool BufferPoolManager::unpin_page(PageId page_id, bool is_dirty) {
     if (prev == 1) {
         replacer_->unpin(frame_id);
     } else if(prev <= 0)  {
+        assert(false && "Pin count should not be negative");
         page.pin_count_.fetch_add(1);
         return false;
     }
