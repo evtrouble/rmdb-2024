@@ -193,11 +193,8 @@ private:
                     {
                         result_cache_[0] = std::move(current);
                     }
-                    sm_manager_->get_bpm()->unpin_page({fh_->GetFd(), rid_.page_no}, false);
-                    // context_->lock_mgr_->lock_shared_on_record(context_->txn_, rid_, fh_->GetFd());
                     return;
                 }
-                sm_manager_->get_bpm()->unpin_page({fh_->GetFd(), rid_.page_no}, false);
                 scan_->next();
             }
             rid_.page_no = RM_NO_PAGE; // 设置 rid_ 以指示结束

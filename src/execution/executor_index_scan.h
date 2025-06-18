@@ -339,11 +339,8 @@ public:
                         result_cache_[0] = std::move(record);
                     }
                     scan_->next();
-                    sm_manager_->get_bpm()->unpin_page({fh_->GetFd(), rid_.page_no}, false);
-                    // context_->lock_mgr_->lock_shared_on_record(context_->txn_, rid_, fh_->GetFd());
                     return;
                 }
-                sm_manager_->get_bpm()->unpin_page({fh_->GetFd(), rid_.page_no}, false);
                 scan_->next();
             }
             rid_.page_no = INVALID_PAGE_ID;  // 如果没有找到满足条件的记录，设置为无效
