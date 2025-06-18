@@ -26,7 +26,7 @@ lsn_t LogManager::add_log_to_buffer(LogRecord *log_record)
 lsn_t LogManager::add_log_to_buffer_without_lock(LogRecord *log_record)
 {
     if(log_buffer_.is_full(log_record->log_tot_len_)){//如果缓冲区已满
-      flush_log_to_disk();
+      flush_log_to_disk_without_lock();
     }
     // 分配一个日志记录号
     log_record->lsn_ = global_lsn_++;
