@@ -104,9 +104,8 @@ public:
     }
 
     /* 判断指定位置上是否已经存在一条记录，通过Bitmap来判断 */
-    bool is_record(const Rid &rid)
+    inline bool is_record(const RmPageHandle& page_handle, const Rid &rid)
     {
-        RmPageHandle page_handle = fetch_page_handle(rid.page_no);
         return Bitmap::is_set(page_handle.bitmap, rid.slot_no); // page的slot_no位置上是否有record
     }
 

@@ -85,13 +85,14 @@ void RecoveryManager::redo() {
                             abort_set.emplace(rid);
                             auto fh = sm_manager_->get_table_handle(write_record->GetTableName());
                             fh->abort_delete_record(rid, write_record->GetRecord().data);
-                        }
                             break;
+                        }
                         case WType::UPDATE_TUPLE:{
                             if(abort_set.count(rid))break;
                             abort_set.emplace(rid);
                             auto fh = sm_manager_->get_table_handle(write_record->GetTableName());
                             fh->abort_update_record(rid, write_record->GetRecord().data);
+                            break;
                         }
                         default:
                             break;
@@ -106,11 +107,10 @@ void RecoveryManager::redo() {
                 std::string table_name(update_log_record->table_name_, update_log_record->table_name_size_);
                 
                 // 检查表是否存在
-                auto fh_it = sm_manager_->fhs_.find(table_name);
-                if(fh_it == sm_manager_->fhs_.end()) {
+                auto fh_ = sm_manager_->get_table_handle(table_name);
+                if(fh_ == nullptr) {
                     break;  // 表不存在，跳过
                 }
-                RmFileHandle *fh_ = fh_it->second.get();
                 
                 // 创建必要的页面
                 while (fh_->file_hdr_.num_pages <= update_log_record->rid_.page_no)
@@ -136,11 +136,10 @@ void RecoveryManager::redo() {
                 std::string table_name(insert_log_record->table_name_, insert_log_record->table_name_size_);
                 
                 // 检查表是否存在
-                auto fh_it = sm_manager_->fhs_.find(table_name);
-                if(fh_it == sm_manager_->fhs_.end()) {
+                auto fh_ = sm_manager_->get_table_handle(table_name);
+                if(fh_ == nullptr) {
                     break;  // 表不存在，跳过
                 }
-                RmFileHandle *fh_ = fh_it->second.get();
                 
                 // 创建必要的页面
                 while (fh_->file_hdr_.num_pages <= insert_log_record->rid_.page_no)
@@ -166,11 +165,10 @@ void RecoveryManager::redo() {
                 std::string table_name(delete_log_record->table_name_, delete_log_record->table_name_size_);
                 
                 // 检查表是否存在
-                auto fh_it = sm_manager_->fhs_.find(table_name);
-                if(fh_it == sm_manager_->fhs_.end()) {
+                auto fh_ = sm_manager_->get_table_handle(table_name);
+                if(fh_ == nullptr) {
                     break;  // 表不存在，跳过
                 }
-                RmFileHandle *fh_ = fh_it->second.get();
                 
                 // 创建必要的页面
                 while (fh_->file_hdr_.num_pages <= delete_log_record->rid_.page_no)
@@ -221,13 +219,14 @@ void RecoveryManager::undo() {
                     abort_set.emplace(rid);
                     auto fh = sm_manager_->get_table_handle(write_record->GetTableName());
                     fh->abort_delete_record(rid, write_record->GetRecord().data);
-                }
                     break;
+                }
                 case WType::UPDATE_TUPLE:{
                     if(abort_set.count(rid))break;
                     abort_set.emplace(rid);
                     auto fh = sm_manager_->get_table_handle(write_record->GetTableName());
                     fh->abort_update_record(rid, write_record->GetRecord().data);
+                    break;
                 }
                 default:
                     break;
@@ -235,7 +234,7 @@ void RecoveryManager::undo() {
             delete write_record;
         }
     }
-    // 释放undo_list_
+
     temp_txns_.clear();
     disk_manager_->clear_log();
     buffer_pool_manager_->force_flush_all_pages(); // 确保所有脏页都被刷新到磁盘

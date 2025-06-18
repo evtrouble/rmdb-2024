@@ -24,7 +24,7 @@ std::unique_ptr<RmRecord> RmFileHandle::get_record(const Rid &rid, Context *cont
     std::shared_lock lock(page_handle.page->latch_);
 
     // 2. 检查记录是否存在
-    if (!is_record(rid))
+    if (!is_record(page_handle, rid))
     {
         throw RecordNotFoundError(rid.page_no, rid.slot_no);
     }
@@ -162,7 +162,7 @@ void RmFileHandle::insert_record(const Rid &rid, char *buf)
     std::lock_guard lock(page_handle.page->latch_);
 
     // 2. 检查该位置是否已经有记录
-    bool is_occupied = is_record(rid);
+    bool is_occupied = is_record(page_handle, rid);
     if (is_occupied)
     {
         throw RMDBError("Cannot insert record: slot is already occupied");
@@ -189,7 +189,7 @@ void RmFileHandle::recovery_insert_record(const Rid &rid, char *buf)
     RmPageHandle page_handle = fetch_page_handle(rid.page_no);
     std::lock_guard page_lock(page_handle.page->latch_);
 
-    bool is_occupied = is_record(rid);
+    bool is_occupied = is_record(page_handle, rid);
     // 2. 复制数据到指定slot
     memcpy(page_handle.get_slot(rid.slot_no), buf, file_hdr_.record_size);
 
@@ -218,7 +218,7 @@ void RmFileHandle::delete_record(const Rid &rid, Context *context)
     std::lock_guard lock(page_handle.page->latch_);
 
     // 2. 检查记录是否存在
-    if (!is_record(rid))
+    if (!is_record(page_handle, rid))
     {
         throw RecordNotFoundError(rid.page_no, rid.slot_no);
     }
@@ -263,7 +263,7 @@ void RmFileHandle::recovery_delete_record(const Rid &rid)
     RmPageHandle page_handle = fetch_page_handle(rid.page_no);
     std::lock_guard lock(page_handle.page->latch_);
 
-    bool is_occupied = is_record(rid);
+    bool is_occupied = is_record(page_handle, rid);
     // 2. 更新bitmap和记录数
     Bitmap::reset(page_handle.bitmap, rid.slot_no);
     if(is_occupied) {
@@ -289,7 +289,7 @@ void RmFileHandle::update_record(const Rid &rid, char *buf, Context *context)
     std::lock_guard lock(page_handle.page->latch_);
 
     // 2. 检查记录是否存在
-    if (!is_record(rid))
+    if (!is_record(page_handle, rid))
     {
         throw RecordNotFoundError(rid.page_no, rid.slot_no);
     }
@@ -427,7 +427,7 @@ void RmFileHandle::abort_insert_record(const Rid &rid)
     std::lock_guard lock(page_handle.page->latch_);
 
     // 2. 检查记录是否存在
-    if (!is_record(rid)) {
+    if (!is_record(page_handle, rid)) {
         throw RecordNotFoundError(rid.page_no, rid.slot_no);
     }
 
@@ -452,7 +452,7 @@ void RmFileHandle::abort_delete_record(const Rid &rid, char *buf)
     memcpy(page_handle.get_slot(rid.slot_no), buf, file_hdr_.record_size);
 
     // 更新bitmap和记录数
-    if(!is_record(rid))
+    if(!is_record(page_handle, rid))
     {
         ++page_handle.page_hdr->num_records;
         Bitmap::set(page_handle.bitmap, rid.slot_no);
@@ -470,7 +470,7 @@ void RmFileHandle::abort_update_record(const Rid &rid, char *buf)
     std::lock_guard lock(page_handle.page->latch_);
 
     // 检查记录是否存在
-    if (!is_record(rid)) {
+    if (!is_record(page_handle, rid)) {
         throw RecordNotFoundError(rid.page_no, rid.slot_no);
     }
 

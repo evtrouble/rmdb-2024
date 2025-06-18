@@ -150,8 +150,8 @@ void TransactionManager::abort(Context *context, LogManager *log_manager)
                     fh->abort_delete_record(rid, undolog->tuple_.data);
                     txn->release();
                 }
-            }
                 break;
+            }
             case WType::UPDATE_TUPLE:{
                 if(abort_set.count(rid))break;
                 abort_set.emplace(rid);
@@ -167,8 +167,8 @@ void TransactionManager::abort(Context *context, LogManager *log_manager)
                     fh->abort_update_record(rid, undolog->tuple_.data);
                     txn->release();
                 }
-            }
                 break;
+            }
             case WType::IX_INSERT_TUPLE:
                 sm_manager_->get_index_handle(write_record->GetTableName())
                     ->delete_entry(write_record->GetRecord().data, rid, txn, true);
