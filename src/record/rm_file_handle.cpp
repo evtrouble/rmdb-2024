@@ -26,6 +26,7 @@ std::unique_ptr<RmRecord> RmFileHandle::get_record(const Rid &rid, Context *cont
     // 2. 检查记录是否存在
     if (!is_record(page_handle, rid))
     {
+        rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), false);
         throw RecordNotFoundError(rid.page_no, rid.slot_no);
     }
 
@@ -33,6 +34,7 @@ std::unique_ptr<RmRecord> RmFileHandle::get_record(const Rid &rid, Context *cont
     auto record = std::make_unique<RmRecord>(file_hdr_.record_size);
     // 将slot中的数据复制到record中
     memcpy(record->data, page_handle.get_slot(rid.slot_no), file_hdr_.record_size);
+    rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), false);
 
     return record;
 }
@@ -117,6 +119,7 @@ Rid RmFileHandle::insert_record(char *buf, Context *context)
         if (slot_no >= file_hdr_.num_records_per_page)
         {
             // 当前页面已满，需要创建新页面
+            rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), false);
             page_handle = create_new_page_handle();
             slot_no = 0;
             // 为新页面获取锁
@@ -165,6 +168,7 @@ void RmFileHandle::insert_record(const Rid &rid, char *buf)
     bool is_occupied = is_record(page_handle, rid);
     if (is_occupied)
     {
+        rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), false);
         throw RMDBError("Cannot insert record: slot is already occupied");
     }
 
@@ -220,6 +224,7 @@ void RmFileHandle::delete_record(const Rid &rid, Context *context)
     // 2. 检查记录是否存在
     if (!is_record(page_handle, rid))
     {
+        rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), false);
         throw RecordNotFoundError(rid.page_no, rid.slot_no);
     }
 
@@ -234,6 +239,7 @@ void RmFileHandle::delete_record(const Rid &rid, Context *context)
         txn_id_t txn_id = txn_mgr->get_record_txn_id(data);
         Transaction *record_txn = txn_mgr->get_or_create_transaction(txn_id);
         if(txn_mgr->is_write_conflict(record_txn, context->txn_)) {
+            rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), false);
             throw TransactionAbortException(context->txn_->get_transaction_id(), 
                 AbortReason::UPGRADE_CONFLICT);
         }
@@ -291,6 +297,7 @@ void RmFileHandle::update_record(const Rid &rid, char *buf, Context *context)
     // 2. 检查记录是否存在
     if (!is_record(page_handle, rid))
     {
+        rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), false);
         throw RecordNotFoundError(rid.page_no, rid.slot_no);
     }
 
@@ -301,6 +308,7 @@ void RmFileHandle::update_record(const Rid &rid, char *buf, Context *context)
         txn_id_t txn_id = txn_mgr->get_record_txn_id(data);
         Transaction *record_txn = txn_mgr->get_or_create_transaction(txn_id);
         if (txn_mgr->is_write_conflict(record_txn, context->txn_)) {
+            rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), false);
             throw TransactionAbortException(context->txn_->get_transaction_id(), 
                 AbortReason::UPGRADE_CONFLICT);
         }
@@ -428,6 +436,7 @@ void RmFileHandle::abort_insert_record(const Rid &rid)
 
     // 2. 检查记录是否存在
     if (!is_record(page_handle, rid)) {
+        rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), false);
         throw RecordNotFoundError(rid.page_no, rid.slot_no);
     }
 
@@ -471,6 +480,7 @@ void RmFileHandle::abort_update_record(const Rid &rid, char *buf)
 
     // 检查记录是否存在
     if (!is_record(page_handle, rid)) {
+        rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), false);
         throw RecordNotFoundError(rid.page_no, rid.slot_no);
     }
 
