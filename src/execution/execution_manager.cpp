@@ -285,7 +285,7 @@ void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, 
         }
     }
     // 写入剩余数据
-    if (!buffer.empty())
+    if (buffer.size())
     {
         discard = ::write(fd, buffer.data(), buffer.size());
     }

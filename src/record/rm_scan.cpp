@@ -35,7 +35,7 @@ void RmScan::next() {
         // 当前页处理完，读取下一页
         load_next_page();
         // 如果新页有记录，设置为第一条
-        if(!current_records_.empty()) {
+        if(current_records_.size()) {
             current_record_idx_ = 0;
             rid_.slot_no = current_records_[0].second;
         }

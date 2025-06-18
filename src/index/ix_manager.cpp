@@ -118,6 +118,6 @@ void IxManager::close_index(const IxIndexHandle *ih, bool flush)
         delete[] data;
     }
     // 缓冲区的所有页刷到磁盘，注意这句话必须写在close_file前面
-    buffer_pool_manager_->flush_all_pages(ih->fd_, flush);
+    buffer_pool_manager_->remove_all_pages(ih->fd_, flush);
     disk_manager_->close_file(ih->fd_);
 }

@@ -225,9 +225,9 @@ public:
 
 private:
     // 辅助函数
-    void update_root_page_no(page_id_t root) { file_hdr_->root_page_ = root; }
+    inline void update_root_page_no(page_id_t root) { file_hdr_->root_page_ = root; }
 
-    bool is_empty() const { return file_hdr_->root_page_ == IX_NO_PAGE; }
+    inline bool is_empty() const { return file_hdr_->root_page_ == IX_NO_PAGE; }
 
     // for get/create node
     IxNodeHandle fetch_node(int page_no) const;

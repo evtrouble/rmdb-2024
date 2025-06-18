@@ -27,10 +27,11 @@ private:
         };
 
         static constexpr int SHARD_COUNT = 16; // 根据CPU核心数调整
+        static constexpr int SHARD_MASK = SHARD_COUNT - 1; // 用于快速计算shard索引
         std::vector<Shard> shards_;
 
         inline Shard &get_shard(frame_id_t frame_id)
         {
-                return shards_[frame_id & (SHARD_COUNT - 1)];
+                return shards_[frame_id & SHARD_MASK];
         }
 };

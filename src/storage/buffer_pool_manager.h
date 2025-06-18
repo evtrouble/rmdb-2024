@@ -22,7 +22,7 @@ public:
     bool flush_page(PageId page_id);
     Page* new_page(PageId* page_id);
     bool delete_page(PageId page_id);
-    void flush_all_pages(int fd, bool flush = true);
+    void remove_all_pages(int fd, bool flush = true);
     void force_flush_all_pages();  // 强制刷新所有脏页到磁盘
 
 private:

@@ -20,7 +20,7 @@ bool ClockReplacer::victim(frame_id_t *frame_id)
     {
         for (auto &shard : shards_)
         {
-            std::lock_guard<std::mutex> guard(shard.mtx);
+            std::lock_guard guard(shard.mtx);
             if (shard.num_entries == 0)
                 continue;
 
@@ -59,7 +59,7 @@ bool ClockReplacer::victim(frame_id_t *frame_id)
 void ClockReplacer::pin(frame_id_t frame_id)
 {
     auto &shard = get_shard(frame_id);
-    std::lock_guard<std::mutex> guard(shard.mtx);
+    std::lock_guard guard(shard.mtx);
     size_t idx = frame_id / SHARD_COUNT % shard.entries.size();
     if (shard.entries[idx].in_replacer)
     {
@@ -71,7 +71,7 @@ void ClockReplacer::pin(frame_id_t frame_id)
 void ClockReplacer::unpin(frame_id_t frame_id)
 {
     auto &shard = get_shard(frame_id);
-    std::lock_guard<std::mutex> guard(shard.mtx);
+    std::lock_guard guard(shard.mtx);
     size_t idx = frame_id / SHARD_COUNT % shard.entries.size();
     if (!shard.entries[idx].in_replacer)
     {
@@ -86,7 +86,7 @@ size_t ClockReplacer::Size()
     size_t total = 0;
     for (auto &shard : shards_)
     {
-        std::lock_guard<std::mutex> guard(shard.mtx);
+        std::lock_guard guard(shard.mtx);
         total += shard.num_entries;
     }
     return total;

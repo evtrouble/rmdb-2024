@@ -91,7 +91,7 @@ void SmManager::open_db(const std::string& db_name) {
         throw DatabaseExistsError(db_name);
     }
     // 如果已有数据库打开，则抛出数据库已存在异常
-    if (!db_.name_.empty())
+    if (db_.name_.size())
     {
         throw DatabaseExistsError(db_name);
     }
@@ -457,7 +457,7 @@ void SmManager::show_index(const std::string &tab_name, Context *context)
     }
     printer.print_separator(context);
     // 写入剩余数据
-    if (!buffer.empty()) {
+    if (buffer.size()) {
         discard = ::write(fd, buffer.data(), buffer.size());
     }
     ::close(fd);

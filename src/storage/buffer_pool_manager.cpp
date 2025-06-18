@@ -192,12 +192,15 @@ bool BufferPoolManager::delete_page(PageId page_id) {
     return true;
 }
 
-void BufferPoolManager::flush_all_pages(int fd, bool flush) {
+void BufferPoolManager::remove_all_pages(int fd, bool flush) {
+    if(fd < 0) {
+        return; // 无效的文件描述符
+    }
     std::lock_guard lock(table_latch_);
     auto it = page_table_.begin();
     while (it != page_table_.end()) {
         auto& [pid, frame_id] = *it;
-        if (fd != -1 && pid.fd != fd) {
+        if (pid.fd != fd) {
             ++it;
             continue;
         }
@@ -212,8 +215,8 @@ void BufferPoolManager::flush_all_pages(int fd, bool flush) {
             free_list_.push_back(frame_id);
         }
         
-        page.pin_count_.store(0);
-        replacer_->unpin(frame_id);
+        assert(page.pin_count_.load() == 0 && "Cannot remove a pinned page");
+        // page.pin_count_.store(0);
         
         // 删除记录
         it = page_table_.erase(it);
@@ -241,7 +244,7 @@ void BufferPoolManager::background_flush() {
         // 收集并处理脏页
         if (dirty_page_count_.load() > 0) {
             collect_dirty_pages(batch);
-            if (!batch.empty()) {
+            if (batch.size()) {
                 flush_batch(batch);
                 batch.clear();
             }
@@ -289,7 +292,7 @@ void BufferPoolManager::flush_batch(const std::vector<frame_id_t>& batch) {
 bool BufferPoolManager::find_victim_page(frame_id_t* frame_id) {
     {
         std::lock_guard lock(free_list_mutex_);
-        if (!free_list_.empty()) {
+        if (free_list_.size()) {
         
             *frame_id = free_list_.front();
             free_list_.pop_front();

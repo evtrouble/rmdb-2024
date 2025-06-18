@@ -230,7 +230,7 @@ public:
     }
 
     void nextTuple() override {
-        if (!left_cache_.empty() && !right_cache_.empty()) {
+        if (left_cache_.size() && right_cache_.size()) {
             ++right_cache_idx_;
             if (right_cache_idx_ >= right_cache_.size()) {
                 // 已经遍历完所有缓存的右表记录，移动左表缓存
@@ -252,7 +252,7 @@ public:
     std::unique_ptr<RmRecord> Next() override {
         auto record = std::make_unique<RmRecord>(len_);
         
-        if (!left_cache_.empty() && !right_cache_.empty()) {
+        if (left_cache_.size() && right_cache_.size()) {
             std::memcpy(record->data, left_cache_[left_cache_idx_]->data, left_->tupleLen());
             std::memcpy(record->data + left_->tupleLen(), right_cache_[right_cache_idx_]->data, right_->tupleLen());
         } else {

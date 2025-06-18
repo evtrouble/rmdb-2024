@@ -247,7 +247,7 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
         scantbl[i] = -1;
     }
     // 先处理jointree中的SEMI JOIN
-    if (!query->jointree.empty()) {
+    if (query->jointree.size()) {
         for (auto& join_expr : query->jointree) {
             if (SEMI_JOIN == join_expr.type) {
                 // 获取左右表的扫描算子
@@ -293,7 +293,7 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
                        [](const auto &t)
                        { return t; });
         auto it = conds.begin();
-        if (!conds.empty())
+        if (conds.size())
         {
             std::shared_ptr<Plan> left, right;
             left = pop_scan(scantbl, it->lhs_col.tab_name, joined_tables_set, table_scan_executors);

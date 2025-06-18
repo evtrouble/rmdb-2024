@@ -384,9 +384,9 @@ namespace ast
                                                       groupby(std::move(groupby_)), having_conds(std::move(having_conds_)), order(std::move(order_)),limit(limit_)
         {
             has_sort = (bool)order;
-            has_groupby = (!groupby.empty());
-            has_having = (!having_conds.empty());
-            has_join = (!jointree.empty());
+            has_groupby = (groupby.size());
+            has_having = (having_conds.size());
+            has_join = (jointree.size());
             has_limit = (limit_ != -1);
         }
         TreeNodeType Nodetype() const override { return TreeNodeType::SelectStmt; }

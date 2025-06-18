@@ -71,7 +71,7 @@ private:
 
     void sortExternallyWithInitialData() {
         // 先处理已经读入内存的数据
-        if (!sorted_tuples_.empty()) {
+        if (sorted_tuples_.size()) {
             sortAndWriteBlock(sorted_tuples_);
             sorted_tuples_.clear();
         }
@@ -91,7 +91,7 @@ private:
                 prev_->nextTuple();
             }
         }
-        if (!block.empty()) {
+        if (block.size()) {
             sortAndWriteBlock(block);
         }
         mergeSortedBlocks();
@@ -156,7 +156,7 @@ private:
 
         // 归并排序
         sorted_tuples_.clear();
-        while (!min_heap.empty() && (limit_ == -1 || sorted_tuples_.size() < static_cast<size_t>(limit_))) {
+        while (min_heap.size() && (limit_ == -1 || sorted_tuples_.size() < static_cast<size_t>(limit_))) {
             auto top_pair = std::move(const_cast<std::pair<std::unique_ptr<RmRecord>, size_t>&>(min_heap.top()));
             min_heap.pop();
             sorted_tuples_.emplace_back(std::move(top_pair.first));
@@ -205,7 +205,7 @@ public:
     void beginTuple() override { 
         output_count_ = 0;
         current_index_ = 0;
-        if (!sorted_tuples_.empty())
+        if (sorted_tuples_.size())
             return;
         // 动态收集数据，根据实际数据量决定排序策略
         size_t current_size = 0;

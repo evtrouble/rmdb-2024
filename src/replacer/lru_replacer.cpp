@@ -8,7 +8,7 @@ bool LRUReplacer::victim(frame_id_t *frame_id)
     for (auto &shard : shards_)
     {
         std::lock_guard guard(shard.mtx);
-        if (!shard.lru_list.empty())
+        if (shard.lru_list.size())
         {
             *frame_id = shard.lru_list.back();
             shard.lru_list.pop_back();

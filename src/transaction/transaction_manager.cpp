@@ -121,7 +121,7 @@ void TransactionManager::abort(Context *context, LogManager *log_manager)
     // 1. 回滚所有写操作
     auto write_set = txn->get_write_set();
     std::unordered_set<Rid, RidHash> abort_set;
-    while (!write_set->empty())
+    while (write_set->size())
     {
         auto write_record = write_set->front(); // 获取最后一个写记录
         write_set->pop_front();      // 移除最后一个写记录

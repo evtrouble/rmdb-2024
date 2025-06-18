@@ -48,7 +48,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
                 x->has_agg = true;
             }
             // 记录别名映射
-            if (!sv_sel_col->alias.empty()) {
+            if (sv_sel_col->alias.size()) {
                 alias_to_col[sv_sel_col->alias] = col;
             }
         }
@@ -369,7 +369,7 @@ TabCol Analyze::check_column(const std::vector<ColMeta> &all_cols, TabCol target
         {
             if (col.name == target.col_name)
             {
-                if (!tab_name.empty())
+                if (tab_name.size())
                 {
                     throw AmbiguousColumnError(target.col_name);
                 }
