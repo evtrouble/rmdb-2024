@@ -161,36 +161,36 @@ void RecoveryManager::redo() {
                             table_name, insert_log_record->rid_));
                 break;
             }    
-            // case DELETE:{
-            //     DeleteLogRecord* delete_log_record = static_cast<DeleteLogRecord*>(log_record);
-            //     std::string table_name(delete_log_record->table_name_, delete_log_record->table_name_size_);
+            case DELETE:{
+                DeleteLogRecord* delete_log_record = static_cast<DeleteLogRecord*>(log_record);
+                std::string table_name(delete_log_record->table_name_, delete_log_record->table_name_size_);
                 
-            //     // 检查表是否存在
-            //     auto fh_it = sm_manager_->fhs_.find(table_name);
-            //     if(fh_it == sm_manager_->fhs_.end()) {
-            //         break;  // 表不存在，跳过
-            //     }
-            //     RmFileHandle *fh_ = fh_it->second.get();
+                // 检查表是否存在
+                auto fh_it = sm_manager_->fhs_.find(table_name);
+                if(fh_it == sm_manager_->fhs_.end()) {
+                    break;  // 表不存在，跳过
+                }
+                RmFileHandle *fh_ = fh_it->second.get();
                 
-            //     // 创建必要的页面
-            //     while (fh_->file_hdr_.num_pages <= delete_log_record->rid_.page_no)
-            //     {
-            //         auto page_hdr_ = fh_->create_new_page_handle();
-            //         buffer_pool_manager_->unpin_page(page_hdr_.page->get_page_id(), false);
-            //     }
+                // 创建必要的页面
+                while (fh_->file_hdr_.num_pages <= delete_log_record->rid_.page_no)
+                {
+                    auto page_hdr_ = fh_->create_new_page_handle();
+                    buffer_pool_manager_->unpin_page(page_hdr_.page->get_page_id(), false);
+                }
                 
-            //     // 检查事务是否存在
-            //     auto txn_it = temp_txns_.find(delete_log_record->log_tid_);
-            //     if(txn_it == temp_txns_.end()) {
-            //         break;  // 事务不存在，跳过
-            //     }
-            //     auto &txn = txn_it->second;
+                // 检查事务是否存在
+                auto txn_it = temp_txns_.find(delete_log_record->log_tid_);
+                if(txn_it == temp_txns_.end()) {
+                    break;  // 事务不存在，跳过
+                }
+                auto &txn = txn_it->second;
                 
-            //     fh_->recovery_delete_record(delete_log_record->rid_);
-            //     txn->append_write_record(new WriteRecord(WType::DELETE_TUPLE,
-            //                 table_name, delete_log_record->rid_, delete_log_record->delete_value_));
-            //     break;
-            // }
+                fh_->recovery_delete_record(delete_log_record->rid_);
+                txn->append_write_record(new WriteRecord(WType::DELETE_TUPLE,
+                            table_name, delete_log_record->rid_, delete_log_record->delete_value_));
+                break;
+            }
         }
         delete log_record;
     }
@@ -242,29 +242,29 @@ void RecoveryManager::undo() {
 
     txn_manager_->init_txn(); // 重新初始化事务管理器
     Transaction* start_txn = txn_manager_->get_start_txn();
-    // auto context = new Context(nullptr, nullptr, start_txn);
-    // for (auto &tab : sm_manager_->db_.tabs_)
-    // {
-    //     std::vector<IndexMeta> indexes;
-    //     indexes.reserve(tab.second.indexes.size());
-    //     for (auto &index_ : tab.second.indexes)
-    //     {
-    //         indexes.emplace_back(index_);
-    //     }
-    //     for (auto &index_ : indexes)
-    //     {
-    //         sm_manager_->drop_index(index_.tab_name, index_.cols, nullptr);
-    //         std::vector<std::string> col_names_;
-    //         col_names_.reserve(index_.cols.size());
-    //         for (auto &col : index_.cols)
-    //         {
-    //             col_names_.emplace_back(col.name);
-    //         }
-    //         sm_manager_->create_index(index_.tab_name, col_names_, context);
-    //     }
-    // }
+    auto context = new Context(nullptr, nullptr, start_txn);
+    for (auto &tab : sm_manager_->db_.tabs_)
+    {
+        std::vector<IndexMeta> indexes;
+        indexes.reserve(tab.second.indexes.size());
+        for (auto &index_ : tab.second.indexes)
+        {
+            indexes.emplace_back(index_);
+        }
+        for (auto &index_ : indexes)
+        {
+            sm_manager_->drop_index(index_.tab_name, index_.cols, nullptr);
+            std::vector<std::string> col_names_;
+            col_names_.reserve(index_.cols.size());
+            for (auto &col : index_.cols)
+            {
+                col_names_.emplace_back(col.name);
+            }
+            sm_manager_->create_index(index_.tab_name, col_names_, context);
+        }
+    }
     start_txn->reset(); // 重置起始事务
-    // delete context; // 清理上下文
+    delete context; // 清理上下文
 }
 
 LogRecord *RecoveryManager::read_log(long long offset) {
