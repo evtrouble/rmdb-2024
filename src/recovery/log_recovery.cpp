@@ -184,7 +184,7 @@ void RecoveryManager::redo() {
                 }
                 auto &txn = txn_it->second;
                 
-                fh_->recovery_delete_record(delete_log_record->rid_);
+                // fh_->recovery_delete_record(delete_log_record->rid_);
                 txn->append_write_record(new WriteRecord(WType::DELETE_TUPLE,
                             table_name, delete_log_record->rid_, delete_log_record->delete_value_));
                 break;

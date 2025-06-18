@@ -279,7 +279,7 @@ void RmFileHandle::recovery_delete_record(const Rid &rid)
         if (page_handle.page_hdr->num_records == file_hdr_.num_records_per_page - 1)
             release_page_handle(page_handle);
     }
-    rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);
+    rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), is_occupied);
 }
 
 /**
