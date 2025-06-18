@@ -82,6 +82,17 @@ public:
     }
 
     LockManager *get_lock_manager() { return lock_manager_; }
+    inline Transaction *get_start_txn() { return start_txn_; }
+    inline void init_txn() {
+        std::ifstream fin("txn_map.txt");
+        if(fin) {
+            timestamp_t init_timestamp = 0;
+            fin >> init_timestamp >> start_txn_id_;
+            fin.close();
+            next_timestamp_ = init_timestamp;
+            next_txn_id_ = start_txn_id_;
+        }
+    }
 
     /**
      * @description: 获取事务ID为txn_id的事务对象

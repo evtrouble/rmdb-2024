@@ -25,11 +25,12 @@ public:
 
 class RecoveryManager {
 public:
-    RecoveryManager(DiskManager* disk_manager, BufferPoolManager* buffer_pool_manager, SmManager* sm_manager) {
-        disk_manager_ = disk_manager;
-        buffer_pool_manager_ = buffer_pool_manager;
-        sm_manager_ = sm_manager;
-    }
+    RecoveryManager(DiskManager* disk_manager, BufferPoolManager* buffer_pool_manager, 
+        SmManager* sm_manager, TransactionManager* txn_manager) 
+        : disk_manager_(disk_manager), 
+          buffer_pool_manager_(buffer_pool_manager), 
+          sm_manager_(sm_manager), 
+          txn_manager_(txn_manager) {}
 
     void analyze();
     void redo();
@@ -45,4 +46,5 @@ private:
     SmManager* sm_manager_;                                         // 访问数据库元数据
     // std::unordered_map<txn_id_t, lsn_t> undo_list_;                 // 崩溃前未完成事务列表
     std::unordered_map<txn_id_t,std::unique_ptr<Transaction>> temp_txns_;// 临时事务列表
+    TransactionManager* txn_manager_ = nullptr; // 事务管理器
 };

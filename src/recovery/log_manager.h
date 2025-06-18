@@ -469,11 +469,7 @@ class UpdateLogRecord : public LogRecord
 class LogBuffer
 {
 public:
-    LogBuffer()
-    {
-        offset_ = 0;
-        memset(buffer_, 0, sizeof(buffer_));
-    }
+    LogBuffer() : offset_(0) {}
 
     inline bool is_full(int append_size)
     {

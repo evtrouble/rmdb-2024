@@ -41,7 +41,7 @@ auto planner = std::make_unique<Planner>(sm_manager.get());
 auto optimizer = std::make_unique<Optimizer>(sm_manager.get(), planner.get());
 auto ql_manager = std::make_unique<QlManager>(sm_manager.get(), txn_manager.get(), planner.get());
 auto log_manager = std::make_unique<LogManager>(disk_manager.get(), buffer_pool_manager.get());
-auto recovery = std::make_unique<RecoveryManager>(disk_manager.get(), buffer_pool_manager.get(), sm_manager.get());
+auto recovery = std::make_unique<RecoveryManager>(disk_manager.get(), buffer_pool_manager.get(), sm_manager.get(), txn_manager.get());
 auto portal = std::make_unique<Portal>(sm_manager.get());
 auto analyze = std::make_unique<Analyze>(sm_manager.get());
 pthread_mutex_t *buffer_mutex;
@@ -353,12 +353,12 @@ int main(int argc, char **argv)
         // Open database
         sm_manager->open_db(db_name);
 
+        txn_manager->set_concurrency_mode(ConcurrencyMode::MVCC);
         // recovery database
         recovery->analyze();
         recovery->redo();
         recovery->undo();
 
-        txn_manager->set_concurrency_mode(ConcurrencyMode::MVCC);
         txn_manager->StartPurgeCleaner();
         // 开启服务端，开始接受客户端连接
         start_server();

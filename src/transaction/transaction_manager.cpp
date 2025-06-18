@@ -448,14 +448,6 @@ void TransactionManager::PurgeCleaning()
 
 void TransactionManager::StartPurgeCleaner()
 {
-    std::ifstream fin("txn_map.txt");
-    if(fin) {
-        timestamp_t init_timestamp = 0;
-        fin >> init_timestamp >> start_txn_id_;
-        fin.close();
-        next_timestamp_ = init_timestamp;
-        next_txn_id_ = start_txn_id_;
-    }
     if(concurrency_mode_ == ConcurrencyMode::MVCC)
     {
         purgeCleaner = std::thread(&TransactionManager::PurgeCleaning, this);

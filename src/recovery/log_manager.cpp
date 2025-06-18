@@ -20,23 +20,7 @@ See the Mulan PSL v2 for more details. */
 lsn_t LogManager::add_log_to_buffer(LogRecord *log_record)
 {
     std::lock_guard lock(latch_);
-    
-    // 如果缓冲区已满，先刷盘
-    while (log_buffer_.is_full(log_record->log_tot_len_)) {
-        flush_log_to_disk_without_lock();
-    }
-    
-    // 分配日志记录号并写入缓冲区
-    log_record->lsn_ = global_lsn_++;
-    log_buffer_.append(log_record);
-    is_dirty_ = true;
-
-    // 如果写入后缓冲区太满，主动触发刷盘
-    if (log_buffer_.offset_ >= LOG_BUFFER_SIZE / 2) {
-        flush_log_to_disk_without_lock();
-    }
-    
-    return log_record->lsn_;
+    return add_log_to_buffer_without_lock(log_record);
 }
 
 lsn_t LogManager::add_log_to_buffer_without_lock(LogRecord *log_record)
