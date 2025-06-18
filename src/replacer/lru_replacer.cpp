@@ -35,11 +35,16 @@ void LRUReplacer::unpin(frame_id_t frame_id)
 {
     auto &shard = get_shard(frame_id);
     std::lock_guard guard(shard.mtx);
-    if (shard.lru_map.count(frame_id))
+    auto iter = shard.lru_map.find(frame_id);
+    if (iter != shard.lru_map.end())
     {
-        shard.lru_list.push_front(frame_id);
-        shard.lru_map[frame_id] = shard.lru_list.begin();
+        // 如果已存在，先从列表中删除
+        shard.lru_list.erase(iter->second);
+        shard.lru_map.erase(iter);
     }
+    // 添加到头部
+    shard.lru_list.push_front(frame_id);
+    shard.lru_map[frame_id] = shard.lru_list.begin();
 }
 
 size_t LRUReplacer::Size()

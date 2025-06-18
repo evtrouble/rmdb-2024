@@ -102,30 +102,7 @@ Rid RmFileHandle::insert_record(char *buf, Context *context)
     std::unique_lock lock(page_handle.page->latch_);
 
     // 2. 在page handle中找到空闲slot位置
-    int slot_no = -1;
-    // 先在现有的bitmap中找空闲位置
-    for (int i = 0; i < file_hdr_.num_records_per_page; i++)
-    {
-        if (!Bitmap::is_set(page_handle.bitmap, i))
-        {
-            slot_no = i;
-            break;
-        }
-    }
-    // 如果没有找到空闲位置，则使用num_records作为新的slot_no
-    if (slot_no == -1)
-    {
-        slot_no = page_handle.page_hdr->num_records;
-        if (slot_no >= file_hdr_.num_records_per_page)
-        {
-            // 当前页面已满，需要创建新页面
-            rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), false);
-            page_handle = create_new_page_handle();
-            slot_no = 0;
-            // 为新页面获取锁
-            lock = std::unique_lock(page_handle.page->latch_);
-        }
-    }
+    int slot_no = Bitmap::first_bit(false, page_handle.bitmap, file_hdr_.num_records_per_page);
 
     // 3. 将buf复制到空闲slot位置
     char *slot = page_handle.get_slot(slot_no);
