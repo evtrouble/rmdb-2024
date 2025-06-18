@@ -161,36 +161,36 @@ void RecoveryManager::redo() {
                             table_name, insert_log_record->rid_));
                 break;
             }    
-            case DELETE:{
-                DeleteLogRecord* delete_log_record = static_cast<DeleteLogRecord*>(log_record);
-                std::string table_name(delete_log_record->table_name_, delete_log_record->table_name_size_);
+            // case DELETE:{
+            //     DeleteLogRecord* delete_log_record = static_cast<DeleteLogRecord*>(log_record);
+            //     std::string table_name(delete_log_record->table_name_, delete_log_record->table_name_size_);
                 
-                // 检查表是否存在
-                auto fh_it = sm_manager_->fhs_.find(table_name);
-                if(fh_it == sm_manager_->fhs_.end()) {
-                    break;  // 表不存在，跳过
-                }
-                RmFileHandle *fh_ = fh_it->second.get();
+            //     // 检查表是否存在
+            //     auto fh_it = sm_manager_->fhs_.find(table_name);
+            //     if(fh_it == sm_manager_->fhs_.end()) {
+            //         break;  // 表不存在，跳过
+            //     }
+            //     RmFileHandle *fh_ = fh_it->second.get();
                 
-                // 创建必要的页面
-                while (fh_->file_hdr_.num_pages <= delete_log_record->rid_.page_no)
-                {
-                    auto page_hdr_ = fh_->create_new_page_handle();
-                    buffer_pool_manager_->unpin_page(page_hdr_.page->get_page_id(), false);
-                }
+            //     // 创建必要的页面
+            //     while (fh_->file_hdr_.num_pages <= delete_log_record->rid_.page_no)
+            //     {
+            //         auto page_hdr_ = fh_->create_new_page_handle();
+            //         buffer_pool_manager_->unpin_page(page_hdr_.page->get_page_id(), false);
+            //     }
                 
-                // 检查事务是否存在
-                auto txn_it = temp_txns_.find(delete_log_record->log_tid_);
-                if(txn_it == temp_txns_.end()) {
-                    break;  // 事务不存在，跳过
-                }
-                auto &txn = txn_it->second;
+            //     // 检查事务是否存在
+            //     auto txn_it = temp_txns_.find(delete_log_record->log_tid_);
+            //     if(txn_it == temp_txns_.end()) {
+            //         break;  // 事务不存在，跳过
+            //     }
+            //     auto &txn = txn_it->second;
                 
-                fh_->recovery_delete_record(delete_log_record->rid_);
-                txn->append_write_record(new WriteRecord(WType::DELETE_TUPLE,
-                            table_name, delete_log_record->rid_, delete_log_record->delete_value_));
-                break;
-            }
+            //     fh_->recovery_delete_record(delete_log_record->rid_);
+            //     txn->append_write_record(new WriteRecord(WType::DELETE_TUPLE,
+            //                 table_name, delete_log_record->rid_, delete_log_record->delete_value_));
+            //     break;
+            // }
         }
         delete log_record;
     }
