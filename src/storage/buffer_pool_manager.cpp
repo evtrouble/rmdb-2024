@@ -106,7 +106,7 @@ Page* BufferPoolManager::fetch_page(PageId page_id) {
 }
 
 bool BufferPoolManager::unpin_page(PageId page_id, bool is_dirty) {
-    std::shared_lock<std::shared_mutex> lock(table_latch_);
+    std::shared_lock lock(table_latch_);
     auto it = page_table_.find(page_id);
     if (it == page_table_.end()) return false;
 
@@ -131,7 +131,7 @@ bool BufferPoolManager::unpin_page(PageId page_id, bool is_dirty) {
 }
 
 bool BufferPoolManager::flush_page(PageId page_id) {
-    std::shared_lock<std::shared_mutex> read_lock(table_latch_);
+    std::shared_lock read_lock(table_latch_);
     auto it = page_table_.find(page_id);
     if (it == page_table_.end()) return false;
 
@@ -192,7 +192,7 @@ bool BufferPoolManager::delete_page(PageId page_id) {
 }
 
 void BufferPoolManager::flush_all_pages(int fd, bool flush) {
-    std::unique_lock lock(table_latch_);
+    std::lock_guard lock(table_latch_);
     auto it = page_table_.begin();
     while (it != page_table_.end()) {
         auto& [pid, frame_id] = *it;
