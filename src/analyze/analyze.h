@@ -53,6 +53,7 @@ class Analyze
 {
 private:
     SmManager *sm_manager_;
+    std::unordered_map<std::string, std::string> table_alias_map_;
 
 public:
     Analyze(SmManager *sm_manager) : sm_manager_(sm_manager) {}

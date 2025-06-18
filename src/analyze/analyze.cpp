@@ -21,6 +21,9 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
     std::cout << "[Debug] Starting analysis" << std::endl;
     std::shared_ptr<Query> query = std::make_shared<Query>();
     std::unordered_map<std::string, TabCol> alias_to_col;
+
+    table_alias_map_.clear();
+
     switch (parse->Nodetype())
     {
     case ast::TreeNodeType::SelectStmt:
@@ -39,7 +42,36 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
                 throw TableNotFoundError(tab_name);
             }
         }
+        // 假设AST中的表信息包含别名，这里需要根据你的AST结构调整
+        // 建立表别名映射关系
+        for (size_t i = 0; i < query->tables.size(); ++i)
+        {
+            std::string table_name = query->tables[i];
+            std::cout << "[Debug] Table: " << table_name << std::endl;
 
+            // 检查表是否存在
+            if (!sm_manager_->db_.is_table(table_name))
+            {
+                throw TableNotFoundError(table_name);
+            }
+
+            // 如果AST中有表别名信息，在这里建立映射
+            // 假设 x->table_aliases 包含别名信息，需要根据实际AST结构调整
+            i = i;
+            std::cout << "i: " << i << std::endl;
+
+            if (x->tab_aliases.size() > i && !x->tab_aliases[i].empty())
+            {
+                std::cout << "i: " << i << std::endl;
+                std::cout << "x->tab_aliases[i] " << x->tab_aliases[i] << std::endl;
+                std::cout << "table_name " << table_name << std::endl;
+                std::string alias = x->tab_aliases[i];
+                table_alias_map_[alias] = table_name;
+                std::cout << "[Debug] Table alias mapping: " << alias << " -> " << table_name << std::endl;
+            }
+            // 表名也可以作为自己的别名
+            table_alias_map_[table_name] = table_name;
+        }
         // 处理target list，再target list中添加上表名，例如 a.id
         query->cols.reserve(x->cols.size());
         std::cout << "[Debug] Processing columns, count: " << x->cols.size() << std::endl;
@@ -431,7 +463,17 @@ TabCol Analyze::check_column(const std::vector<ColMeta> &all_cols, TabCol target
     {
         return target;
     }
-
+    // 如果指定了表名/别名，先解析别名
+    if (!target.tab_name.empty())
+    {
+        // 检查是否是表别名，如果是，转换为真实表名
+        auto alias_it = table_alias_map_.find(target.tab_name);
+        if (alias_it != table_alias_map_.end())
+        {
+            target.tab_name = alias_it->second;
+            std::cout << "[Debug] Resolved table alias: " << target.tab_name << std::endl;
+        }
+    }
     if (target.tab_name.empty())
     {
         // Table name not specified, infer table name from column name
