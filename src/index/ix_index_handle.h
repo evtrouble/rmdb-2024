@@ -193,12 +193,9 @@ public:
 
     IxNodeHandle find_leaf_page(const char *key, Operation operation, Transaction *transaction,
                                                  bool find_first = true);
-    IxNodeHandle find_leaf_page_without_lock(const char *key);
-
 
     // for insert
     page_id_t insert_entry(const char *key, const Rid &value, Transaction *transaction, bool abort = false);
-    page_id_t insert_entry_without_lock(const char *key, const Rid &value);
 
     IxNodeHandle split(IxNodeHandle &node);
 
