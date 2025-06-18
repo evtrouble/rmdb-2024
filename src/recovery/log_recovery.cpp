@@ -241,29 +241,29 @@ void RecoveryManager::undo() {
 
     txn_manager_->init_txn(); // 重新初始化事务管理器
     Transaction* start_txn = txn_manager_->get_start_txn();
-    // auto context = new Context(nullptr, nullptr, start_txn);
-    // for (auto &tab : sm_manager_->db_.tabs_)
-    // {
-    //     std::vector<IndexMeta> indexes;
-    //     indexes.reserve(tab.second.indexes.size());
-    //     for (auto &index_ : tab.second.indexes)
-    //     {
-    //         indexes.emplace_back(index_);
-    //     }
-    //     for (auto &index_ : indexes)
-    //     {
-    //         sm_manager_->drop_index(index_.tab_name, index_.cols, nullptr);
-    //         std::vector<std::string> col_names_;
-    //         col_names_.reserve(index_.cols.size());
-    //         for (auto &col : index_.cols)
-    //         {
-    //             col_names_.emplace_back(col.name);
-    //         }
-    //         sm_manager_->create_index(index_.tab_name, col_names_, context);
-    //     }
-    // }
+    auto context = new Context(nullptr, nullptr, start_txn);
+    for (auto &tab : sm_manager_->db_.tabs_)
+    {
+        std::vector<IndexMeta> indexes;
+        indexes.reserve(tab.second.indexes.size());
+        for (auto &index_ : tab.second.indexes)
+        {
+            indexes.emplace_back(index_);
+        }
+        for (auto &index_ : indexes)
+        {
+            sm_manager_->drop_index(index_.tab_name, index_.cols, nullptr);
+            std::vector<std::string> col_names_;
+            col_names_.reserve(index_.cols.size());
+            for (auto &col : index_.cols)
+            {
+                col_names_.emplace_back(col.name);
+            }
+            sm_manager_->create_index(index_.tab_name, col_names_, context);
+        }
+    }
     start_txn->reset(); // 重置起始事务
-    // delete context; // 清理上下文
+    delete context; // 清理上下文
 }
 
 LogRecord *RecoveryManager::read_log(long long offset) {

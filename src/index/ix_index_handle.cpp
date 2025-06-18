@@ -291,7 +291,7 @@ IxNodeHandle IxIndexHandle::find_leaf_page(const char *key, Operation operation,
                 }
                 node.page->latch_.lock();
                 if (node.is_safe(operation))
-                    release_all_xlock(transaction->get_index_latch_page_set(), true);
+                    release_all_xlock(transaction->get_index_latch_page_set(), false);
                 transaction->append_index_latch_page_set(node.page);
             }
             if (node.is_leaf_page())
@@ -402,7 +402,7 @@ void IxIndexHandle::insert_into_parent(IxNodeHandle &old_node, const char *key, 
         new_node.page_hdr->parent = old_node.page_hdr->parent = new_root.get_page_no();
 
         file_hdr_->root_page_ = new_root.get_page_no();
-        buffer_pool_manager_->unpin_page(new_node.get_page_id(), true);
+        buffer_pool_manager_->unpin_page(new_root.get_page_id(), true);
         return;
     }
     // 2. 获取原结点（old_node）的父亲结点
@@ -419,6 +419,7 @@ void IxIndexHandle::insert_into_parent(IxNodeHandle &old_node, const char *key, 
         insert_into_parent(parent_node, split_node.get_key(0), split_node);
         buffer_pool_manager_->unpin_page(split_node.get_page_id(), true);
     }
+    buffer_pool_manager_->unpin_page(parent_node.get_page_id(), true);
 }
 
 /**
@@ -536,6 +537,7 @@ bool IxIndexHandle::coalesce_or_redistribute_internal(IxNodeHandle &node, Transa
         redistribute(neighbor_node, node, parent_node, idx);
         neighbor_node.page->latch_.unlock();
         buffer_pool_manager_->unpin_page(neighbor_node.get_page_id(), true);
+        buffer_pool_manager_->unpin_page(parent_node.get_page_id(), false);
         return false;
     }
     // 5. 如果不满足上述条件，则需要合并两个结点，将右边的结点合并到左边的结点（调用Coalesce函数）
@@ -594,6 +596,7 @@ bool IxIndexHandle::coalesce_or_redistribute(IxNodeHandle &node, Transaction *tr
         if(idx == 0)
             neighbor_node.page->latch_.unlock();
         buffer_pool_manager_->unpin_page(neighbor_node.get_page_id(), true);
+        buffer_pool_manager_->unpin_page(parent_node.get_page_id(), false);
         return false;
     }
     // 5. 如果不满足上述条件，则需要合并两个结点，将右边的结点合并到左边的结点（调用Coalesce函数）
