@@ -113,8 +113,8 @@ void *client_handler(void *sock_fd)
         }
         if (strcmp(data_recv, "crash") == 0)
         {
-            log_manager->flush_log_to_disk();
             txn_manager->StopPurgeCleaner();
+            log_manager->flush_log_to_disk();
             std::cout << "Server crash" << std::endl;
             exit(1);
         }

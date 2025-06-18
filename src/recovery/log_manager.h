@@ -275,7 +275,7 @@ class DeleteLogRecord : public LogRecord
         prev_lsn_ = INVALID_LSN;
         table_name_ = nullptr;
     }
-    DeleteLogRecord(txn_id_t txn_id, RmRecord& delete_value, Rid& rid, std::string table_name) 
+    DeleteLogRecord(txn_id_t txn_id, RmRecord& delete_value, Rid& rid, const std::string& table_name) 
         : DeleteLogRecord() {
         log_tid_ = txn_id;
         delete_value_ = delete_value;
@@ -363,7 +363,7 @@ class UpdateLogRecord : public LogRecord
         prev_lsn_ = INVALID_LSN;
         table_name_ = nullptr;
     }
-    UpdateLogRecord(txn_id_t txn_id, Rid& rid, RmRecord& before_value, RmRecord& after_value, std::string table_name) 
+    UpdateLogRecord(txn_id_t txn_id, Rid& rid, RmRecord& before_value, RmRecord& after_value, std::string& table_name) 
         : UpdateLogRecord() {
         log_tid_ = txn_id;
         before_value_ = before_value;
