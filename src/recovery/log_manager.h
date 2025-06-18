@@ -224,12 +224,9 @@ public:
         int offset = LogRecord::deserialize(src);
         
         // 反序列化记录内容
-        int size = *reinterpret_cast<const int*>(src + offset);
-        insert_value_.size = size;
-        insert_value_.data = new char[size];
-        memcpy(insert_value_.data, src + offset + sizeof(int), size);
-        offset += sizeof(int) + size;
-        
+        insert_value_.Deserialize(src + offset);
+        offset += insert_value_.size + sizeof(int);
+
         // 反序列化RID
         rid_ = *reinterpret_cast<const Rid*>(src + offset);
         offset += sizeof(Rid);
@@ -311,13 +308,9 @@ class DeleteLogRecord : public LogRecord
         // 先反序列化基类部分
         int offset = LogRecord::deserialize(src);
         
-        // 反序列化删除的记录
-        int size = *reinterpret_cast<const int*>(src + offset);
-        delete_value_.size = size;
-        delete_value_.data = new char[size];
-        memcpy(delete_value_.data, src + offset + sizeof(int), size);
-        offset += sizeof(int) + size;
-        
+        delete_value_.Deserialize(src + offset);
+        offset += delete_value_.size + sizeof(int);
+
         // 反序列化RID
         rid_ = *reinterpret_cast<const Rid*>(src + offset);
         offset += sizeof(Rid);
@@ -411,18 +404,10 @@ class UpdateLogRecord : public LogRecord
         int offset = LogRecord::deserialize(src);
         
         // 反序列化更新前的记录
-        int before_size = *reinterpret_cast<const int*>(src + offset);
-        before_value_.size = before_size;
-        before_value_.data = new char[before_size];
-        memcpy(before_value_.data, src + offset + sizeof(int), before_size);
-        offset += sizeof(int) + before_size;
-        
-        // 反序列化更新后的记录
-        int after_size = *reinterpret_cast<const int*>(src + offset);
-        after_value_.size = after_size;
-        after_value_.data = new char[after_size];
-        memcpy(after_value_.data, src + offset + sizeof(int), after_size);
-        offset += sizeof(int) + after_size;
+        before_value_.Deserialize(src + offset);
+        offset += before_value_.size + sizeof(int);
+        after_value_.Deserialize(src + offset);
+        offset += after_value_.size + sizeof(int);
         
         // 反序列化RID
         rid_ = *reinterpret_cast<const Rid*>(src + offset);

@@ -115,12 +115,15 @@ struct RmRecord
 
     void Deserialize(const char *data_)
     {
-        size = *reinterpret_cast<const int *>(data_);
-        if (allocated_)
-        {
-            delete[] data;
+        int newSize = *reinterpret_cast<const int *>(data_);
+        if (size != newSize) {
+            if (allocated_ && data != nullptr) {
+                delete[] data;
+            }
+            size = newSize;
+            data = new char[newSize];
+            allocated_ = true;
         }
-        data = new char[size];
         memcpy(data, data_ + sizeof(int), size);
     }
 
