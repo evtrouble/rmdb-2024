@@ -274,8 +274,11 @@ void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, 
                 auto val = *(float *)rec_buf;
                 if (std::numeric_limits<float>::max() == val || std::numeric_limits<float>::lowest() == val)
                     col_str = "";
-                else
-                    col_str = std::to_string(*(float *)rec_buf);
+                else {
+                    std::stringstream ss;
+                    ss << std::fixed << std::setprecision(FLOAT_PRECISION) << val;
+                    col_str = ss.str();
+                }
             }
             else if (col.type == TYPE_STRING)
             {

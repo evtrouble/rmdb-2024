@@ -4,6 +4,14 @@
 #include <iostream>
 #include <memory>
 #include <cstring>
+#include <cmath>
+#include <sstream>
+#include <iomanip>
+
+// 浮点数精度常量
+const int FLOAT_PRECISION = 6;
+const float FLOAT_PRECISION_MULTIPLIER = std::pow(10, FLOAT_PRECISION);
+
 int yylex(YYSTYPE *yylval, YYLTYPE *yylloc);
 
 void yyerror(YYLTYPE *locp, const char* s) {
@@ -256,6 +264,7 @@ value:
     }
     |   VALUE_FLOAT
     {
+        // 浮点数在词法分析阶段已经进行了精度处理
         $$ = std::make_shared<FloatLit>($1);
     }
     |   VALUE_STRING

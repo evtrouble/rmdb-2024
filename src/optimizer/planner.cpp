@@ -655,7 +655,22 @@ std::shared_ptr<Plan> Planner::physical_optimization(std::shared_ptr<Query> quer
 
     return plan;
 }
+// 辅助函数：从Plan中提取ScanPlan
+std::shared_ptr<ScanPlan> extract_scan_plan(std::shared_ptr<Plan> plan) {
+    // 如果是ScanPlan，直接返回
+    auto scan_plan = std::dynamic_pointer_cast<ScanPlan>(plan);
+    if (scan_plan) {
+        return scan_plan;
+    }
 
+    // 如果是FilterPlan，提取其子计划
+    auto filter_plan = std::dynamic_pointer_cast<FilterPlan>(plan);
+    if (filter_plan && filter_plan->subplan_) {
+        return std::dynamic_pointer_cast<ScanPlan>(filter_plan->subplan_);
+    }
+
+    return nullptr;
+}
 std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Context *context)
 {
     std::cout << "[Debug] 开始生成物理计划..." << std::endl;
@@ -719,8 +734,10 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
     {
         for (size_t j = i + 1; j < table_plans.size(); j++)
         {
-            auto scan_i = std::dynamic_pointer_cast<ScanPlan>(table_plans[i]);
-            auto scan_j = std::dynamic_pointer_cast<ScanPlan>(table_plans[j]);
+            // auto scan_i = std::dynamic_pointer_cast<ScanPlan>(table_plans[i]);
+            // auto scan_j = std::dynamic_pointer_cast<ScanPlan>(table_plans[j]);
+            auto scan_i = extract_scan_plan(table_plans[i]);
+            auto scan_j = extract_scan_plan(table_plans[j]);
             size_t card_i = get_table_cardinality(scan_i->tab_name_);
             size_t card_j = get_table_cardinality(scan_j->tab_name_);
             size_t join_card = card_i * card_j; // 简单估计连接基数
@@ -753,8 +770,8 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
                 rhs_tab = alias_to_tab[rhs_tab];
             }
 
-            auto scan_i = std::dynamic_pointer_cast<ScanPlan>(table_plans[min_i]);
-            auto scan_j = std::dynamic_pointer_cast<ScanPlan>(table_plans[min_j]);
+            auto scan_i = extract_scan_plan(table_plans[min_i]);
+            auto scan_j = extract_scan_plan(table_plans[min_j]);
 
             if ((lhs_tab == scan_i->tab_name_ && rhs_tab == scan_j->tab_name_) ||
                 (lhs_tab == scan_j->tab_name_ && rhs_tab == scan_i->tab_name_))
@@ -784,7 +801,7 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
         // 找到添加后产生最小中间结果的表
         for (size_t i = 0; i < table_plans.size(); i++)
         {
-            auto scan_plan = std::dynamic_pointer_cast<ScanPlan>(table_plans[i]);
+            auto scan_plan = extract_scan_plan(table_plans[i]);
             size_t table_card = get_table_cardinality(scan_plan->tab_name_);
 
             // 收集与当前表相关的连接条件
@@ -1482,7 +1499,19 @@ size_t Planner::get_table_cardinality(const std::string &table_name)
 {
     try
     {
-        // 获取文件句柄的引用而不是复制
+        // 确保表文件已经打开
+        if (sm_manager_->fhs_.find(table_name) == sm_manager_->fhs_.end()) {
+            // 如果表不存在于fhs_中，说明表可能还没有打开
+            // 首先检查表是否存在于数据库中
+            if (!sm_manager_->db_.is_table(table_name)) {
+                throw TableNotFoundError(table_name);
+            }
+            // 表存在但未打开，需要重新加载表的文件句柄
+            if (table_name.empty()) {
+                throw TableNotFoundError("Empty table name");
+            }
+            sm_manager_->fhs_.emplace(table_name, sm_manager_->get_rm_manager()->open_file(table_name));
+        }
         const auto &file_handle = sm_manager_->fhs_.at(table_name);
         if (!file_handle)
         {

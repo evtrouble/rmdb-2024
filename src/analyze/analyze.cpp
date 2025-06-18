@@ -784,6 +784,7 @@ Value Analyze::convert_sv_value(const std::shared_ptr<ast::Value> &sv_val)
     {
         auto float_lit = std::static_pointer_cast<ast::FloatLit>(sv_val);
         val.set_float(float_lit->val);
+        val.str_val = float_lit->original_text;  // 保存原始文本
     }
     break;
     case ast::TreeNodeType::StringLit:

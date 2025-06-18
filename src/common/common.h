@@ -16,9 +16,15 @@ See the Mulan PSL v2 for more details. */
 #include <string>
 #include <vector>
 #include <cmath>
+#include <iomanip>
+#include <sstream>
 #include "defs.h"
 #include "record/rm_defs.h"
 #include "parser/ast.h"
+
+// 浮点数精度常量
+const int FLOAT_PRECISION = 6;
+const float FLOAT_PRECISION_MULTIPLIER = std::pow(10, FLOAT_PRECISION);
 
 struct TabCol
 {
@@ -59,7 +65,8 @@ struct Value
     void set_float(float float_val_)
     {
         type = TYPE_FLOAT;
-        float_val = float_val_;
+        // 对浮点数进行精度处理
+        float_val = std::round(float_val_ * FLOAT_PRECISION_MULTIPLIER) / FLOAT_PRECISION_MULTIPLIER;
     }
 
     void set_str(std::string str_val_)
@@ -80,7 +87,7 @@ struct Value
         else if (type == TYPE_FLOAT)
         {
             assert(len == sizeof(float));
-            *(float *)(raw->data) = std::round(float_val * multiplier) / multiplier;
+            *(float *)(raw->data) = float_val;
         }
         else if (type == TYPE_STRING)
         {
