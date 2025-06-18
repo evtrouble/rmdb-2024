@@ -272,6 +272,7 @@ void RecoveryManager::undo() {
             sm_manager_->create_index(index_.tab_name, col_names_, context);
         }
     }
+    start_txn->reset(); // 重置起始事务
     delete context; // 清理上下文
 }
 

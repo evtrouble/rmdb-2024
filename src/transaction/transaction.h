@@ -39,7 +39,9 @@ public:
   }
 
   explicit Transaction(TransactionManager *txn_manager)
-      : commit_ts_{0}, ref_count_{0}, txn_manager_(txn_manager) {}
+      : commit_ts_{0}, ref_count_{0}, txn_manager_(txn_manager) {
+        index_latch_page_set_ = std::make_shared<std::deque<Page *>>();
+      }
 
   ~Transaction() = default;
 
