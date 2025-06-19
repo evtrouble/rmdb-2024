@@ -1007,6 +1007,7 @@ std::unordered_map<std::string, size_t> calculate_table_cardinalities(const std:
             {
                 auto page_handle = file_handle->fetch_page_handle(page_no);
                 num_records += page_handle.page_hdr->num_records;
+                sm_manager_->get_bpm()->unpin_page(page_handle.page->get_page_id(), false);
             }
             table_cardinalities[table] = num_records;
         }
