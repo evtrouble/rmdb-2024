@@ -19,6 +19,8 @@ See the Mulan PSL v2 for more details. */
 #include <set>
 #include <algorithm>
 #include <iostream>
+#include <sstream>
+#include <iomanip>
 
 #include "execution/execution_defs.h"
 #include "execution/execution_manager.h"
@@ -86,28 +88,6 @@ private:
 
     bool enable_nestedloop_join = true;
     bool enable_sortmerge_join = false;
-
-    // 辅助函数：将操作符转换为字符串
-    std::string get_op_string(CompOp op)
-    {
-        switch (op)
-        {
-        case CompOp::OP_EQ:
-            return "=";
-        case CompOp::OP_NE:
-            return "!=";
-        case CompOp::OP_LT:
-            return "<";
-        case CompOp::OP_GT:
-            return ">";
-        case CompOp::OP_LE:
-            return "<=";
-        case CompOp::OP_GE:
-            return ">=";
-        default:
-            return "unknown";
-        }
-    }
 
     // 投影下推相关的辅助函数
     bool is_select_star_query(const std::shared_ptr<ast::SelectStmt> &select_stmt);

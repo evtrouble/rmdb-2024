@@ -12,6 +12,8 @@ See the Mulan PSL v2 for more details. */
 
 #include <memory>
 #include <iostream>
+#include <sstream>
+#include <iomanip>
 
 #include "execution/executor_delete.h"
 #include "execution/executor_index_scan.h"
@@ -22,6 +24,261 @@ See the Mulan PSL v2 for more details. */
 #include "execution/executor_update.h"
 #include "index/ix.h"
 #include "record_printer.h"
+#include "execution/executor_explain.h"
+
+// 辅助函数：将操作符转换为字符串
+std::string get_op_string(CompOp op)
+{
+    switch (op)
+    {
+    case CompOp::OP_EQ:
+        return "=";
+    case CompOp::OP_NE:
+        return "!=";
+    case CompOp::OP_LT:
+        return "<";
+    case CompOp::OP_GT:
+        return ">";
+    case CompOp::OP_LE:
+        return "<=";
+    case CompOp::OP_GE:
+        return ">=";
+    default:
+        return "unknown";
+    }
+}
+
+// 辅助函数：将值转换为字符串
+std::string value_to_string(const Value &val)
+{
+    std::stringstream ss;
+    switch (val.type)
+    {
+    case TYPE_INT:
+        ss << val.int_val;
+        break;
+    case TYPE_FLOAT:
+        ss << std::fixed << std::setprecision(2) << val.float_val;
+        break;
+    case TYPE_STRING:
+    case TYPE_DATETIME:
+        ss << "'" << val.str_val << "'";
+        break;
+    default:
+        ss << "unknown_type";
+        break;
+    }
+    return ss.str();
+}
+
+int get_plan_type_priority(std::shared_ptr<Plan> plan)
+{
+    switch (plan->tag)
+    {
+    case T_Filter:
+        return 0;
+    case T_NestLoop:
+    case T_SortMerge:
+        return 1;
+    case T_Projection:
+        return 2;
+    case T_SeqScan:
+    case T_IndexScan:
+        return 3;
+    default:
+        return 4;
+    }
+}
+// 获取Scan节点的表名
+std::string get_scan_table_name(std::shared_ptr<Plan> plan)
+{
+    auto scan_plan = std::dynamic_pointer_cast<ScanPlan>(plan);
+    if (scan_plan)
+    {
+        return scan_plan->tab_name_;
+    }
+    return "";
+}
+// 获取Join节点的所有表名（按字典序排序）
+std::vector<std::string> get_join_table_names(std::shared_ptr<Plan> plan)
+{
+    std::vector<std::string> tables;
+
+    // 递归收集所有表名
+    std::function<void(std::shared_ptr<Plan>)> collect_tables = [&](std::shared_ptr<Plan> p)
+    {
+        if (p->tag == T_SeqScan || p->tag == T_IndexScan)
+        {
+            auto scan_plan = std::dynamic_pointer_cast<ScanPlan>(p);
+            if (scan_plan)
+            {
+                tables.push_back(scan_plan->tab_name_);
+            }
+        }
+        else if (p->tag == T_NestLoop || p->tag == T_SortMerge)
+        {
+            auto join_plan = std::dynamic_pointer_cast<JoinPlan>(p);
+            if (join_plan)
+            {
+                collect_tables(join_plan->left_);
+                collect_tables(join_plan->right_);
+            }
+        }
+        else if (p->tag == T_Filter)
+        {
+            auto filter_plan = std::dynamic_pointer_cast<FilterPlan>(p);
+            if (filter_plan)
+            {
+                collect_tables(filter_plan->subplan_);
+            }
+        }
+        else if (p->tag == T_Projection)
+        {
+            auto proj_plan = std::dynamic_pointer_cast<ProjectionPlan>(p);
+            if (proj_plan)
+            {
+                collect_tables(proj_plan->subplan_);
+            }
+        }
+    };
+
+    collect_tables(plan);
+    std::sort(tables.begin(), tables.end());
+    tables.erase(std::unique(tables.begin(), tables.end()), tables.end());
+    return tables;
+}
+// 获取Filter节点的条件字符串（用于排序比较）
+std::string get_filter_condition_string(std::shared_ptr<Plan> plan)
+{
+    auto filter_plan = std::dynamic_pointer_cast<FilterPlan>(plan);
+    if (!filter_plan || filter_plan->conds_.empty())
+    {
+        return "";
+    }
+
+    // 将条件转换为字符串并排序
+    std::vector<std::string> cond_strs;
+    for (const auto &cond : filter_plan->conds_)
+    {
+        std::string cond_str = cond.lhs_col.tab_name + "." + cond.lhs_col.col_name;
+        cond_str += " " + get_op_string(cond.op) + " ";
+        if (cond.is_rhs_val)
+        {
+            cond_str += value_to_string(cond.rhs_val);
+        }
+        else
+        {
+            cond_str += cond.rhs_col.tab_name + "." + cond.rhs_col.col_name;
+        }
+        cond_strs.push_back(cond_str);
+    }
+    std::sort(cond_strs.begin(), cond_strs.end());
+
+    std::string result;
+    for (size_t i = 0; i < cond_strs.size(); i++)
+    {
+        if (i > 0)
+            result += ",";
+        result += cond_strs[i];
+    }
+    return result;
+}
+
+// 获取Project节点的列名字符串（用于排序比较）
+std::string get_project_columns_string(std::shared_ptr<Plan> plan)
+{
+    auto proj_plan = std::dynamic_pointer_cast<ProjectionPlan>(plan);
+    if (!proj_plan || proj_plan->sel_cols_.empty())
+    {
+        return "";
+    }
+
+    std::vector<std::string> col_strs;
+    for (const auto &col : proj_plan->sel_cols_)
+    {
+        col_strs.push_back(col.tab_name + "." + col.col_name);
+    }
+    std::sort(col_strs.begin(), col_strs.end());
+
+    std::string result;
+    for (size_t i = 0; i < col_strs.size(); i++)
+    {
+        if (i > 0)
+            result += ",";
+        result += col_strs[i];
+    }
+    return result;
+}
+
+bool should_left_come_first(std::shared_ptr<Plan> left, std::shared_ptr<Plan> right)
+{
+    int left_priority = get_plan_type_priority(left);
+    int right_priority = get_plan_type_priority(right);
+
+    // 如果类型不同，按照Filter Join Project Scan的优先级排序
+    if (left_priority != right_priority)
+    {
+        return left_priority < right_priority;
+    }
+
+    // 如果类型相同，按照具体规则排序
+    switch (left->tag)
+    {
+    case T_SeqScan:
+    case T_IndexScan:
+    {
+        // Scan节点按照表名升序
+        std::string left_table = get_scan_table_name(left);
+        std::string right_table = get_scan_table_name(right);
+        return left_table < right_table;
+    }
+
+    case T_NestLoop:
+    case T_SortMerge:
+    {
+        // Join节点按照表名集合升序
+        auto left_tables = get_join_table_names(left);
+        auto right_tables = get_join_table_names(right);
+        return left_tables < right_tables;
+    }
+
+    case T_Filter:
+    {
+        // Filter节点按照条件字典序升序
+        std::string left_conds = get_filter_condition_string(left);
+        std::string right_conds = get_filter_condition_string(right);
+        return left_conds < right_conds;
+    }
+
+    case T_Projection:
+    {
+        // Project节点按照列名升序
+        std::string left_cols = get_project_columns_string(left);
+        std::string right_cols = get_project_columns_string(right);
+        return left_cols < right_cols;
+    }
+
+    default:
+        return false;
+    }
+}
+std::shared_ptr<Plan> create_ordered_join(
+    PlanTag join_type,
+    std::shared_ptr<Plan> plan1,
+    std::shared_ptr<Plan> plan2,
+    const std::vector<Condition> &join_conds)
+{
+
+    // 根据排序规则决定左右子树
+    if (should_left_come_first(plan1, plan2))
+    {
+        return std::make_shared<JoinPlan>(join_type, plan1, plan2, join_conds);
+    }
+    else
+    {
+        return std::make_shared<JoinPlan>(join_type, plan2, plan1, join_conds);
+    }
+}
 void QueryColumnRequirement::calculate_layered_requirements()
 {
     // 1. 扫描层：需要所有涉及的列
@@ -892,7 +1149,7 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
         }
     }
 
-    auto current_plan = std::make_shared<JoinPlan>(
+    auto current_plan = create_ordered_join(
         enable_nestedloop_join ? T_NestLoop : T_SortMerge,
         table_plans[min_i],
         table_plans[min_j],
@@ -953,7 +1210,7 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
         }
 
         // 添加选中的表
-        current_plan = std::make_shared<JoinPlan>(
+        current_plan = create_ordered_join(
             enable_nestedloop_join ? T_NestLoop : T_SortMerge,
             current_plan,
             table_plans[best_idx],
@@ -1654,14 +1911,12 @@ size_t Planner::get_table_cardinality(const std::string &table_name)
 QueryColumnRequirement Planner::analyze_column_requirements(std::shared_ptr<Query> query)
 {
     QueryColumnRequirement requirements;
-
     // 如果不是SELECT语句，返回空的需求
     auto select_stmt = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
     if (!select_stmt)
     {
         return requirements;
     }
-
     // 建立表名到别名的映射
     std::map<std::string, std::string> tab_to_alias;
     std::map<std::string, std::string> alias_to_tab;
@@ -1671,6 +1926,34 @@ QueryColumnRequirement Planner::analyze_column_requirements(std::shared_ptr<Quer
         {
             tab_to_alias[select_stmt->tabs[i]] = select_stmt->tab_aliases[i];
             alias_to_tab[select_stmt->tab_aliases[i]] = select_stmt->tabs[i];
+        }
+    }
+
+    bool is_select_all = (query->cols.size() == 1 && query->cols[0].col_name == "*");
+    if (is_select_all)
+    {
+        // SELECT * 的情况，需要所有表的所有列
+        for (const auto &table : query->tables)
+        {
+            const auto &table_cols = sm_manager_->db_.get_table(table).cols;
+            for (const auto &col : table_cols)
+            {
+                // 使用表的原始名称，而不是别名
+                TabCol tab_col{table, col.name};
+                requirements.select_cols.insert(tab_col);
+            }
+        }
+    }
+    else
+    {
+        for (const auto &col : query->cols)
+        {
+            std::string real_tab_name = col.tab_name;
+            if (alias_to_tab.find(col.tab_name) != alias_to_tab.end())
+            {
+                real_tab_name = alias_to_tab[col.tab_name];
+            }
+            requirements.select_cols.insert(TabCol{real_tab_name, col.col_name});
         }
     }
 
