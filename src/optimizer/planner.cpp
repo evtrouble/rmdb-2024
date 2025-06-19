@@ -1745,7 +1745,7 @@ std::shared_ptr<Plan> Planner::do_planner(std::shared_ptr<Query> query, Context 
 
         // 创建一个新的Analyze对象来处理内部查询
         Analyze analyze(sm_manager_);
-        auto analyzed_query = analyze.do_analyze(inner_query->parse);
+        auto analyzed_query = analyze.do_analyze(inner_query->parse, context);
 
         // 保持原始的列和条件信息
         analyzed_query->cols = inner_query->cols;
