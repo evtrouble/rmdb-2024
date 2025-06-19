@@ -35,6 +35,10 @@ struct QueryColumnRequirement
     // 每个表需要扫描的列（这是最终结果）
     std::map<std::string, std::set<TabCol>> table_required_cols;
 
+    std::map<std::string, std::set<TabCol>> scan_level_cols;  // 扫描层需要的列
+    std::map<std::string, std::set<TabCol>> post_filter_cols; // 过滤后需要的列
+    std::map<std::string, std::set<TabCol>> post_join_cols;   // 连接后需要的列
+    std::map<std::string, std::set<TabCol>> final_cols;       // 最终输出列
     // 中间分析数据（用于调试和优化）
     std::set<TabCol> select_cols;  // SELECT子句需要的列
     std::set<TabCol> join_cols;    // JOIN条件需要的列
@@ -49,25 +53,31 @@ struct QueryColumnRequirement
         auto it = table_required_cols.find(table_name);
         return it != table_required_cols.end() ? it->second : std::set<TabCol>{};
     }
-
-    // 合并所有中间分析数据到最终结果
-    void merge_all_requirements()
+    // 获取不同层级的列需求
+    std::set<TabCol> get_scan_cols(const std::string &table_name) const
     {
-        std::set<TabCol> all_cols;
-        all_cols.insert(select_cols.begin(), select_cols.end());
-        all_cols.insert(join_cols.begin(), join_cols.end());
-        all_cols.insert(where_cols.begin(), where_cols.end());
-        all_cols.insert(groupby_cols.begin(), groupby_cols.end());
-        all_cols.insert(having_cols.begin(), having_cols.end());
-        all_cols.insert(orderby_cols.begin(), orderby_cols.end());
-
-        // 按表分组所有需要的列
-        table_required_cols.clear();
-        for (const auto &col : all_cols)
-        {
-            table_required_cols[col.tab_name].insert(col);
-        }
+        auto it = scan_level_cols.find(table_name);
+        return it != scan_level_cols.end() ? it->second : std::set<TabCol>{};
     }
+
+    std::set<TabCol> get_post_filter_cols(const std::string &table_name) const
+    {
+        auto it = post_filter_cols.find(table_name);
+        return it != post_filter_cols.end() ? it->second : std::set<TabCol>{};
+    }
+    // 判断某列是否只在WHERE中使用
+    bool is_where_only_column(const TabCol &col) const
+    {
+        bool in_where = where_cols.count(col) > 0;
+        bool in_select = select_cols.count(col) > 0;
+        bool in_join = join_cols.count(col) > 0;
+        bool in_groupby = groupby_cols.count(col) > 0;
+        bool in_having = having_cols.count(col) > 0;
+        bool in_orderby = orderby_cols.count(col) > 0;
+
+        return in_where && !in_select && !in_join && !in_groupby && !in_having && !in_orderby;
+    }
+    void calculate_layered_requirements();
 };
 class Planner
 {

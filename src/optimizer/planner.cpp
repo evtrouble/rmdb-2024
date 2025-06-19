@@ -22,6 +22,53 @@ See the Mulan PSL v2 for more details. */
 #include "execution/executor_update.h"
 #include "index/ix.h"
 #include "record_printer.h"
+void QueryColumnRequirement::calculate_layered_requirements()
+{
+    // 1. 扫描层：需要所有涉及的列
+    std::set<TabCol> all_cols;
+    all_cols.insert(select_cols.begin(), select_cols.end());
+    all_cols.insert(join_cols.begin(), join_cols.end());
+    all_cols.insert(where_cols.begin(), where_cols.end());
+    all_cols.insert(groupby_cols.begin(), groupby_cols.end());
+    all_cols.insert(having_cols.begin(), having_cols.end());
+    all_cols.insert(orderby_cols.begin(), orderby_cols.end());
+
+    // 按表分组扫描层需要的列
+    scan_level_cols.clear();
+    for (const auto &col : all_cols)
+    {
+        scan_level_cols[col.tab_name].insert(col);
+    }
+
+    // 2. 过滤后层：去掉只在WHERE中使用的列
+    post_filter_cols.clear();
+    for (const auto &[table_name, table_cols] : scan_level_cols)
+    {
+        for (const auto &col : table_cols)
+        {
+            if (!is_where_only_column(col))
+            {
+                post_filter_cols[table_name].insert(col);
+            }
+        }
+    }
+
+    // 3. 连接后层：当前与过滤后相同（可以后续扩展）
+    post_join_cols = post_filter_cols;
+
+    // 4. 最终层：只保留SELECT、GROUP BY、HAVING、ORDER BY需要的列
+    final_cols.clear();
+    std::set<TabCol> final_needed_cols;
+    final_needed_cols.insert(select_cols.begin(), select_cols.end());
+    final_needed_cols.insert(groupby_cols.begin(), groupby_cols.end());
+    final_needed_cols.insert(having_cols.begin(), having_cols.end());
+    final_needed_cols.insert(orderby_cols.begin(), orderby_cols.end());
+
+    for (const auto &col : final_needed_cols)
+    {
+        final_cols[col.tab_name].insert(col);
+    }
+}
 static const std::map<CompOp, CompOp> swap_op = {
     {OP_EQ, OP_EQ},
     {OP_NE, OP_NE},
@@ -764,11 +811,11 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
         }
 
         // 使用预先计算的列需求
-        auto required_cols = column_requirements_.get_table_cols(table);
-        if (!required_cols.empty())
+        auto post_filter_cols = column_requirements_.get_post_filter_cols(table);
+        if (!post_filter_cols.empty())
         {
             // 转换为vector并按字母顺序排序
-            std::vector<TabCol> cols(required_cols.begin(), required_cols.end());
+            std::vector<TabCol> cols(post_filter_cols.begin(), post_filter_cols.end());
             std::sort(cols.begin(), cols.end(),
                       [](const TabCol &a, const TabCol &b)
                       {
@@ -1753,7 +1800,7 @@ QueryColumnRequirement Planner::analyze_column_requirements(std::shared_ptr<Quer
     }
 
     // 合并所有中间分析数据到最终结果
-    requirements.merge_all_requirements();
+    requirements.calculate_layered_requirements();
 
     return requirements;
 }
