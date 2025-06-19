@@ -166,21 +166,16 @@ void RmFileHandle::insert_record(const Rid &rid, char *buf)
     Bitmap::set(page_handle.bitmap, rid.slot_no);
     ++page_handle.page_hdr->num_records;
 
-    {
-        std::lock_guard lock(lock_);
-        if (page_handle.page_hdr->num_records == file_hdr_.num_records_per_page)
-            file_hdr_.first_free_page_no = page_handle.page_hdr->next_free_page_no;
-    }
+    // {
+    //     std::lock_guard lock(lock_);
+    //     if (page_handle.page_hdr->num_records == file_hdr_.num_records_per_page)
+    //         file_hdr_.first_free_page_no = page_handle.page_hdr->next_free_page_no;
+    // }
     rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);
 }
 
 void RmFileHandle::recovery_insert_record(const Rid &rid, char *buf)
 {
-    if(rid.page_no == file_hdr_.num_pages) {
-        RmPageHandle page_handle = create_new_page_handle();
-        rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), false);
-    }
-
     // 1. 获取页面句柄
     RmPageHandle page_handle = fetch_page_handle(rid.page_no);
     std::lock_guard page_lock(page_handle.page->latch_);
@@ -195,9 +190,13 @@ void RmFileHandle::recovery_insert_record(const Rid &rid, char *buf)
     {
         ++page_handle.page_hdr->num_records;
 
-        std::lock_guard lock(lock_);
-        if (page_handle.page_hdr->num_records == file_hdr_.num_records_per_page)
-                file_hdr_.first_free_page_no = page_handle.page_hdr->next_free_page_no;
+        // if (page_handle.page_hdr->num_records == file_hdr_.num_records_per_page)
+        // {
+        //     std::lock_guard file_lock(lock_);
+        //     if (file_hdr_.first_free_page_no == page_handle.page->get_page_id().page_no) {
+        //         file_hdr_.first_free_page_no = page_handle.page_hdr->next_free_page_no;
+        //     }
+        // }
     }
     rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);
 }
@@ -427,11 +426,17 @@ void RmFileHandle::abort_insert_record(const Rid &rid)
     std::lock_guard lock(page_handle.page->latch_);
 
     // 2. 检查记录是否存在
-    if (!is_record(page_handle, rid)) {
-        rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), false);
-        throw RecordNotFoundError(rid.page_no, rid.slot_no);
-    }
+    // if (!is_record(page_handle, rid)) {
+    //     rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), false);
+    //     throw RecordNotFoundError(rid.page_no, rid.slot_no);
+    // }
+    bool is_occupied = is_record(page_handle, rid);
 
+    if(!is_occupied)
+    {
+        rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), false);
+        return; // 如果没有记录，直接返回
+    }
     // 3. 更新bitmap，标记slot为空闲
     Bitmap::reset(page_handle.bitmap, rid.slot_no);
     page_handle.page_hdr->num_records--;
@@ -457,9 +462,9 @@ void RmFileHandle::abort_delete_record(const Rid &rid, char *buf)
     {
         ++page_handle.page_hdr->num_records;
         Bitmap::set(page_handle.bitmap, rid.slot_no);
-        std::lock_guard lock(lock_);
-        if (page_handle.page_hdr->num_records == file_hdr_.num_records_per_page)
-            file_hdr_.first_free_page_no = page_handle.page_hdr->next_free_page_no;
+        // std::lock_guard lock(lock_);
+        // if (page_handle.page_hdr->num_records == file_hdr_.num_records_per_page)
+        //     file_hdr_.first_free_page_no = page_handle.page_hdr->next_free_page_no;
     }
 
     rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);
@@ -471,10 +476,10 @@ void RmFileHandle::abort_update_record(const Rid &rid, char *buf)
     std::lock_guard lock(page_handle.page->latch_);
 
     // 检查记录是否存在
-    if (!is_record(page_handle, rid)) {
-        rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), false);
-        throw RecordNotFoundError(rid.page_no, rid.slot_no);
-    }
+    // if (!is_record(page_handle, rid)) {
+    //     rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), false);
+    //     throw RecordNotFoundError(rid.page_no, rid.slot_no);
+    // }
 
     memcpy(page_handle.get_slot(rid.slot_no), buf, file_hdr_.record_size);
     rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);

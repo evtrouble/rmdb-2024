@@ -93,7 +93,7 @@ Page* BufferPoolManager::fetch_page(const PageId& page_id) {
     
     // 更新page table并释放表锁
     page_table_[page_id] = frame_id;
-    replacer_->pin(frame_id);
+    // replacer_->pin(frame_id);
     old_page.pin_count_.store(1);
     write_lock.unlock();
     
@@ -162,7 +162,7 @@ Page* BufferPoolManager::new_page(PageId* page_id) {
         page_table_.erase(old_page_id);
     }
     page_table_[*page_id] = frame_id;
-    replacer_->pin(frame_id);
+    // replacer_->pin(frame_id);
     page.pin_count_.store(1);
     std::lock_guard page_lock(page.latch_);
     lock.unlock(); // 释放表锁，避免长时间持有
@@ -304,12 +304,9 @@ bool BufferPoolManager::find_victim_page(frame_id_t* frame_id) {
 
 void BufferPoolManager::update_page(Page* page, const PageId& new_page_id, frame_id_t new_frame_id) {
     if (page->is_dirty_.load()) {
-        // std::lock_guard lock(page->latch_);
-        if(page->is_dirty_.load()) {
-            disk_manager_->write_page(page->id_.fd, page->id_.page_no, page->data_, PAGE_SIZE);
-            page->is_dirty_ = false;
-            dirty_page_count_.fetch_sub(1);
-        }
+        disk_manager_->write_page(page->id_.fd, page->id_.page_no, page->data_, PAGE_SIZE);
+        page->is_dirty_ = false;
+        dirty_page_count_.fetch_sub(1);
     }
     page->id_ = new_page_id;
 }
