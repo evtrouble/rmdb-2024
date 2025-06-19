@@ -158,7 +158,7 @@ void RmFileHandle::insert_record(const Rid &rid, char *buf)
 
     {
         std::lock_guard lock(lock_);
-        if (page_handle.page_hdr->num_records == 1 && file_hdr_.first_free_page_no == rid.page_no)
+        if (page_handle.page_hdr->num_records == file_hdr_.num_records_per_page)
             file_hdr_.first_free_page_no = page_handle.page_hdr->next_free_page_no;
     }
     rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);
@@ -181,7 +181,7 @@ void RmFileHandle::recovery_insert_record(const Rid &rid, char *buf)
         ++page_handle.page_hdr->num_records;
 
         std::lock_guard lock(lock_);
-        if (page_handle.page_hdr->num_records == 1 && file_hdr_.first_free_page_no == rid.page_no)
+        if (page_handle.page_hdr->num_records == file_hdr_.num_records_per_page)
                 file_hdr_.first_free_page_no = page_handle.page_hdr->next_free_page_no;
     }
     rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);
@@ -443,7 +443,7 @@ void RmFileHandle::abort_delete_record(const Rid &rid, char *buf)
         ++page_handle.page_hdr->num_records;
         Bitmap::set(page_handle.bitmap, rid.slot_no);
         std::lock_guard lock(lock_);
-        if (page_handle.page_hdr->num_records == 1 && file_hdr_.first_free_page_no == rid.page_no)
+        if (page_handle.page_hdr->num_records == file_hdr_.num_records_per_page)
             file_hdr_.first_free_page_no = page_handle.page_hdr->next_free_page_no;
     }
 

@@ -11,6 +11,7 @@ See the Mulan PSL v2 for more details. */
 #pragma once
 
 #include <assert.h>
+#include <memory>
 
 #include "bitmap.h"
 #include "rm_defs.h"

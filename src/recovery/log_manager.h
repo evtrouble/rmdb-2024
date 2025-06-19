@@ -13,6 +13,7 @@ See the Mulan PSL v2 for more details. */
 #include <mutex>
 #include <vector>
 #include <iostream>
+#include <thread>
 #include "log_defs.h"
 #include "common/config.h"
 #include "record/rm_defs.h"
