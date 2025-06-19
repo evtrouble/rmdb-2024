@@ -254,60 +254,60 @@ IxNodeHandle IxIndexHandle::find_leaf_page(const char *key, Operation operation,
         transaction->append_index_latch_page_set(nullptr);
     }
 
-        auto next_page_id = file_hdr_->root_page_;
-        IxNodeHandle prev_node{};
-        prev_node.page = nullptr;
-        int prev_id = 0;
-        // 2. 从根节点开始不断向下查找目标key
-        while (true)
+    auto next_page_id = file_hdr_->root_page_;
+    IxNodeHandle prev_node{};
+    prev_node.page = nullptr;
+    int prev_id = 0;
+    // 2. 从根节点开始不断向下查找目标key
+    while (true)
+    {
+        auto node = fetch_node(next_page_id);
+        auto prev_page = prev_node.page;
+        if (find_first)
         {
-            auto node = fetch_node(next_page_id);
-            auto prev_page = prev_node.page;
-            if (find_first)
+            if (node.is_leaf_page() && operation != Operation::FIND)
             {
-                if (node.is_leaf_page() && operation != Operation::FIND)
-                {
-                    node.page->latch_.lock();
-                    transaction->append_index_latch_page_set(node.page);
-                }
-                else
-                    node.page->latch_.lock_shared();
-
-                if (prev_page != nullptr)
-                {
-                    prev_page->latch_.unlock_shared();
-                    ix_manager_->buffer_pool_manager_->unpin_page(prev_page->get_page_id(), false);
-                }
-                else
-                    root_lacth_.unlock_shared();
-            }
-            else
-            {
-                if (node.is_leaf_page() && operation == Operation::DELETE && prev_id > 0)
-                {
-                    auto left_sibling = fetch_node(prev_node.value_at(prev_id - 1));
-                    left_sibling.page->latch_.lock();
-                    transaction->append_index_latch_page_set(left_sibling.page);
-                }
                 node.page->latch_.lock();
-                if (node.is_safe(operation))
-                    release_all_xlock(transaction->get_index_latch_page_set(), false);
                 transaction->append_index_latch_page_set(node.page);
             }
-            if (node.is_leaf_page())
+            else
+                node.page->latch_.lock_shared();
+
+            if (prev_page != nullptr)
             {
-                if (find_first && !node.is_safe(operation))
-                {
-                    release_all_xlock(transaction->get_index_latch_page_set(), false);
-                    return find_leaf_page(key, operation, transaction, false);
-                }
-                return node;
+                prev_page->latch_.unlock_shared();
+                ix_manager_->buffer_pool_manager_->unpin_page(prev_page->get_page_id(), false);
             }
-            prev_id = node.upper_bound(key) - 1;
-            next_page_id = node.value_at(prev_id);
-            prev_node = node;
-            // prev_page = node.page;
+            else
+                root_lacth_.unlock_shared();
         }
+        else
+        {
+            if (node.is_leaf_page() && operation == Operation::DELETE && prev_id > 0)
+            {
+                auto left_sibling = fetch_node(prev_node.value_at(prev_id - 1));
+                left_sibling.page->latch_.lock();
+                transaction->append_index_latch_page_set(left_sibling.page);
+            }
+            node.page->latch_.lock();
+            if (node.is_safe(operation))
+                release_all_xlock(transaction->get_index_latch_page_set(), false);
+            transaction->append_index_latch_page_set(node.page);
+        }
+        if (node.is_leaf_page())
+        {
+            if (find_first && !node.is_safe(operation))
+            {
+                release_all_xlock(transaction->get_index_latch_page_set(), false);
+                return find_leaf_page(key, operation, transaction, false);
+            }
+            return node;
+        }
+        prev_id = node.upper_bound(key) - 1;
+        next_page_id = node.value_at(prev_id);
+        prev_node = node;
+        // prev_page = node.page;
+    }
 }
 
 /**

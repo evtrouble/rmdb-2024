@@ -88,7 +88,7 @@ void RmScan::load_next_page() {
     }
     
     // 如果当前页没有可见记录且还有下一页,继续查找
-    if(current_records_.empty() && rid_.page_no + 1 < file_handle_->file_hdr_.num_pages) {
+    if(current_records_.empty() && rid_.page_no + 1 < page_num) {
         load_next_page();
     }
 }

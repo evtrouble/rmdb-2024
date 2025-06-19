@@ -230,7 +230,6 @@ void RecoveryManager::undo() {
 
     temp_txns_.clear();
     disk_manager_->clear_log();
-    buffer_pool_manager_->force_flush_all_pages(); // 确保所有脏页都被刷新到磁盘
 
     txn_manager_->init_txn(); // 重新初始化事务管理器
     Transaction* start_txn = txn_manager_->get_start_txn();
@@ -257,6 +256,7 @@ void RecoveryManager::undo() {
     }
     start_txn->reset(); // 重置起始事务
     delete context; // 清理上下文
+    buffer_pool_manager_->force_flush_all_pages(); // 确保所有脏页都被刷新到磁盘
 }
 
 LogRecord *RecoveryManager::read_log(long long offset) {

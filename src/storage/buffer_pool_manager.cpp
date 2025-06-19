@@ -185,6 +185,7 @@ bool BufferPoolManager::delete_page(const PageId& page_id) {
     
     // 从page table移除并加入free list
     page_table_.erase(it);
+    page.id_.fd = -1; // 重置页面ID
     {
         std::lock_guard free_lock(free_list_mutex_);
         free_list_.push_back(frame_id);
@@ -196,6 +197,7 @@ void BufferPoolManager::remove_all_pages(int fd, bool flush) {
     if(fd < 0) {
         return; // 无效的文件描述符
     }
+    std::vector<frame_id_t> pages_to_remove;
     std::lock_guard lock(table_latch_);
     auto it = page_table_.begin();
     while (it != page_table_.end()) {
@@ -205,10 +207,16 @@ void BufferPoolManager::remove_all_pages(int fd, bool flush) {
             continue;
         }
         Page& page = pages_[frame_id];
-        if (!flush) {
-            page.is_dirty_.store(false);
-            dirty_page_count_.fetch_sub(1);
+        if(page.is_dirty_.load()) {
+            if(flush) {
+                pages_to_remove.push_back(frame_id);
+            } else {
+                page.is_dirty_.store(false);
+                dirty_page_count_.fetch_sub(1);
+            }
         }
+        if(!flush)        
+            page.id_.fd = -1; // 重置页面ID
         
         {
             std::lock_guard free_lock(free_list_mutex_);
@@ -220,6 +228,16 @@ void BufferPoolManager::remove_all_pages(int fd, bool flush) {
         
         // 删除记录
         it = page_table_.erase(it);
+    }
+
+    for(const auto& frame_id : pages_to_remove) {
+        Page& page = pages_[frame_id];
+        std::lock_guard page_lock(page.latch_);
+        if(page.is_dirty_.exchange(false)) {
+            disk_manager_->write_page(page.id_.fd, page.id_.page_no, page.data_, PAGE_SIZE);
+            dirty_page_count_.fetch_sub(1);
+        }
+        page.id_.fd = -1; // 重置页面ID
     }
 }
 

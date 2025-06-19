@@ -481,6 +481,14 @@ void RmFileHandle::abort_update_record(const Rid &rid, char *buf)
     //     throw RecordNotFoundError(rid.page_no, rid.slot_no);
     // }
 
+    if(!is_record(page_handle, rid))
+    {
+        ++page_handle.page_hdr->num_records;
+        Bitmap::set(page_handle.bitmap, rid.slot_no);
+        // std::lock_guard lock(lock_);
+        // if (page_handle.page_hdr->num_records == file_hdr_.num_records_per_page)
+        //     file_hdr_.first_free_page_no = page_handle.page_hdr->next_free_page_no;
+    }
     memcpy(page_handle.get_slot(rid.slot_no), buf, file_hdr_.record_size);
     rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);
 }
