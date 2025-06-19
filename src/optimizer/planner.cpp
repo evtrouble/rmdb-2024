@@ -1022,11 +1022,17 @@ std::unordered_map<std::string, size_t> calculate_table_cardinalities(const std:
 std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Context *context)
 {
     std::cout << "[Debug] 开始生成物理计划..." << std::endl;
-
+    // 检查是否是 SELECT * 查询
+    bool is_select_star = false;
+    auto select_stmt = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
+    if (select_stmt && (query->cols.size() == 0 || query->cols[0].col_name == "*"))
+    {
+        is_select_star = true;
+        std::cout << "[Debug] 检测到 SELECT * 查询，跳过中间投影节点" << std::endl;
+    }
     // 建立表名到别名的映射
     std::map<std::string, std::string> tab_to_alias;
     std::map<std::string, std::string> alias_to_tab;
-    auto select_stmt = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
     if (select_stmt)
     {
         for (size_t i = 0; i < select_stmt->tabs.size(); i++)
@@ -1067,22 +1073,25 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
                 query->tab_conds[table]);
         }
 
-        // 使用预先计算的列需求
-        auto post_filter_cols = column_requirements_.get_post_filter_cols(table);
-        if (!post_filter_cols.empty())
+        // 只有在非 SELECT * 查询时才添加投影节点
+        if (!is_select_star)
         {
-            // 转换为vector并按字母顺序排序
-            std::vector<TabCol> cols(post_filter_cols.begin(), post_filter_cols.end());
-            std::sort(cols.begin(), cols.end(),
-                      [](const TabCol &a, const TabCol &b)
-                      {
-                          return a.col_name < b.col_name;
-                      });
+            auto post_filter_cols = column_requirements_.get_post_filter_cols(table);
+            if (!post_filter_cols.empty())
+            {
+                // 转换为vector并按字母顺序排序
+                std::vector<TabCol> cols(post_filter_cols.begin(), post_filter_cols.end());
+                std::sort(cols.begin(), cols.end(),
+                          [](const TabCol &a, const TabCol &b)
+                          {
+                              return a.col_name < b.col_name;
+                          });
 
-            scan_plan = std::make_shared<ProjectionPlan>(
-                PlanTag::T_Projection,
-                scan_plan,
-                cols);
+                scan_plan = std::make_shared<ProjectionPlan>(
+                    PlanTag::T_Projection,
+                    scan_plan,
+                    cols);
+            }
         }
         table_plans.push_back(scan_plan);
     }
@@ -1929,7 +1938,7 @@ QueryColumnRequirement Planner::analyze_column_requirements(std::shared_ptr<Quer
         }
     }
 
-    bool is_select_all = (query->cols.size() == 1 && query->cols[0].col_name == "*");
+    bool is_select_all = (query->cols.size() == 0 || query->cols[0].col_name == "*");
     if (is_select_all)
     {
         // SELECT * 的情况，需要所有表的所有列
