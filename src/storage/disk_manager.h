@@ -56,8 +56,8 @@ public:
         void create_file(const std::string &path);
 
         inline void clear_log() {
-                if(log_fd_ != -1) {
-                        ftruncate(log_fd_, 0);
+                if(read_log_fd_ != -1) {
+                        ftruncate(read_log_fd_, 0);
                 }
         }
 
@@ -78,9 +78,23 @@ public:
 
         void write_log(char *log_data, int size);
 
-        void SetLogFd(int log_fd) { log_fd_ = log_fd; }
+        // void SetLogFd(int log_fd) { write_log_fd_ = log_fd; }
 
-        int GetLogFd() { return log_fd_; }
+        // int GetLogFd() { return write_log_fd_; }
+        void create_new_log_file() {
+                if(!is_file(LOG_BAK_FILE_NAME))
+                {
+                        create_file(LOG_BAK_FILE_NAME);
+                }
+                write_log_fd_ = ::open(LOG_BAK_FILE_NAME.c_str(), O_RDWR);
+        }
+
+        void change_log_file() {
+                ::close(read_log_fd_);
+                ::unlink(LOG_FILE_NAME.c_str());
+                ::rename(LOG_BAK_FILE_NAME.c_str(), LOG_FILE_NAME.c_str());
+                read_log_fd_ = write_log_fd_;
+        }
 
         /**
          * @description: 设置文件已经分配的页面个数
@@ -111,6 +125,7 @@ private:
         std::unordered_map<int, std::string> fd2path_; //<Page fd,Page文件磁盘路径>哈希表
         std::shared_mutex path2fd_mutex_; // 保护path2fd_和fd2path_的互斥锁
 
-        int log_fd_ = -1;                            // WAL日志文件的文件句柄，默认为-1，代表未打开日志文件
+        int read_log_fd_ = -1;   // WAL日志文件的文件句柄，默认为-1，代表未打开日志文件
+        int write_log_fd_ = -1;
         std::atomic<page_id_t> fd2pageno_[MAX_FD]{}; // 文件中已经分配的页面个数，初始值为0
 };

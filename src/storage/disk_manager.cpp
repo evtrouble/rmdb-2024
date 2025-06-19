@@ -250,13 +250,14 @@ int DiskManager::get_file_fd(const std::string &file_name)
 int DiskManager::read_log(char *log_data, int size, int offset)
 {
     // read log file from the previous end
-    if (log_fd_ == -1)
+    if (read_log_fd_ == -1)
     {
         if(!is_file(LOG_FILE_NAME))
         {
             create_file(LOG_FILE_NAME);
         }
-        log_fd_ = open_file(LOG_FILE_NAME);
+        read_log_fd_ = ::open(LOG_FILE_NAME.c_str(), O_RDWR);
+        write_log_fd_ = read_log_fd_; // 读写日志文件使用同一个文件句柄
     }
     int file_size = get_file_size(LOG_FILE_NAME);
     if (offset > file_size)
@@ -267,8 +268,8 @@ int DiskManager::read_log(char *log_data, int size, int offset)
     size = std::min(size, file_size - offset);
     if (size == 0)
         return 0;
-    lseek(log_fd_, offset, SEEK_SET);
-    ssize_t bytes_read = read(log_fd_, log_data, size);
+    lseek(read_log_fd_, offset, SEEK_SET);
+    ssize_t bytes_read = read(read_log_fd_, log_data, size);
     assert(bytes_read == size);
     return bytes_read;
 }
@@ -280,18 +281,19 @@ int DiskManager::read_log(char *log_data, int size, int offset)
  */
 void DiskManager::write_log(char *log_data, int size)
 {
-    if (log_fd_ == -1)
+    if (write_log_fd_ == -1)
     {
         if(!is_file(LOG_FILE_NAME))
         {
             create_file(LOG_FILE_NAME);
         }
-        log_fd_ = open_file(LOG_FILE_NAME);
+        write_log_fd_ = ::open(LOG_FILE_NAME.c_str(), O_RDWR);
+        read_log_fd_ = write_log_fd_; // 读写日志文件使用同一个文件句柄
     }
 
     // write from the file_end
-    lseek(log_fd_, 0, SEEK_END);
-    ssize_t bytes_write = write(log_fd_, log_data, size);
+    lseek(write_log_fd_, 0, SEEK_END);
+    ssize_t bytes_write = write(write_log_fd_, log_data, size);
     if (bytes_write != size)
     {
         throw UnixError();

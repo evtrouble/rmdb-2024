@@ -99,6 +99,7 @@ void LogManager::create_static_check_point()
     }
 
     offset = 0;
+    disk_manager_->create_new_log_file();
     while(true){
         log_record = read_log(offset);
         if(log_record == nullptr){
@@ -111,7 +112,7 @@ void LogManager::create_static_check_point()
         }
         delete log_record;
     }
-    disk_manager_->clear_log();
+    disk_manager_->change_log_file();
     flush_log_to_disk_without_lock();
 }
 
