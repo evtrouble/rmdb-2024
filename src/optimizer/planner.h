@@ -65,6 +65,7 @@ private:
     std::vector<TabCol> compute_required_columns(const std::string &table_name, const std::shared_ptr<Query> &query);
     std::shared_ptr<Plan> add_leaf_projections(std::shared_ptr<Plan> plan, const std::vector<TabCol> &required_cols);
     std::shared_ptr<Plan> apply_projection_pushdown(std::shared_ptr<Plan> plan, const std::shared_ptr<Query> &query);
+    std::vector<TabCol> compute_required_columns_after_filter(const std::string &table_name, const std::shared_ptr<Query> &query);
 
 public:
     Planner(SmManager *sm_manager) : sm_manager_(sm_manager) {}

@@ -288,7 +288,61 @@ std::shared_ptr<Query> Planner::logical_optimization(std::shared_ptr<Query> quer
     }
     return query;
 }
+std::vector<TabCol> Planner::compute_required_columns_after_filter(const std::string &table_name, const std::shared_ptr<Query> &query)
+{
+    std::set<std::string> required_cols;
 
+    // 建立别名映射
+    std::map<std::string, std::string> tab_to_alias;
+    std::map<std::string, std::string> alias_to_tab;
+    auto select_stmt = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
+    if (select_stmt)
+    {
+        for (size_t i = 0; i < select_stmt->tabs.size(); i++)
+        {
+            if (i < select_stmt->tab_aliases.size() && !select_stmt->tab_aliases[i].empty())
+            {
+                tab_to_alias[select_stmt->tabs[i]] = select_stmt->tab_aliases[i];
+                alias_to_tab[select_stmt->tab_aliases[i]] = select_stmt->tabs[i];
+            }
+        }
+    }
+    // 1. 添加最终输出需要的列
+    for (const auto &col : query->cols)
+    {
+        if (table_matches(col.tab_name, table_name, alias_to_tab, tab_to_alias) && col.col_name != "*")
+        {
+            required_cols.insert(col.col_name);
+        }
+    }
+
+    // 2. 添加连接条件需要的列
+    for (const auto &cond : query->conds)
+    {
+        if (!cond.is_rhs_val)
+        {
+            if (table_matches(cond.lhs_col.tab_name, table_name, alias_to_tab, tab_to_alias))
+            {
+                required_cols.insert(cond.lhs_col.col_name);
+            }
+            if (table_matches(cond.rhs_col.tab_name, table_name, alias_to_tab, tab_to_alias))
+            {
+                required_cols.insert(cond.rhs_col.col_name);
+            }
+        }
+    }
+
+    // 3. 不添加只用于WHERE过滤的列（因为过滤后就不需要了）
+
+    // 转换为 TabCol 格式...
+    std::vector<TabCol> result;
+    for (const auto &col_name : required_cols)
+    {
+        result.push_back({table_name, col_name});
+    }
+
+    return result;
+}
 // 修复后的 compute_required_columns 函数
 std::vector<TabCol> Planner::compute_required_columns(const std::string &table_name, const std::shared_ptr<Query> &query)
 {
@@ -655,22 +709,83 @@ std::shared_ptr<Plan> Planner::physical_optimization(std::shared_ptr<Query> quer
 
     return plan;
 }
-// 辅助函数：从Plan中提取ScanPlan
-std::shared_ptr<ScanPlan> extract_scan_plan(std::shared_ptr<Plan> plan) {
+std::shared_ptr<ScanPlan> extract_scan_plan(std::shared_ptr<Plan> plan)
+{
+    if (!plan)
+        return nullptr;
+
     // 如果是ScanPlan，直接返回
     auto scan_plan = std::dynamic_pointer_cast<ScanPlan>(plan);
-    if (scan_plan) {
+    if (scan_plan)
+    {
         return scan_plan;
     }
 
-    // 如果是FilterPlan，提取其子计划
+    // 如果是FilterPlan，递归提取其子计划
     auto filter_plan = std::dynamic_pointer_cast<FilterPlan>(plan);
-    if (filter_plan && filter_plan->subplan_) {
-        return std::dynamic_pointer_cast<ScanPlan>(filter_plan->subplan_);
+    if (filter_plan && filter_plan->subplan_)
+    {
+        return extract_scan_plan(filter_plan->subplan_);
+    }
+
+    // 如果是ProjectionPlan，递归提取其子计划
+    auto projection_plan = std::dynamic_pointer_cast<ProjectionPlan>(plan);
+    if (projection_plan && projection_plan->subplan_)
+    {
+        return extract_scan_plan(projection_plan->subplan_);
     }
 
     return nullptr;
 }
+
+// 计算所有表的基数并缓存
+std::unordered_map<std::string, size_t> calculate_table_cardinalities(const std::vector<std::string> &tables, SmManager *sm_manager_)
+{
+    std::unordered_map<std::string, size_t> table_cardinalities;
+    for (const auto &table : tables)
+    {
+        try
+        {
+            // 确保表文件已经打开
+            if (sm_manager_->fhs_.find(table) == sm_manager_->fhs_.end())
+            {
+                if (!sm_manager_->db_.is_table(table))
+                {
+                    throw TableNotFoundError(table);
+                }
+                if (table.empty())
+                {
+                    throw TableNotFoundError("Empty table name");
+                }
+                sm_manager_->fhs_.emplace(table, sm_manager_->get_rm_manager()->open_file(table));
+            }
+            const auto &file_handle = sm_manager_->fhs_.at(table);
+            if (!file_handle)
+            {
+                table_cardinalities[table] = 1000; // 默认估计值
+                continue;
+            }
+
+            size_t num_pages = file_handle->get_file_hdr().num_pages;
+            size_t num_records = 0;
+
+            // 遍历所有数据页来计算记录数
+            for (size_t page_no = 1; page_no < num_pages; page_no++)
+            {
+                auto page_handle = file_handle->fetch_page_handle(page_no);
+                num_records += page_handle.page_hdr->num_records;
+            }
+            table_cardinalities[table] = num_records;
+        }
+        catch (const std::exception &e)
+        {
+            std::cout << "Error getting cardinality for table " << table << ": " << e.what() << std::endl;
+            table_cardinalities[table] = 1000; // 默认估计值
+        }
+    }
+    return table_cardinalities;
+}
+
 std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Context *context)
 {
     std::cout << "[Debug] 开始生成物理计划..." << std::endl;
@@ -690,6 +805,9 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
             }
         }
     }
+
+    // 预先计算所有表的基数
+    auto table_cardinalities = calculate_table_cardinalities(query->tables, sm_manager_);
 
     // 为每个表创建基础扫描计划
     std::vector<std::shared_ptr<Plan>> table_plans;
@@ -715,7 +833,21 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
                 scan_plan,
                 query->tab_conds[table]);
         }
+        std::vector<TabCol> required_cols = compute_required_columns_after_filter(table, query);
+        if (!required_cols.empty())
+        {
+            // 按字母顺序排序
+            std::sort(required_cols.begin(), required_cols.end(),
+                      [](const TabCol &a, const TabCol &b)
+                      {
+                          return a.col_name < b.col_name;
+                      });
 
+            scan_plan = std::make_shared<ProjectionPlan>(
+                PlanTag::T_Projection,
+                scan_plan,
+                required_cols);
+        }
         table_plans.push_back(scan_plan);
     }
 
@@ -734,12 +866,10 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
     {
         for (size_t j = i + 1; j < table_plans.size(); j++)
         {
-            // auto scan_i = std::dynamic_pointer_cast<ScanPlan>(table_plans[i]);
-            // auto scan_j = std::dynamic_pointer_cast<ScanPlan>(table_plans[j]);
             auto scan_i = extract_scan_plan(table_plans[i]);
             auto scan_j = extract_scan_plan(table_plans[j]);
-            size_t card_i = get_table_cardinality(scan_i->tab_name_);
-            size_t card_j = get_table_cardinality(scan_j->tab_name_);
+            size_t card_i = table_cardinalities[scan_i->tab_name_];
+            size_t card_j = table_cardinalities[scan_j->tab_name_];
             size_t join_card = card_i * card_j; // 简单估计连接基数
 
             if (join_card < min_card)
@@ -747,6 +877,8 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
                 min_card = join_card;
                 min_i = i;
                 min_j = j;
+                if (card_i > card_j)
+                    std::swap(min_i, min_j); // 小表放到左子树
             }
         }
     }
@@ -802,7 +934,7 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
         for (size_t i = 0; i < table_plans.size(); i++)
         {
             auto scan_plan = extract_scan_plan(table_plans[i]);
-            size_t table_card = get_table_cardinality(scan_plan->tab_name_);
+            size_t table_card = table_cardinalities[scan_plan->tab_name_];
 
             // 收集与当前表相关的连接条件
             std::vector<Condition> curr_conds;
@@ -1500,14 +1632,17 @@ size_t Planner::get_table_cardinality(const std::string &table_name)
     try
     {
         // 确保表文件已经打开
-        if (sm_manager_->fhs_.find(table_name) == sm_manager_->fhs_.end()) {
+        if (sm_manager_->fhs_.find(table_name) == sm_manager_->fhs_.end())
+        {
             // 如果表不存在于fhs_中，说明表可能还没有打开
             // 首先检查表是否存在于数据库中
-            if (!sm_manager_->db_.is_table(table_name)) {
+            if (!sm_manager_->db_.is_table(table_name))
+            {
                 throw TableNotFoundError(table_name);
             }
             // 表存在但未打开，需要重新加载表的文件句柄
-            if (table_name.empty()) {
+            if (table_name.empty())
+            {
                 throw TableNotFoundError("Empty table name");
             }
             sm_manager_->fhs_.emplace(table_name, sm_manager_->get_rm_manager()->open_file(table_name));

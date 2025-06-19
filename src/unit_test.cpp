@@ -17,21 +17,6 @@ See the Mulan PSL v2 for more details. */
 
 #undef private
 
-#include <algorithm>
-#include <cassert>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <ctime>
-#include <iostream>
-#include <memory>
-#include <random>
-#include <set>
-#include <string>
-#include <thread> // NOLINT
-#include <unordered_map>
-#include <vector>
-
 #include "gtest/gtest.h"
 #include "replacer/lru_replacer.h"
 #include "storage/disk_manager.h"

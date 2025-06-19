@@ -16,8 +16,7 @@ See the Mulan PSL v2 for more details. */
 #include <string>
 #include <vector>
 #include <cmath>
-#include <iomanip>
-#include <sstream>
+
 #include "defs.h"
 #include "record/rm_defs.h"
 #include "parser/ast.h"
