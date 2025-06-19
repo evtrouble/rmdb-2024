@@ -9,6 +9,7 @@ MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 See the Mulan PSL v2 for more details. */
 
 #include "analyze.h"
+#include <iostream>
 #include "transaction/transaction_manager.h"
 #include "transaction/transaction.h"
 
@@ -19,28 +20,66 @@ See the Mulan PSL v2 for more details. */
  */
 std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse, Context *context)
 {
+    std::cout << "[Debug] Starting analysis" << std::endl;
     std::shared_ptr<Query> query = std::make_shared<Query>();
     std::unordered_map<std::string, TabCol> alias_to_col;
+
+    table_alias_map_.clear();
+
     switch (parse->Nodetype())
     {
     case ast::TreeNodeType::SelectStmt:
     {
+        std::cout << "[Debug] Analyzing SELECT statement" << std::endl;
         auto x = std::static_pointer_cast<ast::SelectStmt>(parse);
         // 处理表名
         query->tables = std::move(x->tabs);
+        std::cout << "[Debug] Tables in query: " << query->tables.size() << std::endl;
 
         for (auto &tab_name : query->tables)
         {
+            std::cout << "[Debug] Table: " << tab_name << std::endl;
             if (!sm_manager_->db_.is_table(tab_name))
             {
                 throw TableNotFoundError(tab_name);
             }
         }
+        // 假设AST中的表信息包含别名，这里需要根据你的AST结构调整
+        // 建立表别名映射关系
+        for (size_t i = 0; i < query->tables.size(); ++i)
+        {
+            std::string table_name = query->tables[i];
+            std::cout << "[Debug] Table: " << table_name << std::endl;
 
+            // 检查表是否存在
+            if (!sm_manager_->db_.is_table(table_name))
+            {
+                throw TableNotFoundError(table_name);
+            }
+
+            // 如果AST中有表别名信息，在这里建立映射
+            // 假设 x->table_aliases 包含别名信息，需要根据实际AST结构调整
+            i = i;
+            std::cout << "i: " << i << std::endl;
+
+            if (x->tab_aliases.size() > i && !x->tab_aliases[i].empty())
+            {
+                std::cout << "i: " << i << std::endl;
+                std::cout << "x->tab_aliases[i] " << x->tab_aliases[i] << std::endl;
+                std::cout << "table_name " << table_name << std::endl;
+                std::string alias = x->tab_aliases[i];
+                table_alias_map_[alias] = table_name;
+                std::cout << "[Debug] Table alias mapping: " << alias << " -> " << table_name << std::endl;
+            }
+            // 表名也可以作为自己的别名
+            table_alias_map_[table_name] = table_name;
+        }
         // 处理target list，再target list中添加上表名，例如 a.id
         query->cols.reserve(x->cols.size());
+        std::cout << "[Debug] Processing columns, count: " << x->cols.size() << std::endl;
         for (auto &sv_sel_col : x->cols)
         {
+            std::cout << "[Debug] Column: " << sv_sel_col->col_name << std::endl;
             TabCol col(sv_sel_col->tab_name, sv_sel_col->col_name, sv_sel_col->agg_type, sv_sel_col->alias);
             query->cols.emplace_back(col);
             if (ast::AggFuncType::NO_TYPE != sv_sel_col->agg_type)
@@ -48,9 +87,56 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
                 x->has_agg = true;
             }
             // 记录别名映射
-            if (sv_sel_col->alias.size()) {
+            if (!sv_sel_col->alias.empty())
+            {
                 alias_to_col[sv_sel_col->alias] = col;
             }
+        }
+
+        // 处理where条件
+        std::cout << "[Debug] Processing WHERE conditions" << std::endl;
+        if (!x->conds.empty())
+        {
+            for (auto &cond : x->conds)
+            {
+                std::cout << "[Debug] Condition: " << cond->lhs->col_name;
+                switch (cond->op)
+                {
+                case ast::SvCompOp::SV_OP_EQ:
+                    std::cout << " = ";
+                    break;
+                case ast::SvCompOp::SV_OP_NE:
+                    std::cout << " <> ";
+                    break;
+                case ast::SvCompOp::SV_OP_LT:
+                    std::cout << " < ";
+                    break;
+                case ast::SvCompOp::SV_OP_GT:
+                    std::cout << " > ";
+                    break;
+                case ast::SvCompOp::SV_OP_LE:
+                    std::cout << " <= ";
+                    break;
+                case ast::SvCompOp::SV_OP_GE:
+                    std::cout << " >= ";
+                    break;
+                default:
+                    std::cout << " unknown_op ";
+                    break;
+                }
+                if (auto rhs_col = std::dynamic_pointer_cast<ast::Col>(cond->rhs))
+                {
+                    std::cout << rhs_col->col_name << std::endl;
+                }
+                else if (auto rhs_val = std::dynamic_pointer_cast<ast::Value>(cond->rhs))
+                {
+                    std::cout << "value" << std::endl;
+                }
+            }
+        }
+        else
+        {
+            std::cout << "[Debug] No WHERE conditions" << std::endl;
         }
 
         std::vector<ColMeta> all_cols;
@@ -58,20 +144,22 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
         if (query->cols.empty())
         {
             // select all columns
+            std::cout << "[Debug] SELECT *, adding all columns" << std::endl;
             query->cols.reserve(all_cols.size());
             int i = context->txn_->get_txn_manager()->get_hidden_column_count();
-            for (;i< (int)all_cols.size(); ++i)
+            for (; i < (int)all_cols.size(); ++i)
             {
-                auto& col = all_cols[i];
+                auto &col = all_cols[i];
                 query->cols.emplace_back(TabCol(col.tab_name, col.name));
             }
         }
         else
         {
             // infer table name from column name
+            std::cout << "[Debug] Inferring table names for columns" << std::endl;
             for (auto &sel_col : query->cols)
             {
-                if (sel_col.col_name != "*")                   // 避免count(*)检查
+                if (sel_col.col_name != "*")                                // 避免count(*)检查
                     sel_col = check_column(all_cols, sel_col, x->has_join); // 列元数据校验
             }
         }
@@ -125,7 +213,8 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
                 {
                     col_agg_map[sel_col.col_name] = true;
                 }
-                else if (col_agg_map.try_emplace(sel_col.col_name, false).first->second) {
+                else if (col_agg_map.try_emplace(sel_col.col_name, false).first->second)
+                {
                     throw RMDBError("Column '" + sel_col.col_name + "' appears both as non-aggregated and aggregated");
                 }
             }
@@ -143,10 +232,14 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
         // join 检查
         if (x->has_join)
         {
-            for(auto &joinclause : x->jointree){
-                if(JoinType::SEMI_JOIN == joinclause->type){
-                    for(auto &sv_cols : query->cols){
-                        if(sv_cols.tab_name == joinclause->right){
+            for (auto &joinclause : x->jointree)
+            {
+                if (JoinType::SEMI_JOIN == joinclause->type)
+                {
+                    for (auto &sv_cols : query->cols)
+                    {
+                        if (sv_cols.tab_name == joinclause->right)
+                        {
                             throw RMDBError("Only columns from the left table can be selected in the SELECT clause.");
                         }
                     }
@@ -177,7 +270,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
                     for (const auto &group_col : query->groupby)
                     {
                         if (having_cond->lhs->col_name == group_col.col_name ||
-                        ast::AggFuncType::NO_TYPE != having_cond->lhs->agg_type)
+                            ast::AggFuncType::NO_TYPE != having_cond->lhs->agg_type)
                         {
                             is_valid = true;
                             break;
@@ -195,10 +288,13 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
             check_clause(query->tables, query->having_conds, true);
         }
         // 处理ORDER BY
-        if (x->order) {
-            for (auto& col : x->order->cols) {
+        if (x->order)
+        {
+            for (auto &col : x->order->cols)
+            {
                 // 检查是否是别名
-                if (alias_to_col.find(col->col_name) != alias_to_col.end()) {
+                if (alias_to_col.find(col->col_name) != alias_to_col.end())
+                {
                     // 如果是别名，替换为真实列
                     TabCol real_col = alias_to_col[col->col_name];
                     col->tab_name = real_col.tab_name;
@@ -209,34 +305,42 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
                 TabCol order_col = {col->tab_name, col->col_name};
                 order_col = check_column(all_cols, order_col, false);
                 bool is_agg = false;
-                if (ast::AggFuncType::NO_TYPE != col->agg_type){
+                if (ast::AggFuncType::NO_TYPE != col->agg_type)
+                {
                     is_agg = true;
                 }
                 // 检查ORDER BY列是否在GROUP BY中（如果有GROUP BY）
-                if (x->has_groupby) {
+                if (x->has_groupby)
+                {
                     bool found_in_groupby = false;
-                    for (const auto& group_col : query->groupby) {
-                        if (order_col.col_name == group_col.col_name) {
+                    for (const auto &group_col : query->groupby)
+                    {
+                        if (order_col.col_name == group_col.col_name)
+                        {
                             found_in_groupby = true;
                             break;
                         }
                     }
-                    if (!found_in_groupby && !is_agg) {
-                        throw RMDBError("ORDER BY column '" + order_col.col_name + 
-                                    "'is neither in group by nor an aggregation function");
+                    if (!found_in_groupby && !is_agg)
+                    {
+                        throw RMDBError("ORDER BY column '" + order_col.col_name +
+                                        "'is neither in group by nor an aggregation function");
                     }
                 }
             }
         }
 
         // 处理LIMIT
-        if (x->has_limit) {
+        if (x->has_limit)
+        {
             // 检查LIMIT值是否合法
-            if (x->limit < 0) {
-                x->has_limit = false; 
+            if (x->limit < 0)
+            {
+                x->has_limit = false;
                 throw RMDBError("LIMIT value must be non-negative");
             }
-            else if(!x->has_sort){
+            else if (!x->has_sort)
+            {
                 throw RMDBError("LIMIT must be used together with ORDER");
             }
             query->limit = x->limit;
@@ -361,6 +465,22 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
 
 TabCol Analyze::check_column(const std::vector<ColMeta> &all_cols, TabCol target, bool is_semijoin)
 {
+    // 如果是通配符 '*'，直接返回，不需要验证
+    if (target.col_name == "*")
+    {
+        return target;
+    }
+    // 如果指定了表名/别名，先解析别名
+    if (!target.tab_name.empty())
+    {
+        // 检查是否是表别名，如果是，转换为真实表名
+        auto alias_it = table_alias_map_.find(target.tab_name);
+        if (alias_it != table_alias_map_.end())
+        {
+            target.tab_name = alias_it->second;
+            std::cout << "[Debug] Resolved table alias: " << target.tab_name << std::endl;
+        }
+    }
     if (target.tab_name.empty())
     {
         // Table name not specified, infer table name from column name
@@ -374,7 +494,8 @@ TabCol Analyze::check_column(const std::vector<ColMeta> &all_cols, TabCol target
                     throw AmbiguousColumnError(target.col_name);
                 }
                 tab_name = col.tab_name;
-                if(is_semijoin){
+                if (is_semijoin)
+                {
                     break;
                 }
             }
@@ -479,7 +600,7 @@ void Analyze::check_clause(const std::vector<std::string> &tab_names, std::vecto
     {
         // 检查 WHERE、ON 子句中是否包含聚合函数
         if (!is_having && (cond.lhs_col.aggFuncType != ast::AggFuncType::NO_TYPE ||
-                           (!cond.is_rhs_val/* && !cond.is_subquery*/ && cond.rhs_col.aggFuncType != ast::AggFuncType::NO_TYPE)))
+                           (!cond.is_rhs_val /* && !cond.is_subquery*/ && cond.rhs_col.aggFuncType != ast::AggFuncType::NO_TYPE)))
         {
             throw RMDBError("Aggregate functions are not allowed in WHERE clause");
         }
@@ -489,7 +610,7 @@ void Analyze::check_clause(const std::vector<std::string> &tab_names, std::vecto
         {
             cond.lhs_col = check_column(all_cols, cond.lhs_col, false);
         }
-        if (!cond.is_rhs_val &&/* !cond.is_subquery &&*/ cond.rhs_col.col_name != "*")
+        if (!cond.is_rhs_val && /* !cond.is_subquery &&*/ cond.rhs_col.col_name != "*")
         {
             cond.rhs_col = check_column(all_cols, cond.rhs_col, false);
         }
@@ -500,7 +621,7 @@ void Analyze::check_clause(const std::vector<std::string> &tab_names, std::vecto
             ColType lhs_type = lhs_col->type;
             ColType rhs_type;
 
-            if (cond.is_rhs_val/* && !cond.is_subquery*/)
+            if (cond.is_rhs_val /* && !cond.is_subquery*/)
             {
                 rhs_type = cond.rhs_val.type;
 
@@ -670,6 +791,7 @@ Value Analyze::convert_sv_value(const std::shared_ptr<ast::Value> &sv_val)
     {
         auto float_lit = std::static_pointer_cast<ast::FloatLit>(sv_val);
         val.set_float(float_lit->val);
+        val.str_val = float_lit->original_text; // 保存原始文本
     }
     break;
     case ast::TreeNodeType::StringLit:

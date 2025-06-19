@@ -23,6 +23,7 @@ See the Mulan PSL v2 for more details. */
 #include "common/common.h"
 #include "optimizer/plan.h"
 #include "executor_abstract.h"
+#include "executor_explain.h"
 #include "transaction/transaction_manager.h"
 #include "optimizer/planner.h"
 

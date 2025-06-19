@@ -48,6 +48,8 @@ typedef enum PlanTag
     T_Sort,
     T_Agg,
     T_Projection,
+    T_Explain,
+    T_Filter
     // T_Subquery // 子查询
 } PlanTag;
 
@@ -72,10 +74,10 @@ public:
         // fed_conds_ = conds_;
     }
 
-    ScanPlan(PlanTag tag, SmManager *sm_manager, const std::string &tab_name, const std::vector<Condition> &conds, 
-        const IndexMeta &index_meta, int max_match_col_count)
-        : Plan(tag), tab_name_(std::move(tab_name)), fed_conds_(std::move(conds)), index_meta_(index_meta), 
-        max_match_col_count_(max_match_col_count)
+    ScanPlan(PlanTag tag, SmManager *sm_manager, const std::string &tab_name, const std::vector<Condition> &conds,
+             const IndexMeta &index_meta, int max_match_col_count)
+        : Plan(tag), tab_name_(std::move(tab_name)), fed_conds_(std::move(conds)), index_meta_(index_meta),
+          max_match_col_count_(max_match_col_count)
     {
         TabMeta &tab = sm_manager->db_.get_table(tab_name_);
         cols_ = tab.cols;
@@ -126,24 +128,25 @@ public:
 class SortPlan : public Plan
 {
 public:
-    SortPlan(PlanTag tag, std::shared_ptr<Plan> subplan, const TabCol& sel_col, bool is_desc, int limit = -1)
+    SortPlan(PlanTag tag, std::shared_ptr<Plan> subplan, const TabCol &sel_col, bool is_desc, int limit = -1)
         : Plan(tag), subplan_(std::move(subplan)), limit_(limit)
     {
         sel_cols_.emplace_back(sel_col);
         is_desc_orders_.emplace_back(is_desc);
     }
     // 多列排序构造函数（支持每列独立排序方向）
-    SortPlan(PlanTag tag, std::shared_ptr<Plan> subplan, 
-            const std::vector<TabCol>& sel_cols, 
-            const std::vector<bool>& is_desc_orders,
-            int limit = -1)
-        : Plan(tag), 
-          subplan_(std::move(subplan)), 
+    SortPlan(PlanTag tag, std::shared_ptr<Plan> subplan,
+             const std::vector<TabCol> &sel_cols,
+             const std::vector<bool> &is_desc_orders,
+             int limit = -1)
+        : Plan(tag),
+          subplan_(std::move(subplan)),
           sel_cols_(sel_cols),
           is_desc_orders_(is_desc_orders),
           limit_(limit)
     {
-        if (sel_cols.size() != is_desc_orders.size()) {
+        if (sel_cols.size() != is_desc_orders.size())
+        {
             throw std::invalid_argument("Number of sort columns must match number of sort directions");
         }
     }
@@ -152,7 +155,6 @@ public:
     std::vector<TabCol> sel_cols_;
     std::vector<bool> is_desc_orders_;
     int limit_;
-
 };
 
 // dml语句，包括insert; delete; update; select语句　
@@ -171,6 +173,7 @@ public:
     std::vector<Value> values_;
     std::vector<Condition> conds_;
     std::vector<SetClause> set_clauses_;
+    std::shared_ptr<ast::TreeNode> parse;
 };
 
 // ddl语句, 包括create/drop table; create/drop index;
@@ -199,14 +202,28 @@ public:
     std::string tab_name_;
 };
 
+// EXPLAIN语句对应的plan
+class ExplainPlan : public Plan
+{
+public:
+    std::shared_ptr<Plan> subplan_;
+    std::shared_ptr<ast::SelectStmt> select_stmt; // 存储原始的 SELECT 语句
+
+    ExplainPlan(PlanTag tag, std::shared_ptr<Plan> subplan)
+        : Plan(tag), subplan_(std::move(subplan)), select_stmt(nullptr) {}
+
+    ~ExplainPlan() override = default;
+};
+
 // Set Knob Plan
 class SetKnobPlan : public Plan
 {
 public:
-    SetKnobPlan(ast::SetKnobType knob_type, bool bool_value)
-        : Plan(T_SetKnob), set_knob_type_(knob_type), bool_value_(bool_value) {}
+    SetKnobPlan(ast::SetKnobType set_knob_type, bool bool_val)
+        : Plan(T_SetKnob), set_knob_type_(set_knob_type), bool_val_(bool_val) {}
+    ~SetKnobPlan() {}
     ast::SetKnobType set_knob_type_;
-    bool bool_value_;
+    bool bool_val_;
 };
 
 class AggPlan : public Plan
@@ -220,6 +237,19 @@ public:
     AggPlan(PlanTag tag, std::shared_ptr<Plan> subplan, std::vector<TabCol> sel_cols_, std::vector<TabCol> groupby_cols_, std::vector<Condition> having_conds_) : Plan(tag), subplan_(std::move(subplan)), sel_cols_(std::move(sel_cols_)), groupby_cols_(std::move(groupby_cols_)), having_conds_(std::move(having_conds_)) {}
 
     ~AggPlan() override = default;
+};
+
+// 添加Filter计划节点
+class FilterPlan : public Plan
+{
+public:
+    std::shared_ptr<Plan> subplan_; // 子计划
+    std::vector<Condition> conds_;  // 过滤条件
+
+    FilterPlan(PlanTag tag, std::shared_ptr<Plan> subplan, std::vector<Condition> conds)
+        : Plan(tag), subplan_(std::move(subplan)), conds_(std::move(conds)) {}
+
+    ~FilterPlan() override = default;
 };
 
 // 子查询计划

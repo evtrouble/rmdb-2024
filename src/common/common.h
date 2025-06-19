@@ -16,9 +16,14 @@ See the Mulan PSL v2 for more details. */
 #include <string>
 #include <vector>
 #include <cmath>
+
 #include "defs.h"
 #include "record/rm_defs.h"
 #include "parser/ast.h"
+
+// 浮点数精度常量
+const int FLOAT_PRECISION = 6;
+const float FLOAT_PRECISION_MULTIPLIER = std::pow(10, FLOAT_PRECISION);
 
 struct TabCol
 {
@@ -59,16 +64,18 @@ struct Value
     void set_float(float float_val_)
     {
         type = TYPE_FLOAT;
-        float_val = float_val_;
+        // 对浮点数进行精度处理
+        float_val = std::round(float_val_ * FLOAT_PRECISION_MULTIPLIER) / FLOAT_PRECISION_MULTIPLIER;
     }
 
-    void set_str(const std::string& str_val_)
+    void set_str(const std::string &str_val_)
     {
         type = TYPE_STRING;
         str_val = std::move(str_val_);
     }
 
-    void set_datetime(const std::string& datetime_val_) {
+    void set_datetime(const std::string &datetime_val_)
+    {
         type = TYPE_DATETIME;
         str_val = std::move(datetime_val_);
     }
@@ -95,7 +102,7 @@ struct Value
                 throw StringOverflowError();
             }
             memcpy(raw->data, str_val.c_str(), str_val.size());
-            if(len > (int)str_val.size())
+            if (len > (int)str_val.size())
                 memset(raw->data + str_val.size(), 0, len - str_val.size());
             break;
         default:
@@ -123,7 +130,7 @@ struct Value
                 throw StringOverflowError();
             }
             memcpy(dest, str_val.c_str(), str_val.size());
-            if(len > (int)str_val.size())
+            if (len > (int)str_val.size())
                 memset(dest + str_val.size(), 0, len - str_val.size());
             break;
         default:
@@ -162,19 +169,23 @@ struct Value
         return false;
     }
 
-    bool operator>=(const Value &other) const {
+    bool operator>=(const Value &other) const
+    {
         return !(*this < other);
     }
 
-    bool operator<=(const Value &other) const {
+    bool operator<=(const Value &other) const
+    {
         return (*this < other) || (*this == other);
     }
 
-    bool operator>(const Value &other) const {
+    bool operator>(const Value &other) const
+    {
         return !(*this <= other);
     }
 
-    bool operator!=(const Value &other) const {
+    bool operator!=(const Value &other) const
+    {
         return !(*this == other);
     }
 
