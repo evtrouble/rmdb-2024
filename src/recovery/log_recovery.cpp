@@ -112,13 +112,6 @@ void RecoveryManager::redo() {
                     break;  // 表不存在，跳过
                 }
                 
-                // 创建必要的页面
-                while (fh_->file_hdr_.num_pages <= update_log_record->rid_.page_no)
-                {
-                    auto page_hdr_ = fh_->create_new_page_handle();
-                    buffer_pool_manager_->unpin_page(page_hdr_.page->get_page_id(), false);
-                }
-                
                 // 检查事务是否存在
                 auto txn_it = temp_txns_.find(update_log_record->log_tid_);
                 if(txn_it == temp_txns_.end()) {
@@ -141,13 +134,6 @@ void RecoveryManager::redo() {
                     break;  // 表不存在，跳过
                 }
                 
-                // 创建必要的页面
-                while (fh_->file_hdr_.num_pages <= insert_log_record->rid_.page_no)
-                {
-                    auto page_hdr_ = fh_->create_new_page_handle();
-                    buffer_pool_manager_->unpin_page(page_hdr_.page->get_page_id(), false);
-                }
-                
                 // 检查事务是否存在
                 auto txn_it = temp_txns_.find(insert_log_record->log_tid_);
                 if(txn_it == temp_txns_.end()) {
@@ -168,13 +154,6 @@ void RecoveryManager::redo() {
                 auto fh_ = sm_manager_->get_table_handle(table_name);
                 if(fh_ == nullptr) {
                     break;  // 表不存在，跳过
-                }
-                
-                // 创建必要的页面
-                while (fh_->file_hdr_.num_pages <= delete_log_record->rid_.page_no)
-                {
-                    auto page_hdr_ = fh_->create_new_page_handle();
-                    buffer_pool_manager_->unpin_page(page_hdr_.page->get_page_id(), false);
                 }
                 
                 // 检查事务是否存在

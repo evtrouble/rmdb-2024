@@ -42,7 +42,7 @@ BufferPoolManager::~BufferPoolManager() {
     }
 }
 
-Page* BufferPoolManager::fetch_page(PageId page_id) {
+Page* BufferPoolManager::fetch_page(const PageId& page_id) {
     frame_id_t frame_id;
     
     // 先用读锁检查页面是否存在
@@ -105,7 +105,7 @@ Page* BufferPoolManager::fetch_page(PageId page_id) {
     return &old_page;
 }
 
-bool BufferPoolManager::unpin_page(PageId page_id, bool is_dirty) {
+bool BufferPoolManager::unpin_page(const PageId& page_id, bool is_dirty) {
     std::shared_lock lock(table_latch_);
     auto it = page_table_.find(page_id);
     if (it == page_table_.end()) return false;
@@ -131,7 +131,7 @@ bool BufferPoolManager::unpin_page(PageId page_id, bool is_dirty) {
     return true;
 }
 
-bool BufferPoolManager::flush_page(PageId page_id) {
+bool BufferPoolManager::flush_page(const PageId& page_id) {
     std::shared_lock read_lock(table_latch_);
     auto it = page_table_.find(page_id);
     if (it == page_table_.end()) return false;
@@ -173,7 +173,7 @@ Page* BufferPoolManager::new_page(PageId* page_id) {
     return &page;
 }
 
-bool BufferPoolManager::delete_page(PageId page_id) {
+bool BufferPoolManager::delete_page(const PageId& page_id) {
     std::lock_guard lock(table_latch_);
     auto it = page_table_.find(page_id);
     if (it == page_table_.end())
@@ -302,7 +302,7 @@ bool BufferPoolManager::find_victim_page(frame_id_t* frame_id) {
     return replacer_->victim(frame_id);
 }
 
-void BufferPoolManager::update_page(Page* page, PageId new_page_id, frame_id_t new_frame_id) {
+void BufferPoolManager::update_page(Page* page, const PageId& new_page_id, frame_id_t new_frame_id) {
     if (page->is_dirty_.load()) {
         // std::lock_guard lock(page->latch_);
         if(page->is_dirty_.load()) {

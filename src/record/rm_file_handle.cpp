@@ -95,39 +95,49 @@ std::vector<std::pair<std::unique_ptr<RmRecord>, int>> RmFileHandle::get_records
  */
 Rid RmFileHandle::insert_record(char *buf, Context *context)
 {
-    // 1. 获取当前未满的page handle
-    RmPageHandle page_handle = create_page_handle();
+    while (true) {  // 循环尝试，直到插入成功
+        // 1. 获取一个可能有空闲空间的页面
+        RmPageHandle page_handle = create_page_handle();
+        
+        // 2. 获取页面锁
+        std::unique_lock lock(page_handle.page->latch_);
+        
+        // 3. 在page handle中尝试找到空闲slot位置
+        int slot_no = Bitmap::first_bit(false, page_handle.bitmap, file_hdr_.num_records_per_page);
+        
+        // 如果这个页面已经没有空闲slot，释放这个页面并继续尝试
+        if (slot_no >= file_hdr_.num_records_per_page) {
+            rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), false);
+            continue;
+        }
 
-    // 获取页面锁
-    std::unique_lock lock(page_handle.page->latch_);
-
-    // 2. 在page handle中找到空闲slot位置
-    int slot_no = Bitmap::first_bit(false, page_handle.bitmap, file_hdr_.num_records_per_page);
-
-    // 3. 将buf复制到空闲slot位置
-    char *slot = page_handle.get_slot(slot_no);
-    memcpy(slot, buf, file_hdr_.record_size);
-
-    // 4. 更新page_handle.page_hdr中的数据结构
-    page_handle.page_hdr->num_records++;
-    Bitmap::set(page_handle.bitmap, slot_no); // 标记slot被使用
-
-    // 5. 如果页面已满，更新空闲页面链表
-    {
-        std::lock_guard file_lock(lock_);
+        // 4. 找到空闲位置，设置bitmap
+        Bitmap::set(page_handle.bitmap, slot_no); // 立即标记为已使用，防止其他进程选中同一个slot
+        
+        // 5. 复制数据到slot
+        char *slot = page_handle.get_slot(slot_no);
+        memcpy(slot, buf, file_hdr_.record_size);
+        
+        // 6. 更新记录数
+        page_handle.page_hdr->num_records++;
+        
+        // 7. 如果页面已满，更新空闲页面链表
         if (page_handle.page_hdr->num_records == file_hdr_.num_records_per_page)
         {
-            file_hdr_.first_free_page_no = page_handle.page_hdr->next_free_page_no;
+            std::lock_guard file_lock(lock_);
+            if (file_hdr_.first_free_page_no == page_handle.page->get_page_id().page_no) {
+                file_hdr_.first_free_page_no = page_handle.page_hdr->next_free_page_no;
+            }
         }
+        
+        // 8. 创建返回的RID
+        Rid rid{page_handle.page->get_page_id().page_no, slot_no};
+        
+        // 9. 解除页面固定
+        rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);
+        
+        return rid;
     }
-
-    // 6. 创建返回的RID
-    Rid rid{page_handle.page->get_page_id().page_no, slot_no};
-
-    // 7. 解除页面固定
-    rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);
-
-    return rid;
 }
 
 /**
@@ -166,6 +176,11 @@ void RmFileHandle::insert_record(const Rid &rid, char *buf)
 
 void RmFileHandle::recovery_insert_record(const Rid &rid, char *buf)
 {
+    if(rid.page_no == file_hdr_.num_pages) {
+        RmPageHandle page_handle = create_new_page_handle();
+        rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), false);
+    }
+
     // 1. 获取页面句柄
     RmPageHandle page_handle = fetch_page_handle(rid.page_no);
     std::lock_guard page_lock(page_handle.page->latch_);
@@ -349,7 +364,7 @@ RmPageHandle RmFileHandle::create_new_page_handle()
     RmPageHandle page_handle(&file_hdr_, page);
 
     // 初始化页头信息
-    page_handle.page_hdr->next_free_page_no = RM_NO_PAGE; // 新页面的下一个空闲页面初始化为-1
+    page_handle.page_hdr->next_free_page_no = file_hdr_.first_free_page_no;
     page_handle.page_hdr->num_records = 0;                // 当前记录数为0
 
     // 初始化bitmap，将所有位都设置为0（表示所有slot都是空闲的）
@@ -357,7 +372,7 @@ RmPageHandle RmFileHandle::create_new_page_handle()
 
     // 3.更新file_hdr_
     ++file_hdr_.num_pages;
-
+    file_hdr_.first_free_page_no = new_page_id.page_no;
     return page_handle;
 }
 
@@ -377,7 +392,7 @@ RmPageHandle RmFileHandle::create_page_handle()
         // 1.1 没有空闲页：使用缓冲池来创建一个新page
         RmPageHandle new_handle = create_new_page_handle();
         // 将新页面设置为第一个空闲页
-        file_hdr_.first_free_page_no = file_hdr_.num_pages - 1;
+        // file_hdr_.first_free_page_no = file_hdr_.num_pages - 1;
         return new_handle;
     }
     // 1.2 有空闲页：直接获取第一个空闲页

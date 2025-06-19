@@ -17,11 +17,11 @@ public:
     BufferPoolManager(size_t pool_size, DiskManager* disk_manager);
     ~BufferPoolManager();
 
-    Page* fetch_page(PageId page_id);
-    bool unpin_page(PageId page_id, bool is_dirty);
-    bool flush_page(PageId page_id);
+    Page* fetch_page(const PageId& page_id);
+    bool unpin_page(const PageId& page_id, bool is_dirty);
+    bool flush_page(const PageId& page_id);
     Page* new_page(PageId* page_id);
-    bool delete_page(PageId page_id);
+    bool delete_page(const PageId& page_id);
     void remove_all_pages(int fd, bool flush = true);
     void force_flush_all_pages();  // 强制刷新所有脏页到磁盘
 
@@ -44,7 +44,7 @@ private:
 
     void background_flush();
     bool find_victim_page(frame_id_t* frame_id);
-    void update_page(Page* page, PageId new_page_id, frame_id_t new_frame_id);
+    void update_page(Page* page, const PageId& new_page_id, frame_id_t new_frame_id);
 
     // 新增的辅助方法
     void collect_dirty_pages(std::vector<frame_id_t>& batch);
