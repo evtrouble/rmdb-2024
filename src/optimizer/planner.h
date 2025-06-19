@@ -29,7 +29,46 @@ See the Mulan PSL v2 for more details. */
 #include "parser/parser.h"
 #include "common/common.h"
 #include "analyze/analyze.h"
+// 整个查询的列需求分析结果
+struct QueryColumnRequirement
+{
+    // 每个表需要扫描的列（这是最终结果）
+    std::map<std::string, std::set<TabCol>> table_required_cols;
 
+    // 中间分析数据（用于调试和优化）
+    std::set<TabCol> select_cols;  // SELECT子句需要的列
+    std::set<TabCol> join_cols;    // JOIN条件需要的列
+    std::set<TabCol> where_cols;   // WHERE条件需要的列
+    std::set<TabCol> groupby_cols; // GROUP BY需要的列
+    std::set<TabCol> having_cols;  // HAVING条件需要的列
+    std::set<TabCol> orderby_cols; // ORDER BY需要的列
+
+    // 获取某个表需要的列
+    std::set<TabCol> get_table_cols(const std::string &table_name) const
+    {
+        auto it = table_required_cols.find(table_name);
+        return it != table_required_cols.end() ? it->second : std::set<TabCol>{};
+    }
+
+    // 合并所有中间分析数据到最终结果
+    void merge_all_requirements()
+    {
+        std::set<TabCol> all_cols;
+        all_cols.insert(select_cols.begin(), select_cols.end());
+        all_cols.insert(join_cols.begin(), join_cols.end());
+        all_cols.insert(where_cols.begin(), where_cols.end());
+        all_cols.insert(groupby_cols.begin(), groupby_cols.end());
+        all_cols.insert(having_cols.begin(), having_cols.end());
+        all_cols.insert(orderby_cols.begin(), orderby_cols.end());
+
+        // 按表分组所有需要的列
+        table_required_cols.clear();
+        for (const auto &col : all_cols)
+        {
+            table_required_cols[col.tab_name].insert(col);
+        }
+    }
+};
 class Planner
 {
 private:
@@ -89,6 +128,12 @@ private:
     std::shared_ptr<Plan> generate_agg_plan(const std::shared_ptr<Query> &query, std::shared_ptr<Plan> plan);
     std::shared_ptr<Plan> generate_sort_plan(std::shared_ptr<Query> query, std::shared_ptr<Plan> plan);
     std::shared_ptr<Plan> generate_select_plan(std::shared_ptr<Query> query, Context *context);
+
+    // 列需求分析结果
+    QueryColumnRequirement column_requirements_;
+
+    // 列需求分析函数
+    QueryColumnRequirement analyze_column_requirements(std::shared_ptr<Query> query);
 
     // 优化器辅助函数
     bool is_single_table_condition(const Condition &cond)

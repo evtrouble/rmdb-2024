@@ -414,85 +414,15 @@ std::vector<TabCol> Planner::compute_required_columns(const std::string &table_n
 std::shared_ptr<Plan> Planner::apply_projection_pushdown(std::shared_ptr<Plan> plan, const std::shared_ptr<Query> &query)
 {
     auto select_stmt = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
-
-    // 如果是SELECT *，只在最顶层添加投影节点
-    if (select_stmt && select_stmt->cols.size() == 1 && select_stmt->cols[0]->col_name == "*")
+    if (!select_stmt)
     {
         return plan;
     }
 
-    // 收集所有需要的列（包括SELECT列、JOIN条件列和WHERE条件列）
-    std::set<TabCol> required_cols;
-
-    // 建立别名映射
-    std::map<std::string, std::string> tab_to_alias;
-    std::map<std::string, std::string> alias_to_tab;
-    if (select_stmt)
+    // 如果是SELECT *，只在最顶层添加投影节点
+    if (select_stmt->cols.size() == 1 && select_stmt->cols[0]->col_name == "*")
     {
-        for (size_t i = 0; i < select_stmt->tabs.size(); i++)
-        {
-            if (i < select_stmt->tab_aliases.size() && !select_stmt->tab_aliases[i].empty())
-            {
-                tab_to_alias[select_stmt->tabs[i]] = select_stmt->tab_aliases[i];
-                alias_to_tab[select_stmt->tab_aliases[i]] = select_stmt->tabs[i];
-            }
-        }
-    }
-
-    // 1. 添加SELECT中需要的列
-    for (const auto &col : query->cols)
-    {
-        if (col.col_name != "*")
-        {
-            std::string real_tab_name = col.tab_name;
-            if (alias_to_tab.find(col.tab_name) != alias_to_tab.end())
-            {
-                real_tab_name = alias_to_tab[col.tab_name];
-            }
-            required_cols.insert(TabCol{real_tab_name, col.col_name});
-        }
-    }
-
-    // 2. 添加JOIN条件中需要的列
-    for (const auto &cond : query->conds)
-    {
-        if (!cond.is_rhs_val)
-        {
-            std::string lhs_tab = cond.lhs_col.tab_name;
-            std::string rhs_tab = cond.rhs_col.tab_name;
-
-            // 处理表别名
-            if (alias_to_tab.find(lhs_tab) != alias_to_tab.end())
-            {
-                lhs_tab = alias_to_tab[lhs_tab];
-            }
-            if (alias_to_tab.find(rhs_tab) != alias_to_tab.end())
-            {
-                rhs_tab = alias_to_tab[rhs_tab];
-            }
-
-            required_cols.insert(TabCol{lhs_tab, cond.lhs_col.col_name});
-            required_cols.insert(TabCol{rhs_tab, cond.rhs_col.col_name});
-        }
-    }
-
-    // 3. 添加WHERE条件中需要的列
-    for (const auto &[table_name, conds] : query->tab_conds)
-    {
-        std::string real_tab_name = table_name;
-        if (alias_to_tab.find(table_name) != alias_to_tab.end())
-        {
-            real_tab_name = alias_to_tab[table_name];
-        }
-
-        for (const auto &cond : conds)
-        {
-            required_cols.insert(TabCol{real_tab_name, cond.lhs_col.col_name});
-            if (!cond.is_rhs_val)
-            {
-                required_cols.insert(TabCol{real_tab_name, cond.rhs_col.col_name});
-            }
-        }
+        return plan;
     }
 
     // 根据计划类型处理投影下推
@@ -502,25 +432,23 @@ std::shared_ptr<Plan> Planner::apply_projection_pushdown(std::shared_ptr<Plan> p
     case T_IndexScan:
     {
         auto scan_plan = std::dynamic_pointer_cast<ScanPlan>(plan);
+
+        // 使用预先计算的列需求
         std::vector<TabCol> scan_cols;
+        auto required_cols = column_requirements_.get_table_cols(scan_plan->tab_name_);
 
-        // 只保留当前表需要的列
-        for (const auto &col : required_cols)
-        {
-            if (col.tab_name == scan_plan->tab_name_)
-            {
-                scan_cols.push_back(col);
-            }
-        }
-
-        // 如果没有需要的列，返回所有列（这种情况不应该发生）
-        if (scan_cols.empty())
+        // 如果没有找到需要的列，使用所有列（这种情况不应该发生）
+        if (required_cols.empty())
         {
             const auto &table_cols = sm_manager_->db_.get_table(scan_plan->tab_name_).cols;
             for (const auto &col : table_cols)
             {
                 scan_cols.emplace_back(TabCol{scan_plan->tab_name_, col.name});
             }
+        }
+        else
+        {
+            scan_cols.insert(scan_cols.end(), required_cols.begin(), required_cols.end());
         }
 
         // 按字母顺序排序列
@@ -606,11 +534,12 @@ std::shared_ptr<Plan> Planner::add_leaf_projections(std::shared_ptr<Plan> plan, 
 
 std::shared_ptr<Plan> Planner::physical_optimization(std::shared_ptr<Query> query, Context *context)
 {
+    column_requirements_ = analyze_column_requirements(query);
     // 生成基本的查询计划
     std::shared_ptr<Plan> plan = make_one_rel(query, context);
 
     // 应用投影下推优化
-    plan = apply_projection_pushdown(plan, query);
+    // plan = apply_projection_pushdown(plan, query);
 
     // 处理聚合函数
     plan = generate_agg_plan(query, std::move(plan));
@@ -833,11 +762,14 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
                 scan_plan,
                 query->tab_conds[table]);
         }
-        std::vector<TabCol> required_cols = compute_required_columns_after_filter(table, query);
+
+        // 使用预先计算的列需求
+        auto required_cols = column_requirements_.get_table_cols(table);
         if (!required_cols.empty())
         {
-            // 按字母顺序排序
-            std::sort(required_cols.begin(), required_cols.end(),
+            // 转换为vector并按字母顺序排序
+            std::vector<TabCol> cols(required_cols.begin(), required_cols.end());
+            std::sort(cols.begin(), cols.end(),
                       [](const TabCol &a, const TabCol &b)
                       {
                           return a.col_name < b.col_name;
@@ -846,7 +778,7 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
             scan_plan = std::make_shared<ProjectionPlan>(
                 PlanTag::T_Projection,
                 scan_plan,
-                required_cols);
+                cols);
         }
         table_plans.push_back(scan_plan);
     }
@@ -1670,4 +1602,158 @@ size_t Planner::get_table_cardinality(const std::string &table_name)
         std::cout << "Error getting cardinality for table " << table_name << ": " << e.what() << std::endl;
         return 1000; // 默认估计值
     }
+}
+
+QueryColumnRequirement Planner::analyze_column_requirements(std::shared_ptr<Query> query)
+{
+    QueryColumnRequirement requirements;
+
+    // 如果不是SELECT语句，返回空的需求
+    auto select_stmt = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
+    if (!select_stmt)
+    {
+        return requirements;
+    }
+
+    // 建立表名到别名的映射
+    std::map<std::string, std::string> tab_to_alias;
+    std::map<std::string, std::string> alias_to_tab;
+    for (size_t i = 0; i < select_stmt->tabs.size(); i++)
+    {
+        if (i < select_stmt->tab_aliases.size() && !select_stmt->tab_aliases[i].empty())
+        {
+            tab_to_alias[select_stmt->tabs[i]] = select_stmt->tab_aliases[i];
+            alias_to_tab[select_stmt->tab_aliases[i]] = select_stmt->tabs[i];
+        }
+    }
+
+    // 1. 分析SELECT子句中需要的列
+    if (query->cols.size() == 1 && query->cols[0].col_name == "*")
+    {
+        // SELECT * 的情况，需要所有表的所有列
+        for (const auto &table : query->tables)
+        {
+            const auto &table_cols = sm_manager_->db_.get_table(table).cols;
+            for (const auto &col : table_cols)
+            {
+                TabCol tab_col{table, col.name};
+                requirements.select_cols.insert(tab_col);
+            }
+        }
+    }
+    else
+    {
+        for (const auto &col : query->cols)
+        {
+            std::string real_tab_name = col.tab_name;
+            if (alias_to_tab.find(col.tab_name) != alias_to_tab.end())
+            {
+                real_tab_name = alias_to_tab[col.tab_name];
+            }
+            requirements.select_cols.insert(TabCol{real_tab_name, col.col_name});
+        }
+    }
+
+    // 2. 分析JOIN条件中需要的列
+    for (const auto &cond : query->conds)
+    {
+        if (!cond.is_rhs_val)
+        {
+            // 处理左侧列
+            std::string lhs_tab = cond.lhs_col.tab_name;
+            if (alias_to_tab.find(lhs_tab) != alias_to_tab.end())
+            {
+                lhs_tab = alias_to_tab[lhs_tab];
+            }
+            requirements.join_cols.insert(TabCol{lhs_tab, cond.lhs_col.col_name});
+
+            // 处理右侧列
+            std::string rhs_tab = cond.rhs_col.tab_name;
+            if (alias_to_tab.find(rhs_tab) != alias_to_tab.end())
+            {
+                rhs_tab = alias_to_tab[rhs_tab];
+            }
+            requirements.join_cols.insert(TabCol{rhs_tab, cond.rhs_col.col_name});
+        }
+    }
+
+    // 3. 分析WHERE条件中需要的列
+    for (const auto &[table_name, conds] : query->tab_conds)
+    {
+        std::string real_tab_name = table_name;
+        if (alias_to_tab.find(table_name) != alias_to_tab.end())
+        {
+            real_tab_name = alias_to_tab[table_name];
+        }
+
+        for (const auto &cond : conds)
+        {
+            requirements.where_cols.insert(TabCol{real_tab_name, cond.lhs_col.col_name});
+            if (!cond.is_rhs_val)
+            {
+                requirements.where_cols.insert(TabCol{real_tab_name, cond.rhs_col.col_name});
+            }
+        }
+    }
+
+    // 4. 分析GROUP BY子句中需要的列
+    for (const auto &col : query->groupby)
+    {
+        std::string real_tab_name = col.tab_name;
+        if (alias_to_tab.find(col.tab_name) != alias_to_tab.end())
+        {
+            real_tab_name = alias_to_tab[col.tab_name];
+        }
+        requirements.groupby_cols.insert(TabCol{real_tab_name, col.col_name});
+    }
+
+    // 5. 分析HAVING子句中需要的列
+    for (const auto &cond : query->having_conds)
+    {
+        if (!cond.is_rhs_val)
+        {
+            // 处理左侧列
+            std::string lhs_tab = cond.lhs_col.tab_name;
+            if (alias_to_tab.find(lhs_tab) != alias_to_tab.end())
+            {
+                lhs_tab = alias_to_tab[lhs_tab];
+            }
+            requirements.having_cols.insert(TabCol{lhs_tab, cond.lhs_col.col_name});
+
+            // 处理右侧列
+            std::string rhs_tab = cond.rhs_col.tab_name;
+            if (alias_to_tab.find(rhs_tab) != alias_to_tab.end())
+            {
+                rhs_tab = alias_to_tab[rhs_tab];
+            }
+            requirements.having_cols.insert(TabCol{rhs_tab, cond.rhs_col.col_name});
+        }
+    }
+
+    // 6. 分析ORDER BY子句中需要的列
+    if (select_stmt->has_sort)
+    {
+        for (size_t i = 0; i < select_stmt->order->cols.size(); ++i)
+        {
+            auto &order_col = select_stmt->order->cols[i];
+            // ORDER BY可能没有指定表名，需要遍历所有表查找匹配的列
+            for (const auto &table : query->tables)
+            {
+                const auto &table_cols = sm_manager_->db_.get_table(table).cols;
+                for (const auto &col : table_cols)
+                {
+                    if (col.name == order_col->col_name)
+                    {
+                        requirements.orderby_cols.insert(TabCol{table, col.name});
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // 合并所有中间分析数据到最终结果
+    requirements.merge_all_requirements();
+
+    return requirements;
 }
