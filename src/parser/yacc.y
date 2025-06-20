@@ -436,7 +436,27 @@ setClauses:
 setClause:
         colName '=' value
     {
-        $$ = std::make_shared<SetClause>($1, $3);
+        $$ = std::make_shared<SetClause>($1, $3, UpdateOp::ASSINGMENT);
+    }
+    |   colName '=' colName value
+    {
+        $$ = std::make_shared<SetClause>($1, $4, UpdateOp::SELF_ADD);
+    }
+    |   colName '=' colName '+' value
+    {
+        $$ = std::make_shared<SetClause>($1, $5, UpdateOp::SELF_ADD);
+    }
+    |   colName '=' colName '-' value
+    {
+        $$ = std::make_shared<SetClause>($1, $5, UpdateOp::SELF_SUB);
+    }
+    |   colName '=' colName '*' value
+    {
+        $$ = std::make_shared<SetClause>($1, $5, UpdateOp::SELF_MUT);
+    }
+    |   colName '=' colName '/' value
+    {
+        $$ = std::make_shared<SetClause>($1, $5, UpdateOp::SELF_DIV);
     }
     ;
 

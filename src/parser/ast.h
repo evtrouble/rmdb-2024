@@ -65,6 +65,17 @@ namespace ast
         EnableNestLoop,
         EnableSortMerge
     };
+
+    enum UpdateOp
+    {
+        SELF_ADD = 0,
+        SELF_SUB,
+        SELF_MUT,
+        SELF_DIV,
+        ASSINGMENT,
+        UNKNOWN
+    };
+
     enum class TreeNodeType
     {
         Help,
@@ -273,8 +284,10 @@ namespace ast
     {
         std::string col_name;
         std::shared_ptr<Value> val;
+        UpdateOp op;
 
-        SetClause(const std::string &col_name_, std::shared_ptr<Value> val_) : col_name(std::move(col_name_)), val(std::move(val_)) {}
+        SetClause(const std::string &col_name_, std::shared_ptr<Value> val_, UpdateOp op) : 
+            col_name(std::move(col_name_)), val(std::move(val_)), op(op) {}
         TreeNodeType Nodetype() const override { return TreeNodeType::SetClause; }
     };
 

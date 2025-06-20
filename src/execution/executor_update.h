@@ -107,7 +107,72 @@ public:
             old_rec = rec;
             // 根据set_clauses_更新记录值
             for (size_t i = 0; i < set_clauses_.size(); ++i) {
-                memcpy(rec.data + set_col_metas[i]->offset, set_clauses_[i].rhs.raw->data, set_col_metas[i]->len);
+                auto& set_clause = set_clauses_[i];
+                auto& set_col_meta = set_col_metas[i];
+                switch (set_clause.op) {
+                case ast::UpdateOp::SELF_ADD:
+                    switch (set_col_meta->type)
+                    {
+                        case TYPE_INT:*reinterpret_cast<int *>(rec.data + set_col_meta->offset) = 
+                            *reinterpret_cast<int *>(old_rec.data + set_col_meta->offset) + set_clause.rhs.int_val;
+                            break;
+                        case TYPE_FLOAT:*reinterpret_cast<float *>(rec.data + set_col_meta->offset) =
+                            *reinterpret_cast<float *>(old_rec.data + set_col_meta->offset) + set_clause.rhs.float_val;
+                            break;
+                        case TYPE_STRING:
+                            std::strncat(rec.data + set_col_meta->offset, set_clause.rhs.str_val.c_str(), 
+                            set_col_meta->len - std::strlen(rec.data + set_col_meta->offset));
+                            break;
+                        default:
+                            break; // TODO: Handle datetime addition if needed
+                    }
+                    break;
+                case ast::UpdateOp::SELF_SUB:
+                    switch (set_col_meta->type)
+                    {
+                        case TYPE_INT:*reinterpret_cast<int *>(rec.data + set_col_meta->offset) = 
+                            *reinterpret_cast<int *>(old_rec.data + set_col_meta->offset) - set_clause.rhs.int_val;
+                            break;
+                        case TYPE_FLOAT:*reinterpret_cast<float *>(rec.data + set_col_meta->offset) =
+                            *reinterpret_cast<float *>(old_rec.data + set_col_meta->offset) - set_clause.rhs.float_val;
+                            break;
+                        default:
+                            break; // TODO: Handle datetime addition if needed
+                    }
+                    break;
+                case ast::UpdateOp::SELF_MUT:
+                    switch (set_col_meta->type)
+                    {
+                        case TYPE_INT:*reinterpret_cast<int *>(rec.data + set_col_meta->offset) = 
+                            *reinterpret_cast<int *>(old_rec.data + set_col_meta->offset) * set_clause.rhs.int_val;
+                            break;
+                        case TYPE_FLOAT:*reinterpret_cast<float *>(rec.data + set_col_meta->offset) =
+                            *reinterpret_cast<float *>(old_rec.data + set_col_meta->offset) * set_clause.rhs.float_val;
+                            break;
+                        default:
+                            break; // TODO: Handle datetime addition if needed
+                    }
+                    break;
+                case ast::UpdateOp::SELF_DIV:
+                    switch (set_col_meta->type)
+                    {
+                        case TYPE_INT:*reinterpret_cast<int *>(rec.data + set_col_meta->offset) = 
+                            *reinterpret_cast<int *>(old_rec.data + set_col_meta->offset) / set_clause.rhs.int_val;
+                            break;
+                        case TYPE_FLOAT:*reinterpret_cast<float *>(rec.data + set_col_meta->offset) =
+                            *reinterpret_cast<float *>(old_rec.data + set_col_meta->offset) / set_clause.rhs.float_val;
+                            break;
+                        default:
+                            break; // TODO: Handle datetime addition if needed
+                    }
+                    break;
+                case ast::UpdateOp::ASSINGMENT:
+                    memcpy(rec.data + set_col_metas[i]->offset, set_clauses_[i].rhs.raw->data, set_col_metas[i]->len);
+                    break;
+                case ast::UpdateOp::UNKNOWN:
+                    std::cerr << "Unknown operation in update_record" << std::endl;
+                    break;
+                }
             }
 
             // 更新索引
