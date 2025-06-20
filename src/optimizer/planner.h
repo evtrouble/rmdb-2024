@@ -110,9 +110,6 @@ private:
     std::shared_ptr<Query> logical_optimization(std::shared_ptr<Query> query, Context *context);
     std::shared_ptr<Plan> physical_optimization(std::shared_ptr<Query> query, Context *context);
 
-    // 获取表的基数（行数）
-    size_t get_table_cardinality(const std::string &table_name);
-
     // 生成执行计划相关函数
     std::shared_ptr<Plan> make_one_rel(std::shared_ptr<Query> query, Context *context);
     std::shared_ptr<Plan> generate_agg_plan(const std::shared_ptr<Query> &query, std::shared_ptr<Plan> plan);

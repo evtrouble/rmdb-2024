@@ -1013,7 +1013,6 @@ std::unordered_map<std::string, size_t> calculate_table_cardinalities(const std:
         }
         catch (const std::exception &e)
         {
-            std::cout << "Error getting cardinality for table " << table << ": " << e.what() << std::endl;
             table_cardinalities[table] = 1000; // 默认估计值
         }
     }
@@ -1022,14 +1021,12 @@ std::unordered_map<std::string, size_t> calculate_table_cardinalities(const std:
 
 std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Context *context)
 {
-    std::cout << "[Debug] 开始生成物理计划..." << std::endl;
     // 检查是否是 SELECT * 查询
     bool is_select_star = false;
     auto select_stmt = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
     if (select_stmt && (query->cols.size() == 0 || query->cols[0].col_name == "*"))
     {
         is_select_star = true;
-        std::cout << "[Debug] 检测到 SELECT * 查询，跳过中间投影节点" << std::endl;
     }
     // 建立表名到别名的映射
     std::map<std::string, std::string> tab_to_alias;
@@ -1871,51 +1868,6 @@ std::shared_ptr<Plan> Planner::do_planner(std::shared_ptr<Query> query, Context 
         break;
     }
     return nullptr;
-}
-
-size_t Planner::get_table_cardinality(const std::string &table_name)
-{
-    try
-    {
-        // 确保表文件已经打开
-        if (sm_manager_->fhs_.find(table_name) == sm_manager_->fhs_.end())
-        {
-            // 如果表不存在于fhs_中，说明表可能还没有打开
-            // 首先检查表是否存在于数据库中
-            if (!sm_manager_->db_.is_table(table_name))
-            {
-                throw TableNotFoundError(table_name);
-            }
-            // 表存在但未打开，需要重新加载表的文件句柄
-            if (table_name.empty())
-            {
-                throw TableNotFoundError("Empty table name");
-            }
-            sm_manager_->fhs_.emplace(table_name, sm_manager_->get_rm_manager()->open_file(table_name));
-        }
-        const auto &file_handle = sm_manager_->fhs_.at(table_name);
-        if (!file_handle)
-        {
-            return 1000; // 默认估计值
-        }
-
-        size_t num_pages = file_handle->get_file_hdr().num_pages;
-        size_t num_records = 0;
-
-        // 遍历所有数据页来计算记录数
-        for (size_t page_no = 1; page_no < num_pages; page_no++)
-        {
-            auto page_handle = file_handle->fetch_page_handle(page_no);
-            num_records += page_handle.page_hdr->num_records;
-        }
-
-        return num_records;
-    }
-    catch (const std::exception &e)
-    {
-        std::cout << "Error getting cardinality for table " << table_name << ": " << e.what() << std::endl;
-        return 1000; // 默认估计值
-    }
 }
 
 QueryColumnRequirement Planner::analyze_column_requirements(std::shared_ptr<Query> query)
