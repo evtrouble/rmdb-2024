@@ -114,11 +114,11 @@ public:
             update_indexes(old_rec, rec, rid);
 
             // 更新记录
-            if(!context_->lock_mgr_->lock_exclusive_on_key(context_->txn_, fh_->GetFd(),
-                 old_rec.data + txn_mgr->get_start_offset())) {
-                throw TransactionAbortException(context_->txn_->get_transaction_id(), 
-                    AbortReason::UPGRADE_CONFLICT);
-            }
+            // if(!context_->lock_mgr_->lock_exclusive_on_key(context_->txn_, fh_->GetFd(),
+            //      old_rec.data + txn_mgr->get_start_offset())) {
+            //     throw TransactionAbortException(context_->txn_->get_transaction_id(), 
+            //         AbortReason::UPGRADE_CONFLICT);
+            // }
             if(!context_->lock_mgr_->lock_exclusive_on_key(context_->txn_, fh_->GetFd(),
                  rec.data + txn_mgr->get_start_offset())) {
                 throw TransactionAbortException(context_->txn_->get_transaction_id(),
