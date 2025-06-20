@@ -115,12 +115,12 @@ public:
             // 更新索引
             update_indexes(old_rec, rec, rid);
 
+            // 更新记录
+            fh_->update_record(rid, rec.data, context_);
+
             // 记录日志
             UpdateLogRecord log_record(context_->txn_->get_transaction_id(), rid, old_rec, rec, tab_name_);
             context_->log_mgr_->add_log_to_buffer(&log_record);
-
-            // 更新记录
-            fh_->update_record(rid, rec.data, context_);
 
             if(txn_mgr->get_concurrency_mode() != ConcurrencyMode::MVCC)
             {
