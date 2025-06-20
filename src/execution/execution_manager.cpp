@@ -266,6 +266,7 @@ void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, 
         {
             std::string col_str;
             char *rec_buf = Tuple->data + col.offset;
+
             switch (col.type)
             {
             case TYPE_INT:
