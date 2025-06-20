@@ -175,8 +175,15 @@ public:
     }
 
     // 获取隐藏字段数量
-    size_t get_hidden_column_count() const {
+    inline size_t get_hidden_column_count() const {
         return (concurrency_mode_ == ConcurrencyMode::MVCC) ? 1 : 0;
+    }
+
+    inline size_t get_start_offset() const {
+        if (concurrency_mode_ != ConcurrencyMode::MVCC) [[unlikely]] {
+            return 0; // 非MVCC模式下没有隐藏字段
+        }
+        return sizeof(txn_id_t); // 假设隐藏字段是事务ID，占用sizeof(txn_id_t)字节
     }
 
     txn_id_t get_record_txn_id(const char* data) const {

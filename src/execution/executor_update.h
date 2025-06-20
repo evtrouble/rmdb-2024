@@ -110,12 +110,20 @@ public:
                 memcpy(rec.data + set_col_metas[i]->offset, set_clauses_[i].rhs.raw->data, set_col_metas[i]->len);
             }
 
-            txn_mgr->set_record_txn_id(rec.data, context_->txn_);
-
             // 更新索引
             update_indexes(old_rec, rec, rid);
 
             // 更新记录
+            if(!context_->lock_mgr_->lock_exclusive_on_key(context_->txn_, fh_->GetFd(),
+                 old_rec.data + txn_mgr->get_start_offset())) {
+                throw TransactionAbortException(context_->txn_->get_transaction_id(), 
+                    AbortReason::UPGRADE_CONFLICT);
+            }
+            if(!context_->lock_mgr_->lock_exclusive_on_key(context_->txn_, fh_->GetFd(),
+                 rec.data + txn_mgr->get_start_offset())) {
+                throw TransactionAbortException(context_->txn_->get_transaction_id(),
+                    AbortReason::UPGRADE_CONFLICT);
+            }
             fh_->update_record(rid, rec.data, context_);
 
             // 记录日志

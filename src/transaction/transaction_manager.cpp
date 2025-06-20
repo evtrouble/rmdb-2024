@@ -81,7 +81,7 @@ void TransactionManager::commit(Context *context, LogManager *log_manager)
     auto lock_set = txn->get_lock_set();
     for (auto &lock_data_id : *lock_set)
     {
-        lock_manager_->unlock(txn, lock_data_id);
+        lock_manager_->unlock_key(txn, lock_data_id);
     }
 
     // 3. 清空事务相关资源
@@ -120,7 +120,7 @@ void TransactionManager::abort(Context *context, LogManager *log_manager)
 
     // 1. 回滚所有写操作
     auto write_set = txn->get_write_set();
-    std::unordered_set<Rid, RidHash> abort_set;
+    std::unordered_set<Rid> abort_set;
     while (write_set->size())
     {
         auto write_record = write_set->front(); // 获取最后一个写记录
@@ -184,7 +184,7 @@ void TransactionManager::abort(Context *context, LogManager *log_manager)
     auto lock_set = txn->get_lock_set();
     for (auto &lock_data_id : *lock_set)
     {
-        lock_manager_->unlock(txn, lock_data_id);
+        lock_manager_->unlock_key(txn, lock_data_id);
     }
     // 3. 清空事务相关资源，eg.锁集
     lock_set->clear(); // 清空锁集
