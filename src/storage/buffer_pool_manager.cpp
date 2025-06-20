@@ -185,7 +185,6 @@ bool BufferPoolManager::delete_page(const PageId& page_id) {
     
     // 从page table移除并加入free list
     page_table_.erase(it);
-    page.id_.fd = -1; // 重置页面ID
     {
         std::lock_guard free_lock(free_list_mutex_);
         free_list_.push_back(frame_id);

@@ -275,9 +275,7 @@ void start_server()
 
     while (!should_exit)
     {
-#ifdef DEBUG
-        std::cout << "Waiting for new connection..." << std::endl;
-#endif
+        // std::cout << "Waiting for new connection..." << std::endl;
         pthread_t thread_id;
         struct sockaddr_in s_addr_client{};
         int client_length = sizeof(s_addr_client);

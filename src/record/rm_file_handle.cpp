@@ -184,10 +184,10 @@ void RmFileHandle::recovery_insert_record(const Rid &rid, char *buf)
     // 2. 复制数据到指定slot
     memcpy(page_handle.get_slot(rid.slot_no), buf, file_hdr_.record_size);
 
-    // 3. 更新bitmap和记录数
-    Bitmap::set(page_handle.bitmap, rid.slot_no);
     if(!is_occupied)
     {
+        // 3. 更新bitmap和记录数
+        Bitmap::set(page_handle.bitmap, rid.slot_no);
         ++page_handle.page_hdr->num_records;
 
         // if (page_handle.page_hdr->num_records == file_hdr_.num_records_per_page)
@@ -261,10 +261,10 @@ void RmFileHandle::recovery_delete_record(const Rid &rid)
     std::lock_guard lock(page_handle.page->latch_);
 
     bool is_occupied = is_record(page_handle, rid);
-    // 2. 更新bitmap和记录数
-    Bitmap::reset(page_handle.bitmap, rid.slot_no);
     if(is_occupied) {
         page_handle.page_hdr->num_records--;
+        // 2. 更新bitmap和记录数
+        Bitmap::reset(page_handle.bitmap, rid.slot_no);
 
         // 3. 如果页面从满状态变为未满状态，需要更新空闲页面链表
         if (page_handle.page_hdr->num_records == file_hdr_.num_records_per_page - 1)

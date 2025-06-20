@@ -483,8 +483,7 @@ bool IxIndexHandle::delete_entry(const char *key, const Rid &value, Transaction 
         // 2. 在该叶子结点中删除键值对
         leaf_node.erase_pair(index);
         // 3. 如果删除成功需要调用CoalesceOrRedistribute来进行合并或重分配操作，并根据函数返回结果判断是否有结点需要删除
-        if (coalesce_or_redistribute(leaf_node, transaction))
-            transaction->append_index_deleted_page(leaf_node.page);
+        coalesce_or_redistribute(leaf_node, transaction);
         // 4. 如果需要并发，并且需要删除叶子结点，则需要在事务的delete_page_set中添加删除结点的对应页面；记得处理并发的上锁
         if (!abort)
         {
@@ -706,13 +705,10 @@ bool IxIndexHandle::coalesce(IxNodeHandle neighbor_node, IxNodeHandle node, IxNo
         neighbor_node.set_next_leaf(node.get_next_leaf());
     }
 
+    transaction->append_index_deleted_page(node.page);
+
     parent.erase_pair(index);
-    if (coalesce_or_redistribute_internal(parent, transaction))
-    {
-        transaction->append_index_deleted_page(parent.page);
-        return true;
-    }
-    return false;
+    return coalesce_or_redistribute_internal(parent, transaction);
 }
 
 /**

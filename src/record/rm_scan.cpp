@@ -52,7 +52,7 @@ void RmScan::load_next_page() {
     current_record_idx_ = 0;
     
     // 检查是否到达文件末尾
-    if(rid_.page_no >= file_handle_->file_hdr_.num_pages) {
+    if(rid_.page_no >= page_num) {
         current_records_.clear();
         return;
     }
