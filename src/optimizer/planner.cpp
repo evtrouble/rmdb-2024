@@ -922,7 +922,7 @@ std::shared_ptr<Plan> Planner::physical_optimization(std::shared_ptr<Query> quer
                     display_name = tab_to_alias[col.tab_name];
                 }
 
-                final_cols.emplace_back(TabCol{display_name, col.col_name});
+                final_cols.emplace_back(TabCol{display_name, col.col_name, col.aggFuncType, col.alias});
             }
 
             // 按字母顺序排序列（先按表名，再按列名）
@@ -1750,10 +1750,7 @@ std::shared_ptr<Plan> Planner::do_planner(std::shared_ptr<Query> query, Context 
         analyzed_query->conds = inner_query->conds;
         analyzed_query->tables = inner_query->tables;
 
-        std::cout << "[Debug] Number of conditions in analyzed_query: " << analyzed_query->conds.size() << std::endl;
-
         auto inner_plan = do_planner(analyzed_query, context);
-        std::cout << "[Debug] Creating explain plan" << std::endl;
         auto explain_plan = std::make_shared<ExplainPlan>(T_Explain, inner_plan);
         explain_plan->select_stmt = select_stmt; // 现在 select_stmt 已在作用域内
         return explain_plan;
@@ -1942,7 +1939,7 @@ QueryColumnRequirement Planner::analyze_column_requirements(std::shared_ptr<Quer
             {
                 real_tab_name = alias_to_tab[col.tab_name];
             }
-            requirements.select_cols.insert(TabCol{real_tab_name, col.col_name});
+            requirements.select_cols.insert(TabCol{real_tab_name, col.col_name, col.aggFuncType, col.alias});
         }
     }
 

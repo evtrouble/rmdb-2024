@@ -143,8 +143,8 @@ void *client_handler(void *sock_fd)
                     // context->clearFlags(); // 清除标志位
                     // 优化器
                     std::shared_ptr<Plan> plan = optimizer->plan_query(query, context.get());
-                    // portal
                     std::shared_ptr<PortalStmt> portalStmt = portal->start(plan, context.get());
+                    // portal
                     portal->run(portalStmt, ql_manager.get(), &txn_id, context.get());
                     portal->drop();
                 }
@@ -213,8 +213,8 @@ void *client_handler(void *sock_fd)
             break;
         }
         // 如果是单条语句，需要按照一个完整的事务来执行，所以执行完当前语句后，自动提交事务
-        if(context->txn_->get_state() == TransactionState::ABORTED || 
-           context->txn_->get_state() == TransactionState::COMMITTED)
+        if (context->txn_->get_state() == TransactionState::ABORTED ||
+            context->txn_->get_state() == TransactionState::COMMITTED)
         {
             // 事务已经结束，释放事务对象
             context->txn_->release();

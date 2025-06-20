@@ -16,8 +16,8 @@ private:
     std::unique_ptr<AbstractExecutor> prev_; // 投影节点的儿子节点
     std::vector<ColMeta> cols_;              // 需要投影的字段
 
-   public:
-    ProjectionExecutor(std::unique_ptr<AbstractExecutor> prev, const std::vector<TabCol> &sel_cols) 
+public:
+    ProjectionExecutor(std::unique_ptr<AbstractExecutor> prev, const std::vector<TabCol> &sel_cols)
         : prev_(std::move(prev))
     {
         auto &prev_cols = prev_->cols();
@@ -33,14 +33,14 @@ private:
     {
         switch (prev_->type())
         {
-            case ExecutionType::SeqScan:
-            case ExecutionType::NestedLoopJoin:
-            case ExecutionType::Sort:
-            case ExecutionType::SemiJoin:
-            case ExecutionType::IndexScan:
-                return cols_; 
-            default:
-                return prev_->cols();
+        case ExecutionType::SeqScan:
+        case ExecutionType::NestedLoopJoin:
+        case ExecutionType::Sort:
+        case ExecutionType::SemiJoin:
+        case ExecutionType::IndexScan:
+            return cols_;
+        default:
+            return prev_->cols();
         }
     };
 

@@ -267,6 +267,14 @@ public:
             return std::make_unique<AggExecutor>(convert_plan_executor(x->subplan_, context),
                                                  x->sel_cols_, x->groupby_cols_, x->having_conds_, context);
         }
+        case PlanTag::T_Filter:
+        {
+            auto x = std::static_pointer_cast<FilterPlan>(plan);
+            // 递归处理子计划
+            auto child_executor = convert_plan_executor(x->subplan_, context);
+            // 由于Filter节点的条件会被下推到Scan节点，这里直接返回子执行器
+            return child_executor;
+        }
         default:
             break;
         }
