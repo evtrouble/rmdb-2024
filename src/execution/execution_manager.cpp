@@ -266,30 +266,42 @@ void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, 
         {
             std::string col_str;
             char *rec_buf = Tuple->data + col.offset;
-            if (col.type == TYPE_INT)
+            switch (col.type)
+            {
+            case TYPE_INT:
             {
                 auto val = *(int *)rec_buf;
                 if (std::numeric_limits<int>::max() == val || std::numeric_limits<int>::min() == val)
                     col_str = "";
                 else
                     col_str = std::to_string(*(int *)rec_buf);
+                break;
             }
-            else if (col.type == TYPE_FLOAT)
+            case TYPE_FLOAT:
             {
                 auto val = *(float *)rec_buf;
                 if (std::numeric_limits<float>::max() == val || std::numeric_limits<float>::lowest() == val)
                     col_str = "";
-                else {
-                    std::stringstream ss;
-                    ss << std::fixed << std::setprecision(FLOAT_PRECISION) << val;
-                    col_str = ss.str();
-                }
+                else
+                    col_str = std::to_string(*(float *)rec_buf);
+                break;
             }
-            else if (col.type == TYPE_STRING)
+            case TYPE_STRING:
             {
                 col_str.reserve(col.len);
                 for (int i = 0; i < col.len && rec_buf[i] != '\0'; i++)
                     col_str.append(1, rec_buf[i]);
+                break;
+            }
+            case TYPE_DATETIME:
+            {
+                // 这里假设rec_buf是一个字符串，格式为"YYYY-MM-DD HH:MM:SS"
+                // 如果rec_buf是其他格式的时间数据，需要根据实际情况进行转换
+                col_str = std::string(rec_buf, col.len);
+                break;
+            }
+            default:
+                break;
             }
             columns.emplace_back(std::move(col_str));
         }
