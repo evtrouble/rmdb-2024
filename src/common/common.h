@@ -253,18 +253,18 @@ namespace std
 class Query;
 class Plan;
 class PortalStmt;
-struct SubQuery
-{
-    std::shared_ptr<ast::SelectStmt> stmt;
-    std::shared_ptr<Query> query;
-    std::shared_ptr<Plan> plan;
-    std::shared_ptr<PortalStmt> portalStmt;
+// struct SubQuery
+// {
+//     std::shared_ptr<ast::SelectStmt> stmt;
+//     std::shared_ptr<Query> query;
+//     std::shared_ptr<Plan> plan;
+//     std::shared_ptr<PortalStmt> portalStmt;
 
-    bool is_scalar = false;
+//     bool is_scalar = false;
 
-    ColType subquery_type;
-    std::unordered_set<Value> result;
-};
+//     ColType subquery_type;
+//     std::unordered_set<Value> result;
+// };
 enum CompOp
 {
     OP_EQ,
@@ -331,6 +331,7 @@ struct SetClause
 {
     TabCol lhs;
     Value rhs;
+    ast::UpdateOp op;
 };
 
 struct JoinExpr

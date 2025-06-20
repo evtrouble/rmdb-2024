@@ -64,6 +64,7 @@ public:
         if (rids_.empty())
             return nullptr;
 
+        TransactionManager *txn_mgr = context_->txn_->get_txn_manager();
         // 遍历所有需要删除的记录
         for (auto &rid : rids_)
         {
@@ -83,6 +84,11 @@ public:
                 ih->delete_entry(key.get(), rid, context_->txn_);
             }
 
+            if(!context_->lock_mgr_->lock_exclusive_on_key(context_->txn_, fh_->GetFd(), 
+                rec.data + txn_mgr->get_start_offset())) {
+                throw TransactionAbortException(context_->txn_->get_transaction_id(), 
+                    AbortReason::UPGRADE_CONFLICT);
+            }
             // 删除记录
             fh_->delete_record(rid, context_);
 

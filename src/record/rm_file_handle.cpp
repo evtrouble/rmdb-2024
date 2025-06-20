@@ -303,7 +303,7 @@ void RmFileHandle::update_record(const Rid &rid, char *buf, Context *context)
             throw TransactionAbortException(context->txn_->get_transaction_id(), 
                 AbortReason::UPGRADE_CONFLICT);
         }
-        
+        txn_mgr->set_record_txn_id(buf, context->txn_);
         UndoLog *undolog = new UndoLog(RmRecord(data, file_hdr_.record_size),
                                        record_txn);
         txn_mgr->UpdateUndoLink(fd_, rid, undolog);

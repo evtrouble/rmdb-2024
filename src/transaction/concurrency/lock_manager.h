@@ -12,56 +12,140 @@ See the Mulan PSL v2 for more details. */
 
 #include <mutex>
 #include <condition_variable>
-#include "transaction/transaction.h"
+#include <string>
+#include <functional>
+#include <unordered_map>
+#include <list>
+
+#include "defs.h"
+#include "common/config.h"
+class Transaction;
 
 static const std::string GroupLockModeStr[10] = {"NON_LOCK", "IS", "IX", "S", "X", "SIX"};
 
-class LockManager {
-    /* 加锁类型，包括共享锁、排他锁、意向共享锁、意向排他锁、SIX（意向排他锁+共享锁） */
-    enum class LockMode { SHARED, EXLUCSIVE, INTENTION_SHARED, INTENTION_EXCLUSIVE, S_IX };
+struct LockDataId {
+    int tab_fd; // 表标识
+    std::string key_bytes; // 唯一key序列化后的字节串（可为空，表示表锁或行锁）
+    Rid rid; // 可选：用于行锁
+    enum class Type { TABLE, ROW, UNIQUE_KEY } type = Type::TABLE;
+    LockDataId() = default;
+    LockDataId(int tab_fd) : tab_fd(tab_fd), type(Type::TABLE) {}
+    // 物理行锁
+    LockDataId(int tab_fd, const Rid& rid) : tab_fd(tab_fd), rid(rid), type(Type::ROW) {}
+    // 逻辑行锁（如联合唯一约束）
+    LockDataId(int tab_fd, const std::string& key_bytes, const Rid& rid)
+        : tab_fd(tab_fd), key_bytes(key_bytes), rid(rid), type(Type::ROW) {}
+    // 唯一key锁
+    LockDataId(int tab_fd, const std::string& key_bytes) : tab_fd(tab_fd), key_bytes(key_bytes), type(Type::UNIQUE_KEY) {}
 
-    /* 用于标识加锁队列中排他性最强的锁类型，例如加锁队列中有SHARED和EXLUSIVE两个加锁操作，则该队列的锁模式为X */
+    bool operator==(const LockDataId& other) const {
+        if (tab_fd != other.tab_fd || type != other.type) return false;
+        if (type == Type::TABLE) return true;
+        if (type == Type::ROW) return rid == other.rid && key_bytes == other.key_bytes;
+        return key_bytes == other.key_bytes;
+    }
+    // 便于后续扩展：判断是否为唯一key锁
+    bool is_unique_key() const { return type == Type::UNIQUE_KEY; }
+    // 判断是否为行锁
+    bool is_row() const { return type == Type::ROW; }
+    // 判断是否为表锁
+    bool is_table() const { return type == Type::TABLE; }
+    ~LockDataId() = default;
+};
+
+namespace std {
+    template<>
+    struct hash<LockDataId> {
+        size_t operator()(const LockDataId& k) const {
+            size_t h = std::hash<int>()(k.tab_fd);
+        
+            // 使用更安全的哈希组合方式
+            auto combine = [](size_t seed, size_t hash) {
+                return seed ^ (hash + 0x9e3779b9 + (seed << 6) + (seed >> 2));
+            };
+            
+            h = combine(h, std::hash<int>()(static_cast<int>(k.type)));
+            
+            if (k.type == LockDataId::Type::ROW) {
+                h = combine(h, std::hash<int>()(k.rid.page_no));
+                h = combine(h, std::hash<int>()(k.rid.slot_no));
+                h = combine(h, std::hash<std::string>()(k.key_bytes));
+            } else if (k.type == LockDataId::Type::UNIQUE_KEY) {
+                h = combine(h, std::hash<std::string>()(k.key_bytes));
+            }
+            
+            return h;
+        }
+    };
+}
+
+class LockManager {
+public:
+    enum class LockMode { SHARED, EXCLUSIVE, INTENTION_SHARED, INTENTION_EXCLUSIVE, S_IX };
     enum class GroupLockMode { NON_LOCK, IS, IX, S, X, SIX};
 
-    /* 事务的加锁申请 */
     class LockRequest {
     public:
         LockRequest(txn_id_t txn_id, LockMode lock_mode)
             : txn_id_(txn_id), lock_mode_(lock_mode), granted_(false) {}
-
-        txn_id_t txn_id_;   // 申请加锁的事务ID
-        LockMode lock_mode_;    // 事务申请加锁的类型
-        bool granted_;          // 该事务是否已经被赋予锁
+        txn_id_t txn_id_;
+        LockMode lock_mode_;
+        bool granted_;
     };
 
-    /* 数据项上的加锁队列 */
     class LockRequestQueue {
     public:
-        std::list<LockRequest> request_queue_;  // 加锁队列
-        std::condition_variable cv_;            // 条件变量，用于唤醒正在等待加锁的申请，在no-wait策略下无需使用
-        GroupLockMode group_lock_mode_ = GroupLockMode::NON_LOCK;   // 加锁队列的锁模式
+        std::list<LockRequest> request_queue_;
+        std::condition_variable cv_;
+        GroupLockMode group_lock_mode_ = GroupLockMode::NON_LOCK;
     };
 
-public:
     LockManager() {}
-
     ~LockManager() {}
 
-    bool lock_shared_on_record(Transaction* txn, const Rid& rid, int tab_fd);
+    // 只实现唯一key锁和物理行锁的排他加锁/解锁（MVCC下只对写加锁）
+    bool lock_exclusive_on_key(Transaction *txn, int tab_fd, const std::string &key_bytes);
+    bool unlock_key(Transaction* txn, const LockDataId &lock_id);
 
-    bool lock_exclusive_on_record(Transaction* txn, const Rid& rid, int tab_fd);
-
-    bool lock_shared_on_table(Transaction* txn, int tab_fd);
-
-    bool lock_exclusive_on_table(Transaction* txn, int tab_fd);
-
-    bool lock_IS_on_table(Transaction* txn, int tab_fd);
-
-    bool lock_IX_on_table(Transaction* txn, int tab_fd);
-
+    // 物理行锁接口
+    // bool lock_exclusive_on_record(Transaction* txn, const Rid& rid, int tab_fd) {
+    //     std::unique_lock<std::mutex> lk(latch_);
+    //     LockDataId lock_id(tab_fd, rid);
+    //     auto& queue = lock_table_[lock_id];
+    //     txn_id_t txn_id = txn->get_transaction_id();
+    //     for (auto& req : queue.request_queue_) {
+    //         if (req.txn_id_ == txn_id && req.lock_mode_ == LockMode::EXLUCSIVE && req.granted_) {
+    //             return true;
+    //         }
+    //     }
+    //     bool can_grant = true;
+    //     for (auto& req : queue.request_queue_) {
+    //         if (req.granted_ && req.txn_id_ != txn_id) {
+    //             can_grant = false;
+    //             break;
+    //         }
+    //     }
+    //     queue.request_queue_.emplace_back(txn_id, LockMode::EXLUCSIVE);
+    //     auto it = std::prev(queue.request_queue_.end());
+    //     if (can_grant) {
+    //         it->granted_ = true;
+    //         queue.group_lock_mode_ = GroupLockMode::X;
+    //         txn->add_row_lock(lock_id);
+    //         return true;
+    //     } else {
+    //         return false;
+    //     }
+    // }
     bool unlock(Transaction* txn, LockDataId lock_data_id);
+    // 只保留接口声明，表锁/意向锁/共享锁可后续实现
+    bool lock_shared_on_record(Transaction *txn, const Rid &rid, int tab_fd);
+    bool lock_shared_on_table(Transaction *txn, int tab_fd);
+    bool lock_exclusive_on_table(Transaction *txn, int tab_fd);
+    bool lock_exclusive_on_record(Transaction *txn, const Rid &rid, int tab_fd);
+    bool lock_IS_on_table(Transaction *txn, int tab_fd);
+    bool lock_IX_on_table(Transaction *txn, int tab_fd);
 
 private:
-    std::mutex latch_;      // 用于锁表的并发
-    std::unordered_map<LockDataId, LockRequestQueue> lock_table_;   // 全局锁表
+    std::mutex latch_;
+    std::unordered_map<LockDataId, LockRequestQueue> lock_table_;
 };

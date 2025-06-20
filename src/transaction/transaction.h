@@ -21,6 +21,7 @@ See the Mulan PSL v2 for more details. */
 #include "common/common.h"
 #include "transaction/txn_defs.h"
 #include "record/rm_defs.h"
+#include "concurrency/lock_manager.h"
 
 class TransactionManager;
 
@@ -75,6 +76,7 @@ public:
   // inline TimestampRef *get_timestame_ref() { return ref; }
   inline void set_commit_ts(timestamp_t commit_ts) { commit_ts_ = commit_ts; }
   inline std::shared_ptr<std::unordered_set<LockDataId>> get_lock_set() { return lock_set_; }
+  inline void append_lock_set(LockDataId& lock_id) { lock_set_->emplace(std::move(lock_id)); }
 
   // inline timestamp_t get_read_ts() const { return read_ts_; }
   inline timestamp_t get_commit_ts() const { return commit_ts_; }

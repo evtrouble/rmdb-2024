@@ -80,50 +80,50 @@ enum class LockDataType { TABLE = 0, RECORD = 1 };
 /**
  * @description: 加锁对象的唯一标识
  */
-class LockDataId {
-   public:
-    /* 表级锁 */
-    LockDataId(int fd, LockDataType type) {
-        assert(type == LockDataType::TABLE);
-        fd_ = fd;
-        type_ = type;
-        rid_.page_no = -1;
-        rid_.slot_no = -1;
-    }
+// class LockDataId {
+//    public:
+//     /* 表级锁 */
+//     LockDataId(int fd, LockDataType type) {
+//         assert(type == LockDataType::TABLE);
+//         fd_ = fd;
+//         type_ = type;
+//         rid_.page_no = -1;
+//         rid_.slot_no = -1;
+//     }
 
-    /* 行级锁 */
-    LockDataId(int fd, const Rid &rid, LockDataType type) {
-        assert(type == LockDataType::RECORD);
-        fd_ = fd;
-        rid_ = rid;
-        type_ = type;
-    }
+//     /* 行级锁 */
+//     LockDataId(int fd, const Rid &rid, LockDataType type) {
+//         assert(type == LockDataType::RECORD);
+//         fd_ = fd;
+//         rid_ = rid;
+//         type_ = type;
+//     }
 
-    inline int64_t Get() const {
-        if (type_ == LockDataType::TABLE) {
-            // fd_
-            return static_cast<int64_t>(fd_);
-        } else {
-            // fd_, rid_.page_no, rid.slot_no
-            return ((static_cast<int64_t>(type_)) << 63) | ((static_cast<int64_t>(fd_)) << 31) |
-                   ((static_cast<int64_t>(rid_.page_no)) << 16) | rid_.slot_no;
-        }
-    }
+//     inline int64_t Get() const {
+//         if (type_ == LockDataType::TABLE) {
+//             // fd_
+//             return static_cast<int64_t>(fd_);
+//         } else {
+//             // fd_, rid_.page_no, rid.slot_no
+//             return ((static_cast<int64_t>(type_)) << 63) | ((static_cast<int64_t>(fd_)) << 31) |
+//                    ((static_cast<int64_t>(rid_.page_no)) << 16) | rid_.slot_no;
+//         }
+//     }
 
-    bool operator==(const LockDataId &other) const {
-        if (type_ != other.type_) return false;
-        if (fd_ != other.fd_) return false;
-        return rid_ == other.rid_;
-    }
-    int fd_;
-    Rid rid_;
-    LockDataType type_;
-};
+//     bool operator==(const LockDataId &other) const {
+//         if (type_ != other.type_) return false;
+//         if (fd_ != other.fd_) return false;
+//         return rid_ == other.rid_;
+//     }
+//     int fd_;
+//     Rid rid_;
+//     LockDataType type_;
+// };
 
-template <>
-struct std::hash<LockDataId> {
-    size_t operator()(const LockDataId &obj) const { return std::hash<int64_t>()(obj.Get()); }
-};
+// template <>
+// struct std::hash<LockDataId> {
+//     size_t operator()(const LockDataId &obj) const { return std::hash<int64_t>()(obj.Get()); }
+// };
 
 /* 事务回滚原因 */
 enum class AbortReason { LOCK_ON_SHIRINKING = 0, UPGRADE_CONFLICT, DEADLOCK_PREVENTION };

@@ -287,7 +287,8 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
             // 初始化原始数据
             val.raw = nullptr;
             val.init_raw(col_meta->len);
-            set_clause.rhs = val;
+            set_clause.rhs = std::move(val);
+            set_clause.op = sv_set_clause->op;
 
             // 添加到查询的set子句列表中
             query->set_clauses.emplace_back(std::move(set_clause));

@@ -43,11 +43,14 @@ struct Rid
     friend bool operator!=(const Rid &x, const Rid &y) { return !(x == y); }
 };
 
-struct RidHash
-{
-    size_t operator()(const Rid &x) const { return (x.page_no << 16) | x.slot_no; }
-};
-
+namespace std {
+    template<>
+    struct hash<Rid> {
+        size_t operator()(const Rid& x) const {
+            return (x.page_no << 16) | x.slot_no;
+        }
+    };
+}
 // inline std::ostream &operator<<(std::ostream &os, const Rid &rid)
 // {
 //     os << "(" << rid.page_no << ", " << rid.slot_no << ")";

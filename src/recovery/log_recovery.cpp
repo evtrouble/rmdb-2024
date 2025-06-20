@@ -66,7 +66,7 @@ void RecoveryManager::redo() {
                 }
                 auto &txn = it->second;
                 auto write_set = txn->get_write_set();
-                std::unordered_set<Rid, RidHash> abort_set;
+                std::unordered_set<Rid> abort_set;
                 while (write_set->size())
                 {
                     auto write_record = write_set->front();
@@ -193,7 +193,7 @@ void RecoveryManager::redo() {
 void RecoveryManager::undo() {
     for(auto& [txn_id, txn] : temp_txns_){
         auto write_set = txn->get_write_set();
-        std::unordered_set<Rid, RidHash> abort_set;
+        std::unordered_set<Rid> abort_set;
         while (write_set->size())
         {
             auto write_record = write_set->front();
