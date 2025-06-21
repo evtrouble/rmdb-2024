@@ -676,24 +676,15 @@ std::shared_ptr<Plan> Planner::physical_optimization(std::shared_ptr<Query> quer
     // 添加最终的投影节点
     if (select_stmt)
     {
-        if (select_stmt->cols.size() == 1 && select_stmt->cols[0]->col_name == "*")
+        if (context->hasIsStarFlag())
         {
             // 对于 SELECT * 查询，获取所有表的所有列
             std::vector<TabCol> all_cols;
-            for (const auto &table : query->tables)
+            for (const auto &table_name : query->tables)
             {
-                std::string display_name = table;
-                // 如果表有别名，使用别名
-                if (tab_to_alias->find(table) != tab_to_alias->end())
-                {
-                    display_name = tab_to_alias->at(table);
-                }
-
-                const auto &table_cols = sm_manager_->db_.get_table(table).cols;
-                for (const auto &col : table_cols)
-                {
-                    all_cols.emplace_back(TabCol{display_name, col.name});
-                }
+                std::vector<TabCol> table_cols;
+                get_table_all_cols(table_name, table_cols, context);
+                all_cols.insert(all_cols.end(), table_cols.begin(), table_cols.end());
             }
 
             // 按字母顺序排序列（先按表名，再按列名）
@@ -1610,4 +1601,27 @@ QueryColumnRequirement Planner::analyze_column_requirements(std::shared_ptr<Quer
     requirements.calculate_layered_requirements();
 
     return requirements;
+}
+
+std::vector<TabCol> Planner::get_table_all_cols(const std::string &table_name, std::vector<TabCol> &table_cols, Context *context)
+{
+    table_cols.clear();
+
+    // 获取隐藏列数量（通常用于跳过系统内部列）
+    int hidden_column_count = 0;
+    if (context && context->txn_)
+    {
+        hidden_column_count = context->txn_->get_txn_manager()->get_hidden_column_count();
+    }
+
+    // 从sm_manager_获取表的列信息
+    const auto &sel_tab_cols = sm_manager_->db_.get_table(table_name).cols;
+
+    // 跳过隐藏列，将ColMeta转换为TabCol
+    for (auto it = sel_tab_cols.begin() + hidden_column_count; it != sel_tab_cols.end(); ++it)
+    {
+        table_cols.emplace_back(TabCol{table_name, it->name});
+    }
+
+    return table_cols;
 }

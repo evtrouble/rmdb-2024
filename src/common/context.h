@@ -29,73 +29,85 @@ See the Mulan PSL v2 for more details. */
 static int const_offset = -1;
 
 // 封装标志位的结构体
-struct QueryFlags {
+struct QueryFlags
+{
     bool joinFlag = false;
     bool orderbyFlag = false;
     bool aggFlag = false;
     bool isStarFlag = false;
 };
 
-class Context {
+class Context
+{
 public:
-    Context(LockManager* lock_mgr, LogManager* log_mgr,
-        Transaction* txn, char* data_send = nullptr, int* offset = &const_offset)
+    Context(LockManager *lock_mgr, LogManager *log_mgr,
+            Transaction *txn, char *data_send = nullptr, int *offset = &const_offset)
         : lock_mgr_(lock_mgr), log_mgr_(log_mgr), txn_(txn),
-        data_send_(data_send), offset_(offset) {
+          data_send_(data_send), offset_(offset)
+    {
         ellipsis_ = false;
         // 初始化 QueryFlags
         queryFlags_ = QueryFlags();
     }
 
     // 设置 join 标志位的接口
-    inline void setJoinFlag(bool value) {
+    inline void setJoinFlag(bool value)
+    {
         queryFlags_.joinFlag = value;
     }
 
     // 设置 orderby 标志位的接口
-    inline void setOrderbyFlag(bool value) {
+    inline void setOrderbyFlag(bool value)
+    {
         queryFlags_.orderbyFlag = value;
     }
 
     // 设置 agg 标志位的接口
-    inline void setAggFlag(bool value) {
+    inline void setAggFlag(bool value)
+    {
         queryFlags_.aggFlag = value;
     }
 
-    inline void setIsStarFlag(bool value) {
+    inline void setIsStarFlag(bool value)
+    {
         queryFlags_.isStarFlag = value;
     }
     // 判断 join 标志位的接口
-    inline bool hasJoinFlag() const {
+    inline bool hasJoinFlag() const
+    {
         return queryFlags_.joinFlag;
     }
 
     // 判断 orderby 标志位的接口
-    inline bool hasOrderbyFlag() const {
+    inline bool hasOrderbyFlag() const
+    {
         return queryFlags_.orderbyFlag;
     }
 
-    inline bool hasIsStarFlag() const {
+    inline bool hasIsStarFlag() const
+    {
         return queryFlags_.isStarFlag;
     }
 
     // 判断 agg 标志位的接口
-    inline bool hasAggFlag() const {
+    inline bool hasAggFlag() const
+    {
         return queryFlags_.aggFlag;
     }
 
-    void clearFlags() {
+    void clearFlags()
+    {
         queryFlags_.joinFlag = false;
         queryFlags_.orderbyFlag = false;
         queryFlags_.aggFlag = false;
     }
 
     // TransactionManager *txn_mgr_;
-    LockManager* lock_mgr_;
-    LogManager* log_mgr_;
-    Transaction* txn_;
-    char* data_send_;
-    int* offset_;
+    LockManager *lock_mgr_;
+    LogManager *log_mgr_;
+    Transaction *txn_;
+    char *data_send_;
+    int *offset_;
     bool ellipsis_;
-    QueryFlags queryFlags_;  // 新增的标志位结构体成员
+    QueryFlags queryFlags_; // 新增的标志位结构体成员
 };

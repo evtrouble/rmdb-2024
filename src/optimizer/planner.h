@@ -92,6 +92,8 @@ private:
     std::unordered_map<std::string, std::string> *alias_to_tab = &empty_map_;
     static std::unordered_map<std::string, std::string> empty_map_;
 
+    std::vector<TabCol> get_table_all_cols(const std::string &table_name, std::vector<TabCol> &table_cols, Context *context);
+
     // 投影下推相关的辅助函数
     bool is_select_star_query(const std::shared_ptr<ast::SelectStmt> &select_stmt);
     std::shared_ptr<Plan> add_leaf_projections(std::shared_ptr<Plan> plan, const std::vector<TabCol> &required_cols);
@@ -251,8 +253,8 @@ private:
     ColType interp_sv_type(ast::SvType sv_type)
     {
         static std::map<ast::SvType, ColType> m = {
-            {ast::SV_TYPE_INT, TYPE_INT}, 
-            {ast::SV_TYPE_FLOAT, TYPE_FLOAT}, 
+            {ast::SV_TYPE_INT, TYPE_INT},
+            {ast::SV_TYPE_FLOAT, TYPE_FLOAT},
             {ast::SV_TYPE_STRING, TYPE_STRING},
             {ast::SV_TYPE_DATETIME, TYPE_DATETIME},
         };

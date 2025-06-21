@@ -1,6 +1,6 @@
-#line 2 "lex.yy.cpp"
+#line 2 "/home/nero/diff/db2025/src/parser/lex.yy.cpp"
 
-#line 4 "lex.yy.cpp"
+#line 4 "/home/nero/diff/db2025/src/parser/lex.yy.cpp"
 
 #define  YY_INT_ALIGNED short int
 
@@ -705,9 +705,9 @@ char *yytext;
 const int FLOAT_PRECISION = 6;
 const float FLOAT_PRECISION_MULTIPLIER = std::pow(10, FLOAT_PRECISION);
 
-#line 709 "lex.yy.cpp"
+#line 709 "/home/nero/diff/db2025/src/parser/lex.yy.cpp"
 
-#line 711 "lex.yy.cpp"
+#line 711 "/home/nero/diff/db2025/src/parser/lex.yy.cpp"
 
 #define INITIAL 0
 #define STATE_COMMENT 1
@@ -945,7 +945,7 @@ YY_DECL
 
 #line 56 "lex.l"
     /* block comment */
-#line 949 "lex.yy.cpp"
+#line 949 "/home/nero/diff/db2025/src/parser/lex.yy.cpp"
 
 	while ( /*CONSTCOND*/1 )		/* loops until end-of-file is reached */
 		{
@@ -1388,7 +1388,7 @@ YY_RULE_SETUP
 #line 159 "lex.l"
 ECHO;
 	YY_BREAK
-#line 1392 "lex.yy.cpp"
+#line 1392 "/home/nero/diff/db2025/src/parser/lex.yy.cpp"
 
 	case YY_END_OF_BUFFER:
 		{
