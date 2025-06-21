@@ -33,11 +33,10 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
         // 处理表名
         query->tables = std::move(x->tabs);
 
-        // 假设AST中的表信息包含别名，这里需要根据你的AST结构调整
         // 建立表别名映射关系
         for (size_t i = 0; i < query->tables.size(); ++i)
         {
-            std::string& table_name = query->tables[i];
+            std::string &table_name = query->tables[i];
 
             // 检查表是否存在
             if (!sm_manager_->db_.is_table(table_name))
@@ -49,14 +48,14 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
             // 假设 x->table_aliases 包含别名信息，需要根据实际AST结构调整
             if (x->tab_aliases.size() > i && !x->tab_aliases[i].empty())
             {
-                std::string& alias = x->tab_aliases[i];
+                std::string &alias = x->tab_aliases[i];
                 table_alias_map_.emplace(alias, table_name);
             }
             // 表名也可以作为自己的别名
             table_alias_map_.emplace(table_name, table_name);
         }
-
-        // 处理target list，再target list中添加上表名，例如 a.id
+        query->table_alias_map = table_alias_map_;
+        // 处理target list，在target list中添加上表名，例如 a.id
         query->cols.reserve(x->cols.size());
         for (auto &sv_sel_col : x->cols)
         {
@@ -227,7 +226,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
                 if (alias_to_col.find(col->col_name) != alias_to_col.end())
                 {
                     // 如果是别名，替换为真实列
-                    TabCol& real_col = alias_to_col[col->col_name];
+                    TabCol &real_col = alias_to_col[col->col_name];
                     col->tab_name = real_col.tab_name;
                     col->col_name = real_col.col_name;
                     col->agg_type = real_col.aggFuncType;
@@ -390,7 +389,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
     case ast::TreeNodeType::ExplainStmt:
     {
         auto x = std::static_pointer_cast<ast::ExplainStmt>(parse);
-        query  = do_analyze(x->query, context);
+        query = do_analyze(x->query, context);
     }
     break;
     default:
@@ -467,8 +466,8 @@ TabCol Analyze::check_column(const std::vector<ColMeta> &all_cols, TabCol target
 
     return target;
 }
-void Analyze::get_all_cols(const std::vector<std::string> &tab_names, 
-    std::vector<ColMeta> &all_cols, Context *context)
+void Analyze::get_all_cols(const std::vector<std::string> &tab_names,
+                           std::vector<ColMeta> &all_cols, Context *context)
 {
     int hidden_column_count = context->txn_->get_txn_manager()->get_hidden_column_count();
     for (auto &sel_tab_name : tab_names)
@@ -476,7 +475,7 @@ void Analyze::get_all_cols(const std::vector<std::string> &tab_names,
         // 这里db_不能写成get_db(), 注意要传指针
         const auto &sel_tab_cols = sm_manager_->db_.get_table(sel_tab_name).cols;
         all_cols.insert(all_cols.end(), sel_tab_cols.begin() + hidden_column_count,
-            sel_tab_cols.end());
+                        sel_tab_cols.end());
     }
 }
 
@@ -531,8 +530,8 @@ void Analyze::get_clause(const std::vector<std::shared_ptr<ast::BinaryExpr>> &sv
     }
 }
 
-void Analyze::check_clause(const std::vector<std::string> &tab_names, 
-    std::vector<Condition> &conds, bool is_having, Context *context)
+void Analyze::check_clause(const std::vector<std::string> &tab_names,
+                           std::vector<Condition> &conds, bool is_having, Context *context)
 {
     std::vector<ColMeta> all_cols;
     get_all_cols(tab_names, all_cols, context);

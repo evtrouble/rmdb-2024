@@ -25,7 +25,6 @@ class Query
 {
 public:
     std::shared_ptr<ast::TreeNode> parse;
-    // TODO jointree
     // where条件
     std::vector<Condition> conds;
     // 按表分组的条件
@@ -46,6 +45,7 @@ public:
     std::vector<JoinExpr> jointree;
     // limit条件
     int limit = -1;
+    std::unordered_map<std::string, std::string> table_alias_map;
     Query() {}
 };
 
@@ -63,11 +63,11 @@ public:
 
 private:
     TabCol check_column(const std::vector<ColMeta> &all_cols, TabCol target, bool is_semijoin);
-    void get_all_cols(const std::vector<std::string> &tab_names, 
-        std::vector<ColMeta> &all_cols, Context *context);
+    void get_all_cols(const std::vector<std::string> &tab_names,
+                      std::vector<ColMeta> &all_cols, Context *context);
     void get_clause(const std::vector<std::shared_ptr<ast::BinaryExpr>> &sv_conds, std::vector<Condition> &conds);
-    void check_clause(const std::vector<std::string> &tab_names, 
-        std::vector<Condition> &conds, bool is_having, Context *context);
+    void check_clause(const std::vector<std::string> &tab_names,
+                      std::vector<Condition> &conds, bool is_having, Context *context);
     Value convert_sv_value(const std::shared_ptr<ast::Value> &sv_val);
     CompOp convert_sv_comp_op(ast::SvCompOp op);
     Value convert_value_type(const Value &value, ColType target_type);

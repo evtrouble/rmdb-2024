@@ -88,13 +88,14 @@ private:
 
     bool enable_nestedloop_join = true;
     bool enable_sortmerge_join = false;
+    std::unordered_map<std::string, std::string> *tab_to_alias = &empty_map_;
+    std::unordered_map<std::string, std::string> *alias_to_tab = &empty_map_;
+    static std::unordered_map<std::string, std::string> empty_map_;
 
     // 投影下推相关的辅助函数
     bool is_select_star_query(const std::shared_ptr<ast::SelectStmt> &select_stmt);
-    std::vector<TabCol> compute_required_columns(const std::string &table_name, const std::shared_ptr<Query> &query);
     std::shared_ptr<Plan> add_leaf_projections(std::shared_ptr<Plan> plan, const std::vector<TabCol> &required_cols);
     std::shared_ptr<Plan> apply_projection_pushdown(std::shared_ptr<Plan> plan, const std::shared_ptr<Query> &query);
-    std::vector<TabCol> compute_required_columns_after_filter(const std::string &table_name, const std::shared_ptr<Query> &query);
 
 public:
     Planner(SmManager *sm_manager) : sm_manager_(sm_manager) {}
@@ -140,63 +141,6 @@ private:
         }
         return tables;
     }
-    // 新增方法：计算Filter之上需要的列（不包含Filter专用列）
-    std::vector<TabCol> compute_columns_above_filter(const std::string &table_name, const std::shared_ptr<Query> &query)
-    {
-        std::set<std::string> required_cols;
-
-        // 建立别名映射
-        std::map<std::string, std::string> tab_to_alias;
-        std::map<std::string, std::string> alias_to_tab;
-        auto select_stmt = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
-        if (select_stmt)
-        {
-            for (size_t i = 0; i < select_stmt->tabs.size(); i++)
-            {
-                if (i < select_stmt->tab_aliases.size() && !select_stmt->tab_aliases[i].empty())
-                {
-                    tab_to_alias[select_stmt->tabs[i]] = select_stmt->tab_aliases[i];
-                    alias_to_tab[select_stmt->tab_aliases[i]] = select_stmt->tabs[i];
-                }
-            }
-        }
-
-        // 1. 添加 SELECT 子句中的列
-        for (const auto &col : query->cols)
-        {
-            if (table_matches(col.tab_name, table_name, alias_to_tab, tab_to_alias) && col.col_name != "*")
-            {
-                required_cols.insert(col.col_name);
-            }
-        }
-
-        // 2. 添加连接条件中的列（JOIN需要的列）
-        for (const auto &cond : query->conds)
-        {
-            if (!cond.is_rhs_val)
-            {
-                if (table_matches(cond.lhs_col.tab_name, table_name, alias_to_tab, tab_to_alias))
-                {
-                    required_cols.insert(cond.lhs_col.col_name);
-                }
-                if (table_matches(cond.rhs_col.tab_name, table_name, alias_to_tab, tab_to_alias))
-                {
-                    required_cols.insert(cond.rhs_col.col_name);
-                }
-            }
-        }
-
-        // 注意：不添加WHERE条件中的列，因为那些是Filter专用的
-
-        // 转换为 TabCol 格式
-        std::vector<TabCol> result;
-        for (const auto &col_name : required_cols)
-        {
-            result.push_back({table_name, col_name});
-        }
-
-        return result;
-    }
     // 判断是否为连接条件
     bool is_join_condition(const Condition &cond)
     {
@@ -218,32 +162,6 @@ private:
 
         std::cout << "  Is join condition: " << (result ? "true" : "false") << std::endl;
         return result;
-    }
-    bool table_matches(const std::string &col_table_name, const std::string &target_table_name,
-                       const std::map<std::string, std::string> &alias_to_tab,
-                       const std::map<std::string, std::string> &tab_to_alias)
-    {
-        // 直接匹配表名
-        if (col_table_name == target_table_name)
-        {
-            return true;
-        }
-
-        // 检查 col_table_name 是否是 target_table_name 的别名
-        auto it = tab_to_alias.find(target_table_name);
-        if (it != tab_to_alias.end() && col_table_name == it->second)
-        {
-            return true;
-        }
-
-        // 检查 col_table_name 是否是别名，其对应的实际表名是 target_table_name
-        auto it2 = alias_to_tab.find(col_table_name);
-        if (it2 != alias_to_tab.end() && it2->second == target_table_name)
-        {
-            return true;
-        }
-
-        return false;
     }
 
     // 分离连接条件和选择条件

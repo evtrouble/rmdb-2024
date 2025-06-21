@@ -25,6 +25,7 @@ See the Mulan PSL v2 for more details. */
 #include "index/ix.h"
 #include "record_printer.h"
 #include "execution/executor_explain.h"
+std::unordered_map<std::string, std::string> Planner::empty_map_;
 
 // 辅助函数：将操作符转换为字符串
 std::string get_op_string(CompOp op)
@@ -501,7 +502,7 @@ std::shared_ptr<Query> Planner::logical_optimization(std::shared_ptr<Query> quer
         // 2. 对每个选择条件进行分类和下推
         remaining_conds.reserve(all_conds.size());
         join_conds.reserve(all_conds.size());
-        for (auto& cond : all_conds)
+        for (auto &cond : all_conds)
         {
             // 判断是否可以下推(只涉及一个表的条件可以下推)
             if (cond.is_rhs_val || cond.lhs_col.tab_name == cond.rhs_col.tab_name)
@@ -532,128 +533,6 @@ std::shared_ptr<Query> Planner::logical_optimization(std::shared_ptr<Query> quer
         }
     }
     return query;
-}
-std::vector<TabCol> Planner::compute_required_columns_after_filter(const std::string &table_name, const std::shared_ptr<Query> &query)
-{
-    std::set<std::string> required_cols;
-
-    // 建立别名映射
-    std::map<std::string, std::string> tab_to_alias;
-    std::map<std::string, std::string> alias_to_tab;
-    auto select_stmt = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
-    if (select_stmt)
-    {
-        for (size_t i = 0; i < select_stmt->tabs.size(); i++)
-        {
-            if (i < select_stmt->tab_aliases.size() && !select_stmt->tab_aliases[i].empty())
-            {
-                tab_to_alias[select_stmt->tabs[i]] = select_stmt->tab_aliases[i];
-                alias_to_tab[select_stmt->tab_aliases[i]] = select_stmt->tabs[i];
-            }
-        }
-    }
-    // 1. 添加最终输出需要的列
-    for (const auto &col : query->cols)
-    {
-        if (table_matches(col.tab_name, table_name, alias_to_tab, tab_to_alias) && col.col_name != "*")
-        {
-            required_cols.insert(col.col_name);
-        }
-    }
-
-    // 2. 添加连接条件需要的列
-    for (const auto &cond : query->conds)
-    {
-        if (!cond.is_rhs_val)
-        {
-            if (table_matches(cond.lhs_col.tab_name, table_name, alias_to_tab, tab_to_alias))
-            {
-                required_cols.insert(cond.lhs_col.col_name);
-            }
-            if (table_matches(cond.rhs_col.tab_name, table_name, alias_to_tab, tab_to_alias))
-            {
-                required_cols.insert(cond.rhs_col.col_name);
-            }
-        }
-    }
-
-    // 3. 不添加只用于WHERE过滤的列（因为过滤后就不需要了）
-
-    // 转换为 TabCol 格式...
-    std::vector<TabCol> result;
-    for (const auto &col_name : required_cols)
-    {
-        result.push_back({table_name, col_name});
-    }
-
-    return result;
-}
-// 修复后的 compute_required_columns 函数
-std::vector<TabCol> Planner::compute_required_columns(const std::string &table_name, const std::shared_ptr<Query> &query)
-{
-    std::set<std::string> required_cols;
-
-    // 建立别名映射
-    std::map<std::string, std::string> tab_to_alias;
-    std::map<std::string, std::string> alias_to_tab;
-    auto select_stmt = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
-    if (select_stmt)
-    {
-        for (size_t i = 0; i < select_stmt->tabs.size(); i++)
-        {
-            if (i < select_stmt->tab_aliases.size() && !select_stmt->tab_aliases[i].empty())
-            {
-                tab_to_alias[select_stmt->tabs[i]] = select_stmt->tab_aliases[i];
-                alias_to_tab[select_stmt->tab_aliases[i]] = select_stmt->tabs[i];
-            }
-        }
-    }
-
-    // 1. 添加 SELECT 子句中的列
-    for (const auto &col : query->cols)
-    {
-        if (table_matches(col.tab_name, table_name, alias_to_tab, tab_to_alias) && col.col_name != "*")
-        {
-            required_cols.insert(col.col_name);
-        }
-    }
-
-    // 2. 添加连接条件中的列
-    for (const auto &cond : query->conds)
-    {
-        if (!cond.is_rhs_val)
-        {
-            if (table_matches(cond.lhs_col.tab_name, table_name, alias_to_tab, tab_to_alias))
-            {
-                required_cols.insert(cond.lhs_col.col_name);
-            }
-            if (table_matches(cond.rhs_col.tab_name, table_name, alias_to_tab, tab_to_alias))
-            {
-                required_cols.insert(cond.rhs_col.col_name);
-            }
-        }
-    }
-
-    // 3. 添加 WHERE 条件中的列
-    if (query->tab_conds.find(table_name) != query->tab_conds.end())
-    {
-        for (const auto &cond : query->tab_conds.at(table_name))
-        {
-            if (table_matches(cond.lhs_col.tab_name, table_name, alias_to_tab, tab_to_alias))
-            {
-                required_cols.insert(cond.lhs_col.col_name);
-            }
-        }
-    }
-
-    // 转换为 TabCol 格式
-    std::vector<TabCol> result;
-    for (const auto &col_name : required_cols)
-    {
-        result.push_back({table_name, col_name});
-    }
-
-    return result;
 }
 
 std::shared_ptr<Plan> Planner::apply_projection_pushdown(std::shared_ptr<Plan> plan, const std::shared_ptr<Query> &query)
@@ -792,21 +671,7 @@ std::shared_ptr<Plan> Planner::physical_optimization(std::shared_ptr<Query> quer
     // 处理orderby
     plan = generate_sort_plan(query, std::move(plan));
 
-    // 建立别名映射
-    std::map<std::string, std::string> tab_to_alias;
-    std::map<std::string, std::string> alias_to_tab;
     auto select_stmt = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
-    if (select_stmt)
-    {
-        for (size_t i = 0; i < select_stmt->tabs.size(); i++)
-        {
-            if (i < select_stmt->tab_aliases.size() && !select_stmt->tab_aliases[i].empty())
-            {
-                tab_to_alias[select_stmt->tabs[i]] = select_stmt->tab_aliases[i];
-                alias_to_tab[select_stmt->tab_aliases[i]] = select_stmt->tabs[i];
-            }
-        }
-    }
 
     // 添加最终的投影节点
     if (select_stmt)
@@ -819,9 +684,9 @@ std::shared_ptr<Plan> Planner::physical_optimization(std::shared_ptr<Query> quer
             {
                 std::string display_name = table;
                 // 如果表有别名，使用别名
-                if (tab_to_alias.find(table) != tab_to_alias.end())
+                if (tab_to_alias->find(table) != tab_to_alias->end())
                 {
-                    display_name = tab_to_alias[table];
+                    display_name = tab_to_alias->at(table);
                 }
 
                 const auto &table_cols = sm_manager_->db_.get_table(table).cols;
@@ -854,13 +719,13 @@ std::shared_ptr<Plan> Planner::physical_optimization(std::shared_ptr<Query> quer
                 std::string real_tab_name = col.tab_name;
 
                 // 处理表别名
-                if (alias_to_tab.find(col.tab_name) != alias_to_tab.end())
+                if (alias_to_tab->find(col.tab_name) != alias_to_tab->end())
                 {
-                    real_tab_name = alias_to_tab[col.tab_name];
+                    real_tab_name = alias_to_tab->at(col.tab_name);
                 }
-                else if (tab_to_alias.find(col.tab_name) != tab_to_alias.end())
+                else if (tab_to_alias->find(col.tab_name) != tab_to_alias->end())
                 {
-                    display_name = tab_to_alias[col.tab_name];
+                    display_name = tab_to_alias->at(col.tab_name);
                 }
 
                 final_cols.emplace_back(TabCol{display_name, col.col_name, col.aggFuncType, col.alias});
@@ -883,6 +748,7 @@ std::shared_ptr<Plan> Planner::physical_optimization(std::shared_ptr<Query> quer
 
     return plan;
 }
+
 std::shared_ptr<ScanPlan> extract_scan_plan(std::shared_ptr<Plan> plan)
 {
     if (!plan)
@@ -963,20 +829,6 @@ std::unordered_map<std::string, size_t> calculate_table_cardinalities(const std:
 std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Context *context)
 {
     auto select_stmt = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
-    // 建立表名到别名的映射
-    std::map<std::string, std::string> tab_to_alias;
-    std::map<std::string, std::string> alias_to_tab;
-    if (select_stmt)
-    {
-        for (size_t i = 0; i < select_stmt->tabs.size(); i++)
-        {
-            if (i < select_stmt->tab_aliases.size() && !select_stmt->tab_aliases[i].empty())
-            {
-                tab_to_alias[select_stmt->tabs[i]] = select_stmt->tab_aliases[i];
-                alias_to_tab[select_stmt->tab_aliases[i]] = select_stmt->tabs[i];
-            }
-        }
-    }
 
     // 预先计算所有表的基数
     auto table_cardinalities = calculate_table_cardinalities(query->tables, sm_manager_);
@@ -1071,13 +923,13 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
             std::string rhs_tab = cond.rhs_col.tab_name;
 
             // 处理表别名
-            if (alias_to_tab.find(lhs_tab) != alias_to_tab.end())
+            if (alias_to_tab->find(lhs_tab) != alias_to_tab->end())
             {
-                lhs_tab = alias_to_tab[lhs_tab];
+                lhs_tab = alias_to_tab->at(lhs_tab);
             }
-            if (alias_to_tab.find(rhs_tab) != alias_to_tab.end())
+            if (alias_to_tab->find(rhs_tab) != alias_to_tab->end())
             {
-                rhs_tab = alias_to_tab[rhs_tab];
+                rhs_tab = alias_to_tab->at(rhs_tab);
             }
 
             auto scan_i = extract_scan_plan(table_plans[min_i]);
@@ -1124,13 +976,13 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
                     std::string rhs_tab = cond.rhs_col.tab_name;
 
                     // 处理表别名
-                    if (alias_to_tab.find(lhs_tab) != alias_to_tab.end())
+                    if (alias_to_tab->find(lhs_tab) != alias_to_tab->end())
                     {
-                        lhs_tab = alias_to_tab[lhs_tab];
+                        lhs_tab = alias_to_tab->at(lhs_tab);
                     }
-                    if (alias_to_tab.find(rhs_tab) != alias_to_tab.end())
+                    if (alias_to_tab->find(rhs_tab) != alias_to_tab->end())
                     {
-                        rhs_tab = alias_to_tab[rhs_tab];
+                        rhs_tab = alias_to_tab->at(rhs_tab);
                     }
 
                     if (lhs_tab == scan_plan->tab_name_ || rhs_tab == scan_plan->tab_name_)
@@ -1243,7 +1095,7 @@ std::shared_ptr<Plan> Planner::generate_select_plan(std::shared_ptr<Query> query
         throw RMDBError("Invalid query object");
     }
 
-    if(query->parse->Nodetype() != ast::TreeNodeType::SelectStmt)
+    if (query->parse->Nodetype() != ast::TreeNodeType::SelectStmt)
     {
         // 如果parse不是SELECT语句，抛出错误
         throw RMDBError("Not a SELECT statement");
@@ -1285,13 +1137,13 @@ std::shared_ptr<Plan> Planner::generate_select_plan(std::shared_ptr<Query> query
     // 确保query对象包含条件信息
     if (query->conds.empty())
     {
-        // 首先建立表名到别名的映射
-        std::unordered_map<std::string, std::string> alias_to_table; // 别名到表名的映射
-        for (size_t i = 0; i < select_stmt->tabs.size(); ++i)
+        alias_to_tab = &query->table_alias_map;
+
+        for (size_t i = 0; i < select_stmt->tabs.size(); i++)
         {
             if (i < select_stmt->tab_aliases.size() && !select_stmt->tab_aliases[i].empty())
             {
-                alias_to_table[select_stmt->tab_aliases[i]] = select_stmt->tabs[i];
+                (*tab_to_alias)[select_stmt->tabs[i]] = select_stmt->tab_aliases[i]; // 使用 [] 操作符
             }
         }
 
@@ -1320,8 +1172,8 @@ std::shared_ptr<Plan> Planner::generate_select_plan(std::shared_ptr<Query> query
                 else
                 {
                     // 如果使用了别名，查找实际的表名
-                    auto it = alias_to_table.find(lhs_col->tab_name);
-                    if (it != alias_to_table.end())
+                    auto it = alias_to_tab->find(lhs_col->tab_name);
+                    if (it != alias_to_tab->end())
                     {
                         condition.lhs_col.tab_name = it->second;
                     }
@@ -1344,8 +1196,8 @@ std::shared_ptr<Plan> Planner::generate_select_plan(std::shared_ptr<Query> query
                 }
                 else
                 {
-                    auto it = alias_to_table.find(rhs_col->tab_name);
-                    if (it != alias_to_table.end())
+                    auto it = alias_to_tab->find(rhs_col->tab_name);
+                    if (it != alias_to_tab->end())
                     {
                         condition.rhs_col.tab_name = it->second;
                     }
@@ -1373,8 +1225,8 @@ std::shared_ptr<Plan> Planner::generate_select_plan(std::shared_ptr<Query> query
             else
             {
                 // 如果使用了别名，查找实际的表名
-                auto it = alias_to_table.find(cond->lhs->tab_name);
-                if (it != alias_to_table.end())
+                auto it = alias_to_tab->find(cond->lhs->tab_name);
+                if (it != alias_to_tab->end())
                 {
                     condition.lhs_col.tab_name = it->second;
                 }
@@ -1419,8 +1271,8 @@ std::shared_ptr<Plan> Planner::generate_select_plan(std::shared_ptr<Query> query
                 }
                 else
                 {
-                    auto it = alias_to_table.find(col->tab_name);
-                    if (it != alias_to_table.end())
+                    auto it = alias_to_tab->find(col->tab_name);
+                    if (it != alias_to_tab->end())
                     {
                         condition.rhs_col.tab_name = it->second;
                     }
@@ -1476,6 +1328,7 @@ std::shared_ptr<Plan> Planner::generate_select_plan(std::shared_ptr<Query> query
 // 生成DDL语句和DML语句的查询执行计划
 std::shared_ptr<Plan> Planner::do_planner(std::shared_ptr<Query> query, Context *context)
 {
+
     switch (query->parse->Nodetype())
     {
     case ast::TreeNodeType::CreateTable:
@@ -1594,21 +1447,11 @@ QueryColumnRequirement Planner::analyze_column_requirements(std::shared_ptr<Quer
 {
     QueryColumnRequirement requirements;
     // 如果不是SELECT语句，返回空的需求
-    if(!query || !query->parse || query->parse->Nodetype() != ast::TreeNodeType::SelectStmt)
+    if (!query || !query->parse || query->parse->Nodetype() != ast::TreeNodeType::SelectStmt)
     {
         return requirements;
     }
     auto select_stmt = std::static_pointer_cast<ast::SelectStmt>(query->parse);
-    
-    // 建立表名到别名的映射
-    std::map<std::string, std::string> alias_to_tab;
-    for (size_t i = 0; i < select_stmt->tabs.size(); i++)
-    {
-        if (i < select_stmt->tab_aliases.size() && !select_stmt->tab_aliases[i].empty())
-        {
-            alias_to_tab[select_stmt->tab_aliases[i]] = select_stmt->tabs[i];
-        }
-    }
 
     if (context->hasIsStarFlag())
     {
@@ -1629,8 +1472,8 @@ QueryColumnRequirement Planner::analyze_column_requirements(std::shared_ptr<Quer
         for (const auto &col : query->cols)
         {
             std::string real_tab_name = col.tab_name;
-            auto iter = alias_to_tab.find(col.tab_name);
-            if (iter != alias_to_tab.end())
+            auto iter = alias_to_tab->find(col.tab_name);
+            if (iter != alias_to_tab->end())
             {
                 real_tab_name = iter->second;
             }
@@ -1657,9 +1500,9 @@ QueryColumnRequirement Planner::analyze_column_requirements(std::shared_ptr<Quer
         for (const auto &col : query->cols)
         {
             std::string real_tab_name = col.tab_name;
-            if (alias_to_tab.find(col.tab_name) != alias_to_tab.end())
+            if (alias_to_tab->find(col.tab_name) != alias_to_tab->end())
             {
-                real_tab_name = alias_to_tab[col.tab_name];
+                real_tab_name = alias_to_tab->at(col.tab_name);
             }
             requirements.select_cols.insert(TabCol{real_tab_name, col.col_name, col.aggFuncType, col.alias});
         }
@@ -1672,17 +1515,17 @@ QueryColumnRequirement Planner::analyze_column_requirements(std::shared_ptr<Quer
         {
             // 处理左侧列
             std::string lhs_tab = cond.lhs_col.tab_name;
-            if (alias_to_tab.find(lhs_tab) != alias_to_tab.end())
+            if (alias_to_tab->find(lhs_tab) != alias_to_tab->end())
             {
-                lhs_tab = alias_to_tab[lhs_tab];
+                lhs_tab = alias_to_tab->at(lhs_tab);
             }
             requirements.join_cols.insert(TabCol{lhs_tab, cond.lhs_col.col_name});
 
             // 处理右侧列
             std::string rhs_tab = cond.rhs_col.tab_name;
-            if (alias_to_tab.find(rhs_tab) != alias_to_tab.end())
+            if (alias_to_tab->find(rhs_tab) != alias_to_tab->end())
             {
-                rhs_tab = alias_to_tab[rhs_tab];
+                rhs_tab = alias_to_tab->at(rhs_tab);
             }
             requirements.join_cols.insert(TabCol{rhs_tab, cond.rhs_col.col_name});
         }
@@ -1692,9 +1535,9 @@ QueryColumnRequirement Planner::analyze_column_requirements(std::shared_ptr<Quer
     for (const auto &[table_name, conds] : query->tab_conds)
     {
         std::string real_tab_name = table_name;
-        if (alias_to_tab.find(table_name) != alias_to_tab.end())
+        if (alias_to_tab->find(table_name) != alias_to_tab->end())
         {
-            real_tab_name = alias_to_tab[table_name];
+            real_tab_name = alias_to_tab->at(table_name);
         }
 
         for (const auto &cond : conds)
@@ -1711,9 +1554,9 @@ QueryColumnRequirement Planner::analyze_column_requirements(std::shared_ptr<Quer
     for (const auto &col : query->groupby)
     {
         std::string real_tab_name = col.tab_name;
-        if (alias_to_tab.find(col.tab_name) != alias_to_tab.end())
+        if (alias_to_tab->find(col.tab_name) != alias_to_tab->end())
         {
-            real_tab_name = alias_to_tab[col.tab_name];
+            real_tab_name = alias_to_tab->at(col.tab_name);
         }
         requirements.groupby_cols.insert(TabCol{real_tab_name, col.col_name});
     }
@@ -1725,17 +1568,17 @@ QueryColumnRequirement Planner::analyze_column_requirements(std::shared_ptr<Quer
         {
             // 处理左侧列
             std::string lhs_tab = cond.lhs_col.tab_name;
-            if (alias_to_tab.find(lhs_tab) != alias_to_tab.end())
+            if (alias_to_tab->find(lhs_tab) != alias_to_tab->end())
             {
-                lhs_tab = alias_to_tab[lhs_tab];
+                lhs_tab = alias_to_tab->at(lhs_tab);
             }
             requirements.having_cols.insert(TabCol{lhs_tab, cond.lhs_col.col_name});
 
             // 处理右侧列
             std::string rhs_tab = cond.rhs_col.tab_name;
-            if (alias_to_tab.find(rhs_tab) != alias_to_tab.end())
+            if (alias_to_tab->find(rhs_tab) != alias_to_tab->end())
             {
-                rhs_tab = alias_to_tab[rhs_tab];
+                rhs_tab = alias_to_tab->at(rhs_tab);
             }
             requirements.having_cols.insert(TabCol{rhs_tab, cond.rhs_col.col_name});
         }
