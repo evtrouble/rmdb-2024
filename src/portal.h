@@ -270,10 +270,42 @@ public:
         case PlanTag::T_Filter:
         {
             auto x = std::static_pointer_cast<FilterPlan>(plan);
-            // 递归处理子计划
-            auto child_executor = convert_plan_executor(x->subplan_, context);
-            // 由于Filter节点的条件会被下推到Scan节点，这里直接返回子执行器
-            return child_executor;
+
+            // 检查子计划是否是 ScanPlan，如果是，将条件下推到 ScanPlan
+            auto child_plan = x->subplan_;
+            if (child_plan->tag == PlanTag::T_SeqScan || child_plan->tag == PlanTag::T_IndexScan)
+            {
+                auto scan_plan = std::static_pointer_cast<ScanPlan>(child_plan);
+
+                // 将 FilterPlan 的条件合并到 ScanPlan 的条件中
+                std::vector<Condition> merged_conditions = scan_plan->fed_conds_;
+                merged_conditions.insert(merged_conditions.end(),
+                                         x->conds_.begin(), x->conds_.end());
+
+                // 创建新的 ScanPlan，包含合并后的条件
+                auto new_scan_plan = std::make_shared<ScanPlan>(
+                    scan_plan->tag,
+                    this->sm_manager_,
+                    scan_plan->tab_name_,
+                    merged_conditions,
+                    scan_plan->index_meta_,
+                    scan_plan->max_match_col_count_);
+
+                // 递归处理新的 ScanPlan
+                return convert_plan_executor(new_scan_plan, context);
+            }
+            else
+            {
+                // 如果子计划不是 ScanPlan，需要创建一个真正的 FilterExecutor
+                // 这里需要实现 FilterExecutor 类
+                auto child_executor = convert_plan_executor(child_plan, context);
+
+                // 注意：这需要实现 FilterExecutor 类
+                // return std::make_unique<FilterExecutor>(std::move(child_executor), x->conds_);
+
+                // 临时解决方案：如果没有 FilterExecutor，可以将条件处理逻辑放在其他地方
+                throw InternalError("FilterExecutor not implemented for non-scan children");
+            }
         }
         default:
             break;
