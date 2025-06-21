@@ -86,7 +86,7 @@ public:
     inline void init_txn() {
         std::ifstream fin("txn_map.txt");
         if(fin) {
-            timestamp_t init_timestamp = 0;
+            timestamp_t init_timestamp;
             fin >> init_timestamp >> start_txn_id_;
             fin.close();
             next_timestamp_ = init_timestamp;

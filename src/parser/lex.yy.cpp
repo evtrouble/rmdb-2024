@@ -379,8 +379,8 @@ static void yynoreturn yy_fatal_error ( const char* msg  );
 	(yy_hold_char) = *yy_cp; \
 	*yy_cp = '\0'; \
 	(yy_c_buf_p) = yy_cp;
-#define YY_NUM_RULES 67
-#define YY_END_OF_BUFFER 68
+#define YY_NUM_RULES 68
+#define YY_END_OF_BUFFER 69
 /* This struct is not used in this scanner,
    but its presence is necessary. */
 struct yy_trans_info
@@ -390,10 +390,10 @@ struct yy_trans_info
 	};
 static const flex_int16_t yy_accept[247] =
     {   0,
-        0,    0,    0,    0,   68,   66,    6,    7,    7,   66,
-       60,   66,   66,   60,   66,   62,   60,   60,   61,   61,
+        0,    0,    0,    0,   69,   67,    6,    7,    7,   67,
+       60,   67,   67,   60,   66,   62,   60,   60,   61,   61,
        61,   61,   61,   61,   61,   61,   61,   61,   61,   61,
-       61,   61,   61,   61,   61,   61,   61,   61,   61,   66,
+       61,   61,   61,   61,   61,   61,   61,   61,   61,   67,
         3,    4,    6,    7,    0,   64,   62,    5,    0,    1,
        63,   58,   59,   57,   61,   61,   61,   51,   61,   61,
        42,   61,   61,   61,   61,   61,   61,   61,   61,   61,
@@ -1348,24 +1348,29 @@ YY_RULE_SETUP
     return VALUE_PATH;
 }
 	YY_BREAK
+case 66:
+YY_RULE_SETUP
+#line 142 "lex.l"
+{ return DIV; }
+	YY_BREAK
 /* EOF */
 case YY_STATE_EOF(INITIAL):
 case YY_STATE_EOF(STATE_COMMENT):
-#line 144 "lex.l"
+#line 145 "lex.l"
 { return T_EOF; }
 	YY_BREAK
 /* unexpected char */
-case 66:
-YY_RULE_SETUP
-#line 146 "lex.l"
-{ std::cerr << "Lexer Error: unexpected character " << yytext[0] << std::endl; }
-	YY_BREAK
 case 67:
 YY_RULE_SETUP
 #line 147 "lex.l"
+{ std::cerr << "Lexer Error: unexpected character " << yytext[0] << std::endl; }
+	YY_BREAK
+case 68:
+YY_RULE_SETUP
+#line 148 "lex.l"
 ECHO;
 	YY_BREAK
-#line 1369 "lex.yy.cpp"
+#line 1374 "lex.yy.cpp"
 
 	case YY_END_OF_BUFFER:
 		{
@@ -2331,5 +2336,5 @@ void yyfree (void * ptr )
 
 #define YYTABLES_NAME "yytables"
 
-#line 147 "lex.l"
+#line 148 "lex.l"
 

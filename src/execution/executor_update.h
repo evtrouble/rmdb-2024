@@ -156,11 +156,19 @@ public:
                 case ast::UpdateOp::SELF_DIV:
                     switch (set_col_meta->type)
                     {
-                        case TYPE_INT:*reinterpret_cast<int *>(rec.data + set_col_meta->offset) = 
-                            *reinterpret_cast<int *>(old_rec.data + set_col_meta->offset) / set_clause.rhs.int_val;
+                        case TYPE_INT:
+                            if(set_clause.rhs.int_val == 0) {
+                                throw DivisionByZeroError("Division by zero in update operation");
+                            }
+                            *reinterpret_cast<int *>(rec.data + set_col_meta->offset) = 
+                                *reinterpret_cast<int *>(old_rec.data + set_col_meta->offset) / set_clause.rhs.int_val;
                             break;
-                        case TYPE_FLOAT:*reinterpret_cast<float *>(rec.data + set_col_meta->offset) =
-                            *reinterpret_cast<float *>(old_rec.data + set_col_meta->offset) / set_clause.rhs.float_val;
+                        case TYPE_FLOAT:
+                            if(set_clause.rhs.float_val == 0) {
+                                throw DivisionByZeroError("Division by zero in update operation");
+                            }
+                            *reinterpret_cast<float *>(rec.data + set_col_meta->offset) =
+                                *reinterpret_cast<float *>(old_rec.data + set_col_meta->offset) / set_clause.rhs.float_val;
                             break;
                         default:
                             break; // TODO: Handle datetime addition if needed

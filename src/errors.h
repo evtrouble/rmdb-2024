@@ -197,3 +197,9 @@ class InvalidAggTypeError : public RMDBError
 public:
     InvalidAggTypeError(const std::string &col, const std::string &agg_type) : RMDBError(col + "Cannot use this type of aggregation function" + agg_type) {}
 };
+
+class DivisionByZeroError : public RMDBError
+{
+public:
+    DivisionByZeroError(const std::string &msg) : RMDBError(msg) {}
+};

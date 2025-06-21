@@ -31,7 +31,7 @@ using namespace ast;
 
 // keywords
 %token SHOW TABLES CREATE TABLE DROP DESC INSERT INTO VALUES DELETE FROM ASC ORDER GROUP BY HAVING LIMIT
-WHERE UPDATE SET SELECT INT CHAR FLOAT DATETIME INDEX AND SEMI JOIN ON IN NOT EXIT HELP 
+WHERE UPDATE SET SELECT INT CHAR FLOAT DATETIME INDEX AND SEMI JOIN ON IN NOT EXIT HELP DIV
 TXN_BEGIN TXN_COMMIT TXN_ABORT TXN_ROLLBACK ORDER_BY ENABLE_NESTLOOP ENABLE_SORTMERGE STATIC_CHECKPOINT
 SUM COUNT MAX MIN AVG AS
 // non-keywords
@@ -454,7 +454,7 @@ setClause:
     {
         $$ = std::make_shared<SetClause>($1, $5, UpdateOp::SELF_MUT);
     }
-    |   colName '=' colName '/' value
+    |   colName '=' colName DIV value
     {
         $$ = std::make_shared<SetClause>($1, $5, UpdateOp::SELF_DIV);
     }

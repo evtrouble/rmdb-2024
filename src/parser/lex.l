@@ -138,6 +138,7 @@ value_path [\.|\/][^ \t]+\.csv
     yylval->sv_str = yytext;
     return VALUE_PATH;
 }
+"\/" { return DIV; }
 
     /* EOF */
 <<EOF>> { return T_EOF; }

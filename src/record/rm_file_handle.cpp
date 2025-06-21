@@ -100,7 +100,7 @@ Rid RmFileHandle::insert_record(char *buf, Context *context)
         RmPageHandle page_handle = create_page_handle();
         
         // 2. 获取页面锁
-        std::unique_lock lock(page_handle.page->latch_);
+        std::lock_guard lock(page_handle.page->latch_);
         
         // 3. 在page handle中尝试找到空闲slot位置
         int slot_no = Bitmap::first_bit(false, page_handle.bitmap, file_hdr_.num_records_per_page);
