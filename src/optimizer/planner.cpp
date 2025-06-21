@@ -488,106 +488,47 @@ std::shared_ptr<Plan> pop_scan(int *scantbl, std::string &table, std::unordered_
 
 std::shared_ptr<Query> Planner::logical_optimization(std::shared_ptr<Query> query, Context *context)
 {
-    if (auto select = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse))
+    if (query->parse->Nodetype() == ast::TreeNodeType::SelectStmt)
     {
-        std::cout << "[Debug] 开始逻辑优化..." << std::endl;
+        auto select = std::static_pointer_cast<ast::SelectStmt>(query->parse);
 
         // 1. 收集所有选择条件
-        std::vector<Condition> &all_conds = query->conds;
-        std::cout << "[Debug] 总条件数: " << all_conds.size() << std::endl;
+        auto &all_conds = query->conds;
 
         std::vector<Condition> remaining_conds;
         std::vector<Condition> join_conds;
 
         // 2. 对每个选择条件进行分类和下推
-        for (auto it = all_conds.begin(); it != all_conds.end();)
+        remaining_conds.reserve(all_conds.size());
+        join_conds.reserve(all_conds.size());
+        for (auto& cond : all_conds)
         {
-            std::cout << "[Debug] 处理条件: ";
-            if (it->is_rhs_val)
-            {
-                std::cout << it->lhs_col.tab_name << "." << it->lhs_col.col_name
-                          << " " << get_op_string(it->op) << " " << "值比较" << std::endl;
-            }
-            else
-            {
-                std::cout << it->lhs_col.tab_name << "." << it->lhs_col.col_name
-                          << " " << get_op_string(it->op) << " "
-                          << it->rhs_col.tab_name << "." << it->rhs_col.col_name << std::endl;
-            }
-
             // 判断是否可以下推(只涉及一个表的条件可以下推)
-            if (it->is_rhs_val)
+            if (cond.is_rhs_val || cond.lhs_col.tab_name == cond.rhs_col.tab_name)
             {
-                std::cout << "[Debug] 单表条件，可以下推到表 " << it->lhs_col.tab_name << std::endl;
-                remaining_conds.push_back(*it);
-                it = all_conds.erase(it);
-            }
-            else if (it->lhs_col.tab_name == it->rhs_col.tab_name)
-            {
-                std::cout << "[Debug] 同一表的多列条件，可以下推到表 " << it->lhs_col.tab_name << std::endl;
-                remaining_conds.push_back(*it);
-                it = all_conds.erase(it);
+                remaining_conds.emplace_back(std::move(cond));
             }
             else
             {
-                // 检查是否是有效的连接条件
-                bool is_valid_join = false;
-                for (const auto &tab1 : query->tables)
-                {
-                    for (const auto &tab2 : query->tables)
-                    {
-                        if (tab1 != tab2 &&
-                            ((it->lhs_col.tab_name == tab1 && it->rhs_col.tab_name == tab2) ||
-                             (it->lhs_col.tab_name == tab2 && it->rhs_col.tab_name == tab1)))
-                        {
-                            is_valid_join = true;
-                            break;
-                        }
-                    }
-                    if (is_valid_join)
-                        break;
-                }
-
-                if (is_valid_join)
-                {
-                    std::cout << "[Debug] 多表连接条件: "
-                              << it->lhs_col.tab_name << " 和 "
-                              << it->rhs_col.tab_name << std::endl;
-                    join_conds.push_back(*it);
-                }
-                else
-                {
-                    std::cout << "[Debug] 无效的连接条件，跳过" << std::endl;
-                }
-                it = all_conds.erase(it);
+                join_conds.emplace_back(std::move(cond));
             }
         }
-
-        std::cout << "[Debug] 分类结果:" << std::endl;
-        std::cout << "  - 连接条件数: " << join_conds.size() << std::endl;
-        std::cout << "  - 可下推条件数: " << remaining_conds.size() << std::endl;
 
         // 3. 按表分组条件
         std::map<std::string, std::vector<Condition>> table_conds;
         for (const auto &cond : remaining_conds)
         {
-            std::cout << "[Debug] 将条件分配给表 " << cond.lhs_col.tab_name << std::endl;
-            table_conds[cond.lhs_col.tab_name].push_back(cond);
+            table_conds[cond.lhs_col.tab_name].emplace_back(cond);
         }
 
         // 4. 将分组后的条件存储回query对象
-        query->conds = join_conds;      // 保存连接条件
-        query->tab_conds = table_conds; // 保存下推的单表条件
-
-        std::cout << "[Debug] 逻辑优化完成" << std::endl;
-        std::cout << "  - 最终连接条件数: " << query->conds.size() << std::endl;
-        std::cout << "  - 最终表条件数: " << table_conds.size() << std::endl;
+        query->conds = std::move(join_conds);      // 保存连接条件
+        query->tab_conds = std::move(table_conds); // 保存下推的单表条件
 
         // 5. 如果是单表查询，将所有条件放回conds中
         if (query->tables.size() == 1)
         {
-            std::cout << "[Debug] 单表查询，所有条件放回conds" << std::endl;
-            query->conds = remaining_conds;
+            query->conds = std::move(remaining_conds);
         }
     }
     return query;
@@ -1302,20 +1243,20 @@ std::shared_ptr<Plan> Planner::generate_select_plan(std::shared_ptr<Query> query
         throw RMDBError("Invalid query object");
     }
 
-    auto select_stmt = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
-    if (!select_stmt)
+    if(query->parse->Nodetype() != ast::TreeNodeType::SelectStmt)
     {
+        // 如果parse不是SELECT语句，抛出错误
         throw RMDBError("Not a SELECT statement");
     }
+    auto select_stmt = std::static_pointer_cast<ast::SelectStmt>(query->parse);
 
     // 确保query对象包含表信息
     if (query->tables.empty())
     {
         // 从SELECT语句中获取表信息
-        query->tables.clear();
         for (const auto &tab_name : select_stmt->tabs)
         {
-            query->tables.push_back(tab_name);
+            query->tables.emplace_back(tab_name);
         }
     }
 
@@ -1337,35 +1278,26 @@ std::shared_ptr<Plan> Planner::generate_select_plan(std::shared_ptr<Query> query
                 tab_col.tab_name = col->tab_name;
             }
             tab_col.col_name = col->col_name;
-            query->cols.push_back(tab_col);
+            query->cols.emplace_back(std::move(tab_col));
         }
     }
 
     // 确保query对象包含条件信息
     if (query->conds.empty())
     {
-        std::cout << "[Debug] 处理SELECT语句中的条件" << std::endl;
-
         // 首先建立表名到别名的映射
-        std::map<std::string, std::string> tab_aliases;
-        std::map<std::string, std::string> alias_to_table; // 别名到表名的映射
+        std::unordered_map<std::string, std::string> alias_to_table; // 别名到表名的映射
         for (size_t i = 0; i < select_stmt->tabs.size(); ++i)
         {
             if (i < select_stmt->tab_aliases.size() && !select_stmt->tab_aliases[i].empty())
             {
-                std::cout << "[Debug] 表别名映射: " << select_stmt->tabs[i]
-                          << " -> " << select_stmt->tab_aliases[i] << std::endl;
-                tab_aliases[select_stmt->tab_aliases[i]] = select_stmt->tabs[i];
                 alias_to_table[select_stmt->tab_aliases[i]] = select_stmt->tabs[i];
             }
         }
 
         // 处理 JOIN 条件
-        std::cout << "[Debug] 处理 JOIN 条件" << std::endl;
         for (const auto &join_expr : select_stmt->jointree)
         {
-            std::cout << "[Debug] 处理 JOIN 表达式: " << join_expr->left << " JOIN " << join_expr->right << std::endl;
-
             // 处理 JOIN 表达式中的所有条件
             for (const auto &join_cond : join_expr->conds)
             {
@@ -1376,8 +1308,6 @@ std::shared_ptr<Plan> Planner::generate_select_plan(std::shared_ptr<Query> query
                 {
                     throw RMDBError("JOIN condition must be between two columns");
                 }
-
-                std::cout << "[Debug] 处理 JOIN 条件: " << lhs_col->col_name << std::endl;
 
                 Condition condition;
 
@@ -1426,22 +1356,13 @@ std::shared_ptr<Plan> Planner::generate_select_plan(std::shared_ptr<Query> query
                 }
                 condition.rhs_col.col_name = rhs_col->col_name;
 
-                std::cout << "[Debug] 添加 JOIN 条件: "
-                          << condition.lhs_col.tab_name << "." << condition.lhs_col.col_name
-                          << " = "
-                          << condition.rhs_col.tab_name << "." << condition.rhs_col.col_name
-                          << std::endl;
-
-                query->conds.push_back(condition);
+                query->conds.push_back(std::move(condition));
             }
         }
 
         // 处理 WHERE 条件
-        std::cout << "[Debug] 处理 WHERE 条件" << std::endl;
         for (const auto &cond : select_stmt->conds)
         {
-            std::cout << "[Debug] 处理 WHERE 条件: " << cond->lhs->col_name << std::endl;
-
             Condition condition;
 
             // 处理左侧列的表名
@@ -1509,48 +1430,30 @@ std::shared_ptr<Plan> Planner::generate_select_plan(std::shared_ptr<Query> query
                     }
                 }
                 condition.rhs_col.col_name = col->col_name;
-
-                std::cout << "[Debug] WHERE 条件: "
-                          << condition.lhs_col.tab_name << "." << condition.lhs_col.col_name
-                          << " " << get_op_string(condition.op) << " "
-                          << condition.rhs_col.tab_name << "." << condition.rhs_col.col_name
-                          << std::endl;
             }
             else if (auto int_lit = std::dynamic_pointer_cast<ast::IntLit>(cond->rhs))
             {
                 condition.is_rhs_val = true;
                 condition.rhs_val.type = TYPE_INT;
                 condition.rhs_val.int_val = int_lit->val;
-                std::cout << "[Debug] WHERE 条件: "
-                          << condition.lhs_col.tab_name << "." << condition.lhs_col.col_name
-                          << " " << get_op_string(condition.op) << " "
-                          << int_lit->val << " (INT)" << std::endl;
             }
             else if (auto float_lit = std::dynamic_pointer_cast<ast::FloatLit>(cond->rhs))
             {
                 condition.is_rhs_val = true;
                 condition.rhs_val.type = TYPE_FLOAT;
                 condition.rhs_val.float_val = float_lit->val;
-                std::cout << "[Debug] WHERE 条件: "
-                          << condition.lhs_col.tab_name << "." << condition.lhs_col.col_name
-                          << " " << get_op_string(condition.op) << " "
-                          << float_lit->val << " (FLOAT)" << std::endl;
             }
             else if (auto str_lit = std::dynamic_pointer_cast<ast::StringLit>(cond->rhs))
             {
                 condition.is_rhs_val = true;
                 condition.rhs_val.type = TYPE_STRING;
                 condition.rhs_val.str_val = str_lit->val;
-                std::cout << "[Debug] WHERE 条件: "
-                          << condition.lhs_col.tab_name << "." << condition.lhs_col.col_name
-                          << " " << get_op_string(condition.op) << " "
-                          << str_lit->val << " (STRING)" << std::endl;
             }
             else
             {
                 throw InternalError("Unsupported value type");
             }
-            query->conds.push_back(condition);
+            query->conds.emplace_back(std::move(condition));
         }
     }
 
@@ -1691,19 +1594,18 @@ QueryColumnRequirement Planner::analyze_column_requirements(std::shared_ptr<Quer
 {
     QueryColumnRequirement requirements;
     // 如果不是SELECT语句，返回空的需求
-    auto select_stmt = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
-    if (!select_stmt)
+    if(!query || !query->parse || query->parse->Nodetype() != ast::TreeNodeType::SelectStmt)
     {
         return requirements;
     }
+    auto select_stmt = std::static_pointer_cast<ast::SelectStmt>(query->parse);
+    
     // 建立表名到别名的映射
-    std::map<std::string, std::string> tab_to_alias;
     std::map<std::string, std::string> alias_to_tab;
     for (size_t i = 0; i < select_stmt->tabs.size(); i++)
     {
         if (i < select_stmt->tab_aliases.size() && !select_stmt->tab_aliases[i].empty())
         {
-            tab_to_alias[select_stmt->tabs[i]] = select_stmt->tab_aliases[i];
             alias_to_tab[select_stmt->tab_aliases[i]] = select_stmt->tabs[i];
         }
     }
@@ -1718,7 +1620,7 @@ QueryColumnRequirement Planner::analyze_column_requirements(std::shared_ptr<Quer
             {
                 // 使用表的原始名称，而不是别名
                 TabCol tab_col{table, col.name};
-                requirements.select_cols.insert(tab_col);
+                requirements.select_cols.emplace(std::move(tab_col));
             }
         }
     }
@@ -1727,11 +1629,12 @@ QueryColumnRequirement Planner::analyze_column_requirements(std::shared_ptr<Quer
         for (const auto &col : query->cols)
         {
             std::string real_tab_name = col.tab_name;
-            if (alias_to_tab.find(col.tab_name) != alias_to_tab.end())
+            auto iter = alias_to_tab.find(col.tab_name);
+            if (iter != alias_to_tab.end())
             {
-                real_tab_name = alias_to_tab[col.tab_name];
+                real_tab_name = iter->second;
             }
-            requirements.select_cols.insert(TabCol{real_tab_name, col.col_name});
+            requirements.select_cols.emplace(TabCol{real_tab_name, col.col_name});
         }
     }
 

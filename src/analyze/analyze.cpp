@@ -20,7 +20,6 @@ See the Mulan PSL v2 for more details. */
  */
 std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse, Context *context)
 {
-    // std::cout << "[Debug] Starting analysis" << std::endl;
     std::shared_ptr<Query> query = std::make_shared<Query>();
     std::unordered_map<std::string, TabCol> alias_to_col;
 
@@ -30,26 +29,15 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
     {
     case ast::TreeNodeType::SelectStmt:
     {
-        // std::cout << "[Debug] Analyzing SELECT statement" << std::endl;
         auto x = std::static_pointer_cast<ast::SelectStmt>(parse);
         // 处理表名
         query->tables = std::move(x->tabs);
-        // std::cout << "[Debug] Tables in query: " << query->tables.size() << std::endl;
 
-        for (auto &tab_name : query->tables)
-        {
-            // std::cout << "[Debug] Table: " << tab_name << std::endl;
-            if (!sm_manager_->db_.is_table(tab_name))
-            {
-                throw TableNotFoundError(tab_name);
-            }
-        }
         // 假设AST中的表信息包含别名，这里需要根据你的AST结构调整
         // 建立表别名映射关系
         for (size_t i = 0; i < query->tables.size(); ++i)
         {
-            std::string table_name = query->tables[i];
-            // std::cout << "[Debug] Table: " << table_name << std::endl;
+            std::string& table_name = query->tables[i];
 
             // 检查表是否存在
             if (!sm_manager_->db_.is_table(table_name))
@@ -59,27 +47,19 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
 
             // 如果AST中有表别名信息，在这里建立映射
             // 假设 x->table_aliases 包含别名信息，需要根据实际AST结构调整
-            i = i;
-            // std::cout << "i: " << i << std::endl;
-
             if (x->tab_aliases.size() > i && !x->tab_aliases[i].empty())
             {
-                // std::cout << "i: " << i << std::endl;
-                // std::cout << "x->tab_aliases[i] " << x->tab_aliases[i] << std::endl;
-                // std::cout << "table_name " << table_name << std::endl;
-                std::string alias = x->tab_aliases[i];
-                table_alias_map_[alias] = table_name;
-                // std::cout << "[Debug] Table alias mapping: " << alias << " -> " << table_name << std::endl;
+                std::string& alias = x->tab_aliases[i];
+                table_alias_map_.emplace(alias, table_name);
             }
             // 表名也可以作为自己的别名
-            table_alias_map_[table_name] = table_name;
+            table_alias_map_.emplace(table_name, table_name);
         }
+
         // 处理target list，再target list中添加上表名，例如 a.id
         query->cols.reserve(x->cols.size());
-        // std::cout << "[Debug] Processing columns, count: " << x->cols.size() << std::endl;
         for (auto &sv_sel_col : x->cols)
         {
-            // std::cout << "[Debug] Column: " << sv_sel_col->col_name << std::endl;
             TabCol col(sv_sel_col->tab_name, sv_sel_col->col_name, sv_sel_col->agg_type, sv_sel_col->alias);
             query->cols.emplace_back(col);
             if (ast::AggFuncType::NO_TYPE != sv_sel_col->agg_type)
@@ -87,7 +67,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
                 x->has_agg = true;
             }
             // 记录别名映射
-            if (!sv_sel_col->alias.empty())
+            if (sv_sel_col->alias.size())
             {
                 alias_to_col[sv_sel_col->alias] = col;
             }
@@ -98,7 +78,6 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
         if (query->cols.empty())
         {
             // select all columns
-            // std::cout << "[Debug] SELECT *, adding all columns" << std::endl;
             query->cols.reserve(all_cols.size());
             for (auto &col : all_cols)
             {
@@ -109,7 +88,6 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
         else
         {
             // infer table name from column name
-            // std::cout << "[Debug] Inferring table names for columns" << std::endl;
             for (auto &sel_col : query->cols)
             {
                 if (sel_col.col_name != "*")                                // 避免count(*)检查
@@ -249,7 +227,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
                 if (alias_to_col.find(col->col_name) != alias_to_col.end())
                 {
                     // 如果是别名，替换为真实列
-                    TabCol real_col = alias_to_col[col->col_name];
+                    TabCol& real_col = alias_to_col[col->col_name];
                     col->tab_name = real_col.tab_name;
                     col->col_name = real_col.col_name;
                     col->agg_type = real_col.aggFuncType;
