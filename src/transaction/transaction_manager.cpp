@@ -75,6 +75,13 @@ void TransactionManager::commit(Context *context, LogManager *log_manager)
     }
     write_set->clear(); // 清空写集
 
+    auto write_index_set = txn->get_write_index_set();
+    for(auto write : *write_index_set)
+    {
+        delete write;
+    }
+    write_index_set->clear(); // 清空写集
+
     txn->set_commit_ts(++next_timestamp_); // 设置提交时间戳
 
     // 2. 释放所有锁
@@ -169,6 +176,21 @@ void TransactionManager::abort(Context *context, LogManager *log_manager)
                 }
                 break;
             }
+            default:
+                throw InternalError("Unknown write type in abort");
+        }
+        delete write_record;
+    }
+
+    auto write_index_set = txn->get_write_index_set();
+    while (write_index_set->size())
+    {
+        auto write_record = write_index_set->back(); // 获取最后一个写记录
+        write_index_set->pop_back();      // 移除最后一个写记录
+        Rid rid = write_record->GetRid();
+        // 根据写操作类型进行回滚
+        switch (write_record->GetWriteType())
+        {
             case WType::IX_INSERT_TUPLE:
                 sm_manager_->get_index_handle(write_record->GetTableName())
                     ->delete_entry(write_record->GetRecord().data, rid, txn, true);
@@ -177,9 +199,12 @@ void TransactionManager::abort(Context *context, LogManager *log_manager)
                 sm_manager_->get_index_handle(write_record->GetTableName())
                     ->insert_entry(write_record->GetRecord().data, rid, txn, true);
                 break;
+            default:
+                throw InternalError("Unknown write type in abort");
         }
         delete write_record;
     }
+    
     // 2. 释放所有锁
     auto lock_set = txn->get_lock_set();
     for (auto &lock_data_id : *lock_set)
