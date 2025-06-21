@@ -26,5 +26,6 @@ enum class ExecutionType
         Projection,
         Select,
         SeqScan,
-        Update
+        Update,
+        EXPLAIN
 };

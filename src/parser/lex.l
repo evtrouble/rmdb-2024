@@ -14,6 +14,9 @@
 #include "ast.h"
 #include "yacc.tab.h"
 #include <iostream>
+#include <cmath>
+#include <sstream>
+#include <iomanip>
 
 // automatically update location
 #define YY_USER_ACTION \
@@ -27,6 +30,10 @@
             yylloc->last_column++; \
         } \
     }
+
+// 浮点数精度常量
+const int FLOAT_PRECISION = 6;
+const float FLOAT_PRECISION_MULTIPLIER = std::pow(10, FLOAT_PRECISION);
 
 %}
 
@@ -57,6 +64,7 @@ value_path [\.|\/][^ \t]+\.csv
 {new_line} { /* ignore new line */ }
     /* keywords */
 "SHOW" { return SHOW; }
+"EXPLAIN" { return EXPLAIN; }
 "BEGIN" { return TXN_BEGIN; }
 "COMMIT" { return TXN_COMMIT; }
 "ABORT" { return TXN_ABORT; }
@@ -127,7 +135,10 @@ value_path [\.|\/][^ \t]+\.csv
     return VALUE_INT;
 }
 {value_float} {
-    yylval->sv_float = atof(yytext);
+    float raw_val = atof(yytext);
+    // 对浮点数进行精度处理
+    yylval->sv_float = std::round(raw_val * FLOAT_PRECISION_MULTIPLIER) / FLOAT_PRECISION_MULTIPLIER;
+    yylval->sv_str = yytext;  // 保存原始文本
     return VALUE_FLOAT;
 }
 {value_string} {

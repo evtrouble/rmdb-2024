@@ -17,6 +17,7 @@ See the Mulan PSL v2 for more details. */
 #include "executor_projection.h"
 #include "executor_seq_scan.h"
 #include "executor_update.h"
+#include "executor_explain.h"
 #include "index/ix.h"
 #include "record_printer.h"
 
@@ -47,7 +48,29 @@ const char *help_info = "Supported SQL syntax:\n"
 // 主要负责执行DDL语句
 void QlManager::run_mutli_query(std::shared_ptr<Plan> plan, Context *context)
 {
-    if (auto x = std::static_pointer_cast<DDLPlan>(plan))
+    if (auto x = std::dynamic_pointer_cast<ExplainPlan>(plan))
+    {
+        // 创建ExplainExecutor来处理EXPLAIN语句
+        ExplainExecutor executor(x);
+        executor.init();
+
+        // 获取执行计划的字符串表示
+        std::string result = executor.get_result();
+
+        // 将结果写入context
+        memcpy(context->data_send_ + *(context->offset_), result.c_str(), result.length());
+        *(context->offset_) += result.length();
+
+        // 将结果写入output.txt文件
+        int fd = ::open("output.txt", O_WRONLY | O_CREAT | O_APPEND, 0644);
+        if (fd != -1)
+        {
+            std::string buffer = result;
+            [[maybe_unused]] ssize_t discard = ::write(fd, buffer.data(), buffer.size());
+            close(fd);
+        }
+    }
+    else if (auto x = std::dynamic_pointer_cast<DDLPlan>(plan))
     {
         switch (x->tag)
         {
@@ -148,12 +171,12 @@ void QlManager::run_cmd_utility(std::shared_ptr<Plan> plan, txn_id_t *txn_id, Co
         {
         case ast::SetKnobType::EnableNestLoop:
         {
-            planner_->set_enable_nestedloop_join(x->bool_value_);
+            planner_->set_enable_nestedloop_join(x->bool_val_);
             break;
         }
         case ast::SetKnobType::EnableSortMerge:
         {
-            planner_->set_enable_sortmerge_join(x->bool_value_);
+            planner_->set_enable_sortmerge_join(x->bool_val_);
             break;
         }
         default:

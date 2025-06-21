@@ -14,18 +14,19 @@ See the Mulan PSL v2 for more details. */
 /**
  * @description: analyze阶段，需要获得脏页表（DPT）和未完成的事务列表（ATT）
  */
-void RecoveryManager::analyze() {
- 
+void RecoveryManager::analyze()
+{
 }
 
 /**
  * @description: 重做所有未落盘的操作
  */
-void RecoveryManager::redo() {
-    for(auto& pair : sm_manager_->fhs_) {
-        // 确保每个表的文件大小足够
-        pair.second->ensure_file_size();
-    }
+void RecoveryManager::redo()
+{
+    // for(auto& pair : sm_manager_->fhs_) {
+    //     // 确保每个表的文件大小足够
+    //     pair.second->ensure_file_size();
+    // }
 
     long long offset = 0;
     LogRecord *log_record = nullptr;
@@ -259,15 +260,17 @@ void RecoveryManager::undo() {
     buffer_pool_manager_->force_flush_all_pages(); // 确保所有脏页都被刷新到磁盘
 }
 
-LogRecord *RecoveryManager::read_log(long long offset) {
+LogRecord *RecoveryManager::read_log(long long offset)
+{
     // 读取日志记录头
     char log_header[LOG_HEADER_SIZE];
-    if(disk_manager_->read_log(log_header, LOG_HEADER_SIZE, offset) == 0){
+    if (disk_manager_->read_log(log_header, LOG_HEADER_SIZE, offset) == 0)
+    {
         return nullptr;
     }
     // 解析日志记录头
-    LogType log_type = *reinterpret_cast<const LogType*>(log_header); 
-    uint32_t log_size = *reinterpret_cast<const uint32_t*>(log_header + OFFSET_LOG_TOT_LEN);
+    LogType log_type = *reinterpret_cast<const LogType *>(log_header);
+    uint32_t log_size = *reinterpret_cast<const uint32_t *>(log_header + OFFSET_LOG_TOT_LEN);
     // 读取日志记录
     char log_data[log_size];
     disk_manager_->read_log(log_data, log_size, offset);
@@ -275,27 +278,28 @@ LogRecord *RecoveryManager::read_log(long long offset) {
     LogRecord *log_record = nullptr;
     switch (log_type)
     {
-        case BEGIN:
-            log_record = new BeginLogRecord();
-            break;
-        case COMMIT:
-            log_record = new CommitLogRecord();
-            break;
-        case ABORT:
-            log_record = new AbortLogRecord();
-            break;
-        case UPDATE:
-            log_record = new UpdateLogRecord();
-            break;
-        case INSERT:
-            log_record = new InsertLogRecord();
-            break;
-        case DELETE:
-            log_record = new DeleteLogRecord();
-            break;
+    case BEGIN:
+        log_record = new BeginLogRecord();
+        break;
+    case COMMIT:
+        log_record = new CommitLogRecord();
+        break;
+    case ABORT:
+        log_record = new AbortLogRecord();
+        break;
+    case UPDATE:
+        log_record = new UpdateLogRecord();
+        break;
+    case INSERT:
+        log_record = new InsertLogRecord();
+        break;
+    case DELETE:
+        log_record = new DeleteLogRecord();
+        break;
     }
 
-    if(log_record != nullptr){
+    if (log_record != nullptr)
+    {
         log_record->deserialize(log_data);
     }
     return log_record;

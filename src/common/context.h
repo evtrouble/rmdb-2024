@@ -33,6 +33,7 @@ struct QueryFlags {
     bool joinFlag = false;
     bool orderbyFlag = false;
     bool aggFlag = false;
+    bool isStarFlag = false;
 };
 
 class Context {
@@ -61,6 +62,9 @@ public:
         queryFlags_.aggFlag = value;
     }
 
+    inline void setIsStarFlag(bool value) {
+        queryFlags_.isStarFlag = value;
+    }
     // 判断 join 标志位的接口
     inline bool hasJoinFlag() const {
         return queryFlags_.joinFlag;
@@ -69,6 +73,10 @@ public:
     // 判断 orderby 标志位的接口
     inline bool hasOrderbyFlag() const {
         return queryFlags_.orderbyFlag;
+    }
+
+    inline bool hasIsStarFlag() const {
+        return queryFlags_.isStarFlag;
     }
 
     // 判断 agg 标志位的接口

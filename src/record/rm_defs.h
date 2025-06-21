@@ -116,8 +116,10 @@ struct RmRecord
     void Deserialize(const char *data_)
     {
         int newSize = *reinterpret_cast<const int *>(data_);
-        if (size != newSize) {
-            if (allocated_ && data != nullptr) {
+        if (size != newSize)
+        {
+            if (allocated_ && data != nullptr)
+            {
                 delete[] data;
             }
             size = newSize;

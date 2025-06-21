@@ -4,6 +4,14 @@
 #include <iostream>
 #include <memory>
 #include <cstring>
+#include <cmath>
+#include <sstream>
+#include <iomanip>
+
+// 浮点数精度常量
+const int FLOAT_PRECISION = 6;
+const float FLOAT_PRECISION_MULTIPLIER = std::pow(10, FLOAT_PRECISION);
+
 int yylex(YYSTYPE *yylval, YYLTYPE *yylloc);
 
 void yyerror(YYLTYPE *locp, const char* s) {
@@ -31,7 +39,7 @@ using namespace ast;
 
 // keywords
 %token SHOW TABLES CREATE TABLE DROP DESC INSERT INTO VALUES DELETE FROM ASC ORDER GROUP BY HAVING LIMIT
-WHERE UPDATE SET SELECT INT CHAR FLOAT DATETIME INDEX AND SEMI JOIN ON IN NOT EXIT HELP DIV
+WHERE UPDATE SET SELECT INT CHAR FLOAT DATETIME INDEX AND SEMI JOIN ON IN NOT EXIT HELP DIV EXPLAIN
 TXN_BEGIN TXN_COMMIT TXN_ABORT TXN_ROLLBACK ORDER_BY ENABLE_NESTLOOP ENABLE_SORTMERGE STATIC_CHECKPOINT
 SUM COUNT MAX MIN AVG AS
 // non-keywords
@@ -96,6 +104,10 @@ stmt:
     |   dml
     |   txnStmt
     |   setStmt
+    |   EXPLAIN dml
+    {
+        $$ = std::make_shared<ExplainStmt>($2);
+    }
     ;
 
 txnStmt:
@@ -177,7 +189,7 @@ dml:
     }
     |   SELECT selector FROM tableList optWhereClause opt_groupby_clause opt_having_clause opt_order_clause opt_limit_clause
     {
-        $$= std::make_shared<SelectStmt>(
+        $$ = std::make_shared<SelectStmt>(
             $2,             // selector
             $4.tables,      // 表列表
             $4.jointree,    // 连接树
@@ -185,8 +197,9 @@ dml:
             $6,             // groupby
             $7,             // having
             $8,             // order
-            $9              // limit
-    );
+            $9,             // limit
+            $4.aliases      // 表别名
+        );
     }
     ;
 
@@ -256,6 +269,7 @@ value:
     }
     |   VALUE_FLOAT
     {
+        // 浮点数在词法分析阶段已经进行了精度处理
         $$ = std::make_shared<FloatLit>($1);
     }
     |   VALUE_STRING
@@ -472,12 +486,29 @@ tableList:
         tbName
     {
         $$.tables = {$1};
+        $$.aliases = {""};
+        $$.jointree = {};
+    }
+    |   tbName ALIAS
+    {
+        $$.tables = {$1};
+        $$.aliases = {$2};
         $$.jointree = {};
     }
     |   tableList ',' tbName
     {
         $$.tables = $1.tables;
+        $$.aliases = $1.aliases;
         $$.tables.emplace_back($3);
+        $$.aliases.emplace_back("");
+        $$.jointree = $1.jointree;
+    }
+    |   tableList ',' tbName ALIAS
+    {
+        $$.tables = $1.tables;
+        $$.aliases = $1.aliases;
+        $$.tables.emplace_back($3);
+        $$.aliases.emplace_back($4);
         $$.jointree = $1.jointree;
     }
     |   tableList JOIN tbName optJoinClause
@@ -489,7 +520,24 @@ tableList:
             INNER_JOIN
         );
         $$.tables = $1.tables;
+        $$.aliases = $1.aliases;
         $$.tables.emplace_back($3);
+        $$.aliases.emplace_back("");
+        $$.jointree = $1.jointree;
+        $$.jointree.emplace_back(join_expr);
+    }
+    |   tableList JOIN tbName ALIAS optJoinClause
+    {
+        auto join_expr = std::make_shared<JoinExpr>(
+            $1.tables.back(),
+            $3,
+            $5,
+            INNER_JOIN
+        );
+        $$.tables = $1.tables;
+        $$.aliases = $1.aliases;
+        $$.tables.emplace_back($3);
+        $$.aliases.emplace_back($4);
         $$.jointree = $1.jointree;
         $$.jointree.emplace_back(join_expr);
     }
@@ -498,11 +546,28 @@ tableList:
         auto join_expr = std::make_shared<JoinExpr>(
             $1.tables.back(),
             $4,
-            $5, 
+            $5,
             SEMI_JOIN
         );
         $$.tables = $1.tables;
+        $$.aliases = $1.aliases;
         $$.tables.emplace_back($4);
+        $$.aliases.emplace_back("");
+        $$.jointree = $1.jointree;
+        $$.jointree.emplace_back(join_expr);
+    }
+    |   tableList SEMI JOIN tbName ALIAS optJoinClause
+    {
+        auto join_expr = std::make_shared<JoinExpr>(
+            $1.tables.back(),
+            $4,
+            $6,
+            SEMI_JOIN
+        );
+        $$.tables = $1.tables;
+        $$.aliases = $1.aliases;
+        $$.tables.emplace_back($4);
+        $$.aliases.emplace_back($5);
         $$.jointree = $1.jointree;
         $$.jointree.emplace_back(join_expr);
     }
@@ -521,7 +586,7 @@ opt_limit_clause:
     {
         $$ = $2;
     }
-    |   /* epsilon */ 
+    |   /* epsilon */
     {
         $$ = -1;
     }
@@ -561,8 +626,8 @@ opt_asc_desc:
     ;
 
 set_knob_type:
-    ENABLE_NESTLOOP { $$ = EnableNestLoop; }
-    |   ENABLE_SORTMERGE { $$ = EnableSortMerge; }
+    ENABLE_NESTLOOP { $$ = ast::SetKnobType::EnableNestLoop; }
+    |   ENABLE_SORTMERGE { $$ = ast::SetKnobType::EnableSortMerge; }
     ;
 
 tbName: IDENTIFIER;

@@ -74,6 +74,14 @@
 #include <iostream>
 #include <memory>
 #include <cstring>
+#include <cmath>
+#include <sstream>
+#include <iomanip>
+
+// 浮点数精度常量
+const int FLOAT_PRECISION = 6;
+const float FLOAT_PRECISION_MULTIPLIER = std::pow(10, FLOAT_PRECISION);
+
 int yylex(YYSTYPE *yylval, YYLTYPE *yylloc);
 
 void yyerror(YYLTYPE *locp, const char* s) {
@@ -558,7 +566,7 @@ union yyalloc
 #endif /* !YYCOPY_NEEDED */
 
 /* YYFINAL -- State number of the termination state.  */
-#define YYFINAL  52
+#define YYFINAL  54
 /* YYLAST -- Last index in YYTABLE.  */
 #define YYLAST   203
 
@@ -568,10 +576,12 @@ union yyalloc
 #define YYNNTS  38
 /* YYNRULES -- Number of rules.  */
 #define YYNRULES  105
+#define YYNRULES  105
 /* YYNSTATES -- Number of states.  */
 #define YYNSTATES  201
 
 /* YYMAXUTOK -- Last valid token kind.  */
+#define YYMAXUTOK   316
 #define YYMAXUTOK   316
 
 
@@ -617,6 +627,7 @@ static const yytype_int8 yytranslate[] =
       25,    26,    27,    28,    29,    30,    31,    32,    33,    34,
       35,    36,    37,    38,    39,    40,    41,    42,    43,    44,
       45,    46,    47,    48,    49,    50,    51,    52,    53,    54,
+      55,    56,    57,    58,    59,    60,    61
       55,    56,    57,    58,    59,    60,    61
 };
 
@@ -682,6 +693,7 @@ yysymbol_name (yysymbol_kind_t yysymbol)
 #define yypact_value_is_default(Yyn) \
   ((Yyn) == YYPACT_NINF)
 
+#define YYTABLE_NINF (-104)
 #define YYTABLE_NINF (-104)
 
 #define yytable_value_is_error(Yyn) \
@@ -788,6 +800,7 @@ static const yytype_int16 yytable[] =
      200,   147,     0,    97
 };
 
+static const yytype_int16 yycheck[] =
 static const yytype_int16 yycheck[] =
 {
        9,     4,    20,    61,     7,   171,     6,    81,   174,     4,
@@ -1891,7 +1904,7 @@ yyreduce:
   case 27: /* dml: SELECT selector FROM tableList optWhereClause opt_groupby_clause opt_having_clause opt_order_clause opt_limit_clause  */
 #line 179 "yacc.y"
     {
-        (yyval.sv_node)= std::make_shared<SelectStmt>(
+        (yyval.sv_node) = std::make_shared<SelectStmt>(
             (yyvsp[-7].sv_cols),             // selector
             (yyvsp[-5].sv_table_list).tables,      // 表列表
             (yyvsp[-5].sv_table_list).jointree,    // 连接树
@@ -1899,8 +1912,9 @@ yyreduce:
             (yyvsp[-3].sv_cols),             // groupby
             (yyvsp[-2].sv_conds),             // having
             (yyvsp[-1].sv_orderby),             // order
-            (yyvsp[0].sv_int)              // limit
-    );
+            (yyvsp[0].sv_int),             // limit
+            (yyvsp[-5].sv_table_list).aliases      // 表别名
+        );
     }
 #line 1906 "yacc.tab.cpp"
     break;
@@ -2004,6 +2018,7 @@ yyreduce:
   case 40: /* value: VALUE_FLOAT  */
 #line 258 "yacc.y"
     {
+        // 浮点数在词法分析阶段已经进行了精度处理
         (yyval.sv_val) = std::make_shared<FloatLit>((yyvsp[0].sv_float));
     }
 #line 2010 "yacc.tab.cpp"
@@ -2353,6 +2368,7 @@ yyreduce:
 #line 473 "yacc.y"
     {
         (yyval.sv_table_list).tables = {(yyvsp[0].sv_str)};
+        (yyval.sv_table_list).aliases = {""};
         (yyval.sv_table_list).jointree = {};
     }
 #line 2359 "yacc.tab.cpp"
@@ -2362,7 +2378,9 @@ yyreduce:
 #line 478 "yacc.y"
     {
         (yyval.sv_table_list).tables = (yyvsp[-2].sv_table_list).tables;
+        (yyval.sv_table_list).aliases = (yyvsp[-2].sv_table_list).aliases;
         (yyval.sv_table_list).tables.emplace_back((yyvsp[0].sv_str));
+        (yyval.sv_table_list).aliases.emplace_back("");
         (yyval.sv_table_list).jointree = (yyvsp[-2].sv_table_list).jointree;
     }
 #line 2369 "yacc.tab.cpp"
@@ -2378,7 +2396,9 @@ yyreduce:
             INNER_JOIN
         );
         (yyval.sv_table_list).tables = (yyvsp[-3].sv_table_list).tables;
+        (yyval.sv_table_list).aliases = (yyvsp[-3].sv_table_list).aliases;
         (yyval.sv_table_list).tables.emplace_back((yyvsp[-1].sv_str));
+        (yyval.sv_table_list).aliases.emplace_back("");
         (yyval.sv_table_list).jointree = (yyvsp[-3].sv_table_list).jointree;
         (yyval.sv_table_list).jointree.emplace_back(join_expr);
     }
@@ -2391,11 +2411,13 @@ yyreduce:
         auto join_expr = std::make_shared<JoinExpr>(
             (yyvsp[-4].sv_table_list).tables.back(),
             (yyvsp[-1].sv_str),
-            (yyvsp[0].sv_conds), 
+            (yyvsp[0].sv_conds),
             SEMI_JOIN
         );
         (yyval.sv_table_list).tables = (yyvsp[-4].sv_table_list).tables;
+        (yyval.sv_table_list).aliases = (yyvsp[-4].sv_table_list).aliases;
         (yyval.sv_table_list).tables.emplace_back((yyvsp[-1].sv_str));
+        (yyval.sv_table_list).aliases.emplace_back("");
         (yyval.sv_table_list).jointree = (yyvsp[-4].sv_table_list).jointree;
         (yyval.sv_table_list).jointree.emplace_back(join_expr);
     }

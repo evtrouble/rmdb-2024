@@ -1,0 +1,160 @@
+#!/usr/bin/env python3
+"""
+SQL客户端脚本
+用于向RMDB服务器发送SQL命令并记录响应
+"""
+
+import os
+import socket
+import time
+from datetime import datetime
+from typing import Tuple, List
+
+class SQLClient:
+    def __init__(self, host: str = "127.0.0.1", port: int = 8765):
+        self.server_host = host
+        self.server_port = port
+        self.buffer_size = 8192
+        self.log_dir = "sql_logs"
+
+        # 确保日志目录存在
+        if not os.path.exists(self.log_dir):
+            os.makedirs(self.log_dir)
+
+        # 创建新的日志文件
+        self.log_file = os.path.join(
+            self.log_dir,
+            f"sql_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        )
+        self.init_log_file()
+
+    def init_log_file(self):
+        """初始化日志文件"""
+        with open(self.log_file, 'w', encoding='utf-8') as f:
+            f.write("=" * 80 + "\n")
+            f.write("SQL命令和响应日志\n")
+            f.write(f"开始时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write("=" * 80 + "\n\n")
+
+    def log_interaction(self, sql: str, success: bool, response: str, context: str = ""):
+        """记录SQL交互到日志文件"""
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+
+        with open(self.log_file, 'a', encoding='utf-8') as f:
+            if context:
+                f.write(f"[{timestamp}] {context}\n")
+            f.write("-" * 50 + "\n")
+            f.write(f"SQL命令: {sql}\n")
+            f.write(f"执行状态: {'成功' if success else '失败'}\n")
+            f.write(f"服务器响应: {response}\n")
+            f.write("-" * 50 + "\n\n")
+
+    def send_sql(self, sql: str, timeout: int = 30) -> Tuple[bool, str]:
+        """发送单条SQL命令到服务器"""
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                sock.settimeout(timeout)
+                sock.connect((self.server_host, self.server_port))
+                sock.sendall((sql + '\0').encode('utf-8'))
+                data = sock.recv(self.buffer_size)
+                response = data.decode('utf-8').strip()
+
+                # 记录SQL交互
+                self.log_interaction(sql, True, response)
+
+                return True, response
+        except Exception as e:
+            error_msg = str(e)
+
+            # 记录失败的SQL交互
+            self.log_interaction(sql, False, error_msg)
+
+            return False, error_msg
+
+    def execute_sql_file(self, sql_file: str) -> bool:
+        """执行SQL文件中的所有命令"""
+        print(f"\n执行SQL文件: {sql_file}")
+
+        if not os.path.exists(sql_file):
+            print(f"错误: SQL文件不存在 - {sql_file}")
+            return False
+
+        try:
+            with open(sql_file, 'r') as f:
+                content = f.read()
+
+            # 将内容按分号分割成单独的SQL语句
+            # 过滤掉空语句和注释
+            queries = []
+            current_query = []
+
+            for line in content.split('\n'):
+                line = line.strip()
+                if not line or line.startswith('--'):
+                    continue
+
+                current_query.append(line)
+                if line.endswith(';'):
+                    query = ' '.join(current_query)
+                    if query.strip(';').strip():  # 确保去掉分号后还有内容
+                        queries.append(query)
+                    current_query = []
+
+            # 检查是否有未完成的查询
+            if current_query:
+                remaining_query = ' '.join(current_query)
+                if remaining_query.strip():
+                    print(f"警告: 发现未以分号结尾的SQL语句: {remaining_query}")
+
+            total_queries = len(queries)
+            print(f"准备执行 {total_queries} 个SQL命令")
+
+            success_count = 0
+            for i, query in enumerate(queries, 1):
+                success, response = self.send_sql(query)
+                if success:
+                    success_count += 1
+
+                if i % 50 == 0 or i == total_queries:
+                    print(f"已执行 {i}/{total_queries} 个命令 (成功: {success_count})")
+
+            success_rate = (success_count / total_queries) * 100 if total_queries > 0 else 0
+            print(f"\n执行完成: 总计 {total_queries} 个命令, 成功率 {success_rate:.1f}%")
+            return True
+
+        except Exception as e:
+            print(f"执行SQL文件时发生错误: {e}")
+            return False
+
+def main():
+    import argparse
+
+    parser = argparse.ArgumentParser(description='RMDB SQL客户端')
+    parser.add_argument('--host', default='127.0.0.1', help='服务器主机名 (默认: 127.0.0.1)')
+    parser.add_argument('--port', type=int, default=8765, help='服务器端口 (默认: 8765)')
+    parser.add_argument('--file', help='要执行的SQL文件路径')
+    parser.add_argument('--sql', help='要执行的SQL命令')
+
+    args = parser.parse_args()
+
+    client = SQLClient(args.host, args.port)
+
+    if args.file:
+        client.execute_sql_file(args.file)
+    elif args.sql:
+        success, response = client.send_sql(args.sql)
+        if success:
+            print("执行成功!")
+            print("服务器响应:", response)
+        else:
+            print("执行失败!")
+            print("错误信息:", response)
+    else:
+        print("请使用 --file 指定SQL文件或使用 --sql 指定SQL命令")
+
+    # 输出日志信息
+    print("\n日志信息:")
+    print(f"日志文件: {os.path.abspath(client.log_file)}")
+
+if __name__ == "__main__":
+    main()

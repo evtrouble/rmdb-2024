@@ -11,6 +11,7 @@ See the Mulan PSL v2 for more details. */
 #pragma once
 
 #include <map>
+#include <iostream>
 
 #include "errors.h"
 #include "execution/execution.h"
@@ -20,17 +21,33 @@ See the Mulan PSL v2 for more details. */
 #include "transaction/transaction_manager.h"
 #include "planner.h"
 #include "plan.h"
+#include "execution/execution_manager.h"
+#include "record/rm_file_handle.h"
+#include <memory>
+#include <vector>
+
+// 添加TabCol的比较运算符
+bool operator==(const TabCol &lhs, const TabCol &rhs)
+{
+    return lhs.tab_name == rhs.tab_name && lhs.col_name == rhs.col_name;
+}
 
 class Optimizer
 {
 private:
     SmManager *sm_manager_;
     Planner *planner_;
+    std::map<std::string, std::unique_ptr<RmFileHandle>> fhs_;
 
 public:
     Optimizer(SmManager *sm_manager, Planner *planner)
         : sm_manager_(sm_manager), planner_(planner)
     {
+        // 从SmManager获取文件句柄
+        for (const auto &[tab_name, fh] : sm_manager->fhs_)
+        {
+            fhs_[tab_name] = std::unique_ptr<RmFileHandle>(fh.get());
+        }
     }
 
     std::shared_ptr<Plan> plan_query(std::shared_ptr<Query> query, Context *context)
@@ -60,6 +77,17 @@ public:
         {
             auto x = std::static_pointer_cast<ast::SetStmt>(query->parse);
             return std::make_shared<SetKnobPlan>(x->set_knob_type_, x->bool_val_);
+        }
+        case ast::TreeNodeType::ExplainStmt:
+        {
+            auto x = std::static_pointer_cast<ast::ExplainStmt>(query->parse);
+            query->parse = x->query;
+            if(query->parse->Nodetype() == ast::TreeNodeType::SelectStmt) {
+                auto select_stmt = std::static_pointer_cast<ast::SelectStmt>(query->parse);
+                select_stmt->tabs = std::move(query->tables); // 设置查询的表名
+            }
+            auto subplan = plan_query(query, context);
+            return std::make_shared<ExplainPlan>(T_Explain, subplan);
         }
         default:
             return planner_->do_planner(query, context);
