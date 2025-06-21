@@ -62,6 +62,18 @@ public:
             memcpy(rec.data + col.offset, val.raw->data, col.len);
         }
 
+        // Insert into record file
+        if(!context_->lock_mgr_->lock_exclusive_on_key(context_->txn_, fh_->GetFd(), 
+            rec.data + txn_mgr->get_start_offset())) {
+            throw TransactionAbortException(context_->txn_->get_transaction_id(), 
+                AbortReason::UPGRADE_CONFLICT);
+        }
+        txn_mgr->set_record_txn_id(rec.data, context_->txn_, false);
+        rid_ = fh_->insert_record(rec.data, context_);
+        context_->txn_->append_write_record(new WriteRecord(WType::INSERT_TUPLE,
+                                                            tab_name_, rid_));
+
+        // 更新索引
         // Insert into index
         for (size_t id = 0; id < tab_.indexes.size(); id++) {
             auto &index = tab_.indexes[id];
@@ -74,16 +86,6 @@ public:
             ihs_[id]->insert_entry(key.get(), rid_, context_->txn_);
         }
 
-        // Insert into record file
-        if(!context_->lock_mgr_->lock_exclusive_on_key(context_->txn_, fh_->GetFd(), 
-            rec.data + txn_mgr->get_start_offset())) {
-            throw TransactionAbortException(context_->txn_->get_transaction_id(), 
-                AbortReason::UPGRADE_CONFLICT);
-        }
-        txn_mgr->set_record_txn_id(rec.data, context_->txn_, false);
-        rid_ = fh_->insert_record(rec.data, context_);
-        context_->txn_->append_write_record(new WriteRecord(WType::INSERT_TUPLE,
-                                                            tab_name_, rid_));
         //记录日志
         InsertLogRecord log_record(context_->txn_->get_transaction_id(), rec, rid_, tab_name_);
         context_->log_mgr_->add_log_to_buffer(&log_record);
