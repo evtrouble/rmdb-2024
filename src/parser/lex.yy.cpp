@@ -1,6 +1,6 @@
-#line 2 "/home/nero/diff/db2025/src/parser/lex.yy.cpp"
+#line 2 "lex.yy.cpp"
 
-#line 4 "/home/nero/diff/db2025/src/parser/lex.yy.cpp"
+#line 4 "lex.yy.cpp"
 
 #define  YY_INT_ALIGNED short int
 
@@ -379,10 +379,8 @@ static void yynoreturn yy_fatal_error ( const char* msg  );
 	(yy_hold_char) = *yy_cp; \
 	*yy_cp = '\0'; \
 	(yy_c_buf_p) = yy_cp;
-#define YY_NUM_RULES 68
-#define YY_END_OF_BUFFER 69
-#define YY_NUM_RULES 68
-#define YY_END_OF_BUFFER 69
+#define YY_NUM_RULES 69
+#define YY_END_OF_BUFFER 70
 /* This struct is not used in this scanner,
    but its presence is necessary. */
 struct yy_trans_info
@@ -392,16 +390,16 @@ struct yy_trans_info
 	};
 static const flex_int16_t yy_accept[252] =
     {   0,
-        0,    0,    0,    0,   69,   67,    6,    7,    7,   67,
-       60,   67,   67,   60,   66,   62,   60,   60,   61,   61,
-       61,   61,   61,   61,   61,   61,   61,   61,   61,   61,
-       61,   61,   61,   61,   61,   61,   61,   61,   61,   67,
-        3,    4,    6,    7,    0,   64,   62,    5,    0,    1,
-       63,   58,   59,   57,   61,   61,   61,   51,   61,   61,
-       42,   61,   61,   61,   61,   61,   61,   61,   61,   61,
-       61,   61,   61,   61,   61,   36,   61,   61,   61,   61,
-       61,   35,   61,   61,   61,   61,   61,   61,   61,   61,
-       61,   61,   61,    2,    5,    0,   63,   61,   32,   44,
+        0,    0,    0,    0,   70,   68,    6,    7,    7,   68,
+       61,   68,   68,   61,   67,   63,   61,   61,   62,   62,
+       62,   62,   62,   62,   62,   62,   62,   62,   62,   62,
+       62,   62,   62,   62,   62,   62,   62,   62,   62,   68,
+        3,    4,    6,    7,    0,   65,   63,    5,    0,    1,
+       64,   59,   60,   58,   62,   62,   62,   52,   62,   62,
+       43,   62,   62,   62,   62,   62,   62,   62,   62,   62,
+       62,   62,   62,   62,   62,   37,   62,   62,   62,   62,
+       62,   36,   62,   62,   62,   62,   62,   62,   62,   62,
+       62,   62,   62,    2,    5,    0,   64,   62,   33,   45,
 
        51,   62,   62,   62,   62,   62,   62,   62,   62,   62,
        62,   62,   62,   62,   62,   62,   62,   62,   62,   62,
@@ -707,9 +705,9 @@ char *yytext;
 const int FLOAT_PRECISION = 6;
 const float FLOAT_PRECISION_MULTIPLIER = std::pow(10, FLOAT_PRECISION);
 
-#line 709 "/home/nero/diff/db2025/src/parser/lex.yy.cpp"
+#line 709 "lex.yy.cpp"
 
-#line 711 "/home/nero/diff/db2025/src/parser/lex.yy.cpp"
+#line 711 "lex.yy.cpp"
 
 #define INITIAL 0
 #define STATE_COMMENT 1
@@ -947,7 +945,7 @@ YY_DECL
 
 #line 56 "lex.l"
     /* block comment */
-#line 949 "/home/nero/diff/db2025/src/parser/lex.yy.cpp"
+#line 949 "lex.yy.cpp"
 
 	while ( /*CONSTCOND*/1 )		/* loops until end-of-file is reached */
 		{
@@ -1368,31 +1366,29 @@ YY_RULE_SETUP
     return VALUE_PATH;
 }
 	YY_BREAK
-case 66:
+case 67:
 YY_RULE_SETUP
-#line 142 "lex.l"
+#line 153 "lex.l"
 { return DIV; }
 	YY_BREAK
 /* EOF */
 case YY_STATE_EOF(INITIAL):
 case YY_STATE_EOF(STATE_COMMENT):
-#line 145 "lex.l"
+#line 156 "lex.l"
 { return T_EOF; }
 	YY_BREAK
 /* unexpected char */
-case 67:
-case 67:
+case 68:
 YY_RULE_SETUP
-#line 147 "lex.l"
+#line 158 "lex.l"
 { std::cerr << "Lexer Error: unexpected character " << yytext[0] << std::endl; }
 	YY_BREAK
-case 68:
-case 68:
+case 69:
 YY_RULE_SETUP
-#line 148 "lex.l"
+#line 159 "lex.l"
 ECHO;
 	YY_BREAK
-#line 1374 "lex.yy.cpp"
+#line 1392 "lex.yy.cpp"
 
 	case YY_END_OF_BUFFER:
 		{
@@ -2358,5 +2354,5 @@ void yyfree (void * ptr )
 
 #define YYTABLES_NAME "yytables"
 
-#line 148 "lex.l"
+#line 159 "lex.l"
 
