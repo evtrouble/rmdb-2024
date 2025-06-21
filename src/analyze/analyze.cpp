@@ -20,7 +20,7 @@ See the Mulan PSL v2 for more details. */
  */
 std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse, Context *context)
 {
-    std::cout << "[Debug] Starting analysis" << std::endl;
+    // std::cout << "[Debug] Starting analysis" << std::endl;
     std::shared_ptr<Query> query = std::make_shared<Query>();
     std::unordered_map<std::string, TabCol> alias_to_col;
 
@@ -30,15 +30,15 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
     {
     case ast::TreeNodeType::SelectStmt:
     {
-        std::cout << "[Debug] Analyzing SELECT statement" << std::endl;
+        // std::cout << "[Debug] Analyzing SELECT statement" << std::endl;
         auto x = std::static_pointer_cast<ast::SelectStmt>(parse);
         // 处理表名
         query->tables = std::move(x->tabs);
-        std::cout << "[Debug] Tables in query: " << query->tables.size() << std::endl;
+        // std::cout << "[Debug] Tables in query: " << query->tables.size() << std::endl;
 
         for (auto &tab_name : query->tables)
         {
-            std::cout << "[Debug] Table: " << tab_name << std::endl;
+            // std::cout << "[Debug] Table: " << tab_name << std::endl;
             if (!sm_manager_->db_.is_table(tab_name))
             {
                 throw TableNotFoundError(tab_name);
@@ -49,7 +49,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
         for (size_t i = 0; i < query->tables.size(); ++i)
         {
             std::string table_name = query->tables[i];
-            std::cout << "[Debug] Table: " << table_name << std::endl;
+            // std::cout << "[Debug] Table: " << table_name << std::endl;
 
             // 检查表是否存在
             if (!sm_manager_->db_.is_table(table_name))
@@ -60,26 +60,26 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
             // 如果AST中有表别名信息，在这里建立映射
             // 假设 x->table_aliases 包含别名信息，需要根据实际AST结构调整
             i = i;
-            std::cout << "i: " << i << std::endl;
+            // std::cout << "i: " << i << std::endl;
 
             if (x->tab_aliases.size() > i && !x->tab_aliases[i].empty())
             {
-                std::cout << "i: " << i << std::endl;
-                std::cout << "x->tab_aliases[i] " << x->tab_aliases[i] << std::endl;
-                std::cout << "table_name " << table_name << std::endl;
+                // std::cout << "i: " << i << std::endl;
+                // std::cout << "x->tab_aliases[i] " << x->tab_aliases[i] << std::endl;
+                // std::cout << "table_name " << table_name << std::endl;
                 std::string alias = x->tab_aliases[i];
                 table_alias_map_[alias] = table_name;
-                std::cout << "[Debug] Table alias mapping: " << alias << " -> " << table_name << std::endl;
+                // std::cout << "[Debug] Table alias mapping: " << alias << " -> " << table_name << std::endl;
             }
             // 表名也可以作为自己的别名
             table_alias_map_[table_name] = table_name;
         }
         // 处理target list，再target list中添加上表名，例如 a.id
         query->cols.reserve(x->cols.size());
-        std::cout << "[Debug] Processing columns, count: " << x->cols.size() << std::endl;
+        // std::cout << "[Debug] Processing columns, count: " << x->cols.size() << std::endl;
         for (auto &sv_sel_col : x->cols)
         {
-            std::cout << "[Debug] Column: " << sv_sel_col->col_name << std::endl;
+            // std::cout << "[Debug] Column: " << sv_sel_col->col_name << std::endl;
             TabCol col(sv_sel_col->tab_name, sv_sel_col->col_name, sv_sel_col->agg_type, sv_sel_col->alias);
             query->cols.emplace_back(col);
             if (ast::AggFuncType::NO_TYPE != sv_sel_col->agg_type)
@@ -93,70 +93,23 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
             }
         }
 
-        // 处理where条件
-        std::cout << "[Debug] Processing WHERE conditions" << std::endl;
-        if (!x->conds.empty())
-        {
-            for (auto &cond : x->conds)
-            {
-                std::cout << "[Debug] Condition: " << cond->lhs->col_name;
-                switch (cond->op)
-                {
-                case ast::SvCompOp::SV_OP_EQ:
-                    std::cout << " = ";
-                    break;
-                case ast::SvCompOp::SV_OP_NE:
-                    std::cout << " <> ";
-                    break;
-                case ast::SvCompOp::SV_OP_LT:
-                    std::cout << " < ";
-                    break;
-                case ast::SvCompOp::SV_OP_GT:
-                    std::cout << " > ";
-                    break;
-                case ast::SvCompOp::SV_OP_LE:
-                    std::cout << " <= ";
-                    break;
-                case ast::SvCompOp::SV_OP_GE:
-                    std::cout << " >= ";
-                    break;
-                default:
-                    std::cout << " unknown_op ";
-                    break;
-                }
-                if (auto rhs_col = std::dynamic_pointer_cast<ast::Col>(cond->rhs))
-                {
-                    std::cout << rhs_col->col_name << std::endl;
-                }
-                else if (auto rhs_val = std::dynamic_pointer_cast<ast::Value>(cond->rhs))
-                {
-                    std::cout << "value" << std::endl;
-                }
-            }
-        }
-        else
-        {
-            std::cout << "[Debug] No WHERE conditions" << std::endl;
-        }
-
         std::vector<ColMeta> all_cols;
-        get_all_cols(query->tables, all_cols);
+        get_all_cols(query->tables, all_cols, context);
         if (query->cols.empty())
         {
             // select all columns
-            std::cout << "[Debug] SELECT *, adding all columns" << std::endl;
+            // std::cout << "[Debug] SELECT *, adding all columns" << std::endl;
             query->cols.reserve(all_cols.size());
-            int i = context->txn_->get_txn_manager()->get_hidden_column_count();
-            for (; i < (int)all_cols.size(); ++i)
+            for (auto &col : all_cols)
             {
-                auto &col = all_cols[i];
                 query->cols.emplace_back(TabCol(col.tab_name, col.name));
             }
+            context->setIsStarFlag(true);
         }
         else
         {
             // infer table name from column name
-            std::cout << "[Debug] Inferring table names for columns" << std::endl;
+            // std::cout << "[Debug] Inferring table names for columns" << std::endl;
             for (auto &sel_col : query->cols)
             {
                 if (sel_col.col_name != "*")                                // 避免count(*)检查
@@ -249,7 +202,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
                 join.right = joinclause->right;
                 join.type = joinclause->type;
                 get_clause(joinclause->conds, join.conds);
-                check_clause(query->tables, join.conds, false);
+                check_clause(query->tables, join.conds, false, context);
                 query->jointree.emplace_back(join);
             }
         }
@@ -285,7 +238,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
 
             // 处理 HAVING 条件
             get_clause(x->having_conds, query->having_conds);
-            check_clause(query->tables, query->having_conds, true);
+            check_clause(query->tables, query->having_conds, true, context);
         }
         // 处理ORDER BY
         if (x->order)
@@ -347,7 +300,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
         }
         // 处理where条件
         get_clause(x->conds, query->conds);
-        check_clause(query->tables, query->conds, false);
+        check_clause(query->tables, query->conds, false, context);
     }
     break;
     case ast::TreeNodeType::UpdateStmt:
@@ -362,7 +315,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
         query->tables = {x->tab_name};
         // 获取所有列信息用于验证
         std::vector<ColMeta> all_cols;
-        get_all_cols({x->tab_name}, all_cols);
+        get_all_cols({x->tab_name}, all_cols, context);
 
         // 处理set子句
         for (auto &sv_set_clause : x->set_clauses)
@@ -399,7 +352,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
 
         // 处理where条件
         get_clause(x->conds, query->conds);
-        check_clause({x->tab_name}, query->conds, false);
+        check_clause({x->tab_name}, query->conds, false, context);
     }
     break;
     case ast::TreeNodeType::DeleteStmt:
@@ -408,7 +361,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
         query->tables = {x->tab_name};
         // 处理where条件
         get_clause(x->conds, query->conds);
-        check_clause({x->tab_name}, query->conds, false);
+        check_clause({x->tab_name}, query->conds, false, context);
     }
     break;
     case ast::TreeNodeType::InsertStmt:
@@ -456,6 +409,12 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
         }
     }
     break;
+    case ast::TreeNodeType::ExplainStmt:
+    {
+        auto x = std::static_pointer_cast<ast::ExplainStmt>(parse);
+        query  = do_analyze(x->query, context);
+    }
+    break;
     default:
         break;
     }
@@ -478,7 +437,7 @@ TabCol Analyze::check_column(const std::vector<ColMeta> &all_cols, TabCol target
         if (alias_it != table_alias_map_.end())
         {
             target.tab_name = alias_it->second;
-            std::cout << "[Debug] Resolved table alias: " << target.tab_name << std::endl;
+            // std::cout << "[Debug] Resolved table alias: " << target.tab_name << std::endl;
         }
     }
     if (target.tab_name.empty())
@@ -530,13 +489,16 @@ TabCol Analyze::check_column(const std::vector<ColMeta> &all_cols, TabCol target
 
     return target;
 }
-void Analyze::get_all_cols(const std::vector<std::string> &tab_names, std::vector<ColMeta> &all_cols)
+void Analyze::get_all_cols(const std::vector<std::string> &tab_names, 
+    std::vector<ColMeta> &all_cols, Context *context)
 {
+    int hidden_column_count = context->txn_->get_txn_manager()->get_hidden_column_count();
     for (auto &sel_tab_name : tab_names)
     {
         // 这里db_不能写成get_db(), 注意要传指针
         const auto &sel_tab_cols = sm_manager_->db_.get_table(sel_tab_name).cols;
-        all_cols.insert(all_cols.end(), sel_tab_cols.begin(), sel_tab_cols.end());
+        all_cols.insert(all_cols.end(), sel_tab_cols.begin() + hidden_column_count,
+            sel_tab_cols.end());
     }
 }
 
@@ -591,10 +553,11 @@ void Analyze::get_clause(const std::vector<std::shared_ptr<ast::BinaryExpr>> &sv
     }
 }
 
-void Analyze::check_clause(const std::vector<std::string> &tab_names, std::vector<Condition> &conds, bool is_having)
+void Analyze::check_clause(const std::vector<std::string> &tab_names, 
+    std::vector<Condition> &conds, bool is_having, Context *context)
 {
     std::vector<ColMeta> all_cols;
-    get_all_cols(tab_names, all_cols);
+    get_all_cols(tab_names, all_cols, context);
 
     for (auto &cond : conds)
     {

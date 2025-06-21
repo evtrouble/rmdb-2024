@@ -75,15 +75,14 @@ public:
             return std::make_shared<OtherPlan>(T_Create_StaticCheckPoint);
         case ast::TreeNodeType::SetStmt:
         {
-            auto x = std::dynamic_pointer_cast<ast::SetStmt>(query->parse);
+            auto x = std::static_pointer_cast<ast::SetStmt>(query->parse);
             return std::make_shared<SetKnobPlan>(x->set_knob_type_, x->bool_val_);
         }
         case ast::TreeNodeType::ExplainStmt:
         {
-            auto x = std::dynamic_pointer_cast<ast::ExplainStmt>(query->parse);
-            auto query_copy = std::make_shared<Query>();
-            query_copy->parse = x->query;
-            auto subplan = plan_query(query_copy, context);
+            auto x = std::static_pointer_cast<ast::ExplainStmt>(query->parse);
+            query->parse = x->query;
+            auto subplan = plan_query(query, context);
             return std::make_shared<ExplainPlan>(T_Explain, subplan);
         }
         default:

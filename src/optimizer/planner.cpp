@@ -838,7 +838,7 @@ std::shared_ptr<Plan> Planner::add_leaf_projections(std::shared_ptr<Plan> plan, 
 
 std::shared_ptr<Plan> Planner::physical_optimization(std::shared_ptr<Query> query, Context *context)
 {
-    column_requirements_ = analyze_column_requirements(query);
+    column_requirements_ = analyze_column_requirements(query, context);
     // 生成基本的查询计划
     std::shared_ptr<Plan> plan = make_one_rel(query, context);
 
@@ -1021,13 +1021,7 @@ std::unordered_map<std::string, size_t> calculate_table_cardinalities(const std:
 
 std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Context *context)
 {
-    // 检查是否是 SELECT * 查询
-    bool is_select_star = false;
     auto select_stmt = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
-    if (select_stmt && (query->cols.size() == 0 || query->cols[0].col_name == "*"))
-    {
-        is_select_star = true;
-    }
     // 建立表名到别名的映射
     std::map<std::string, std::string> tab_to_alias;
     std::map<std::string, std::string> alias_to_tab;
@@ -1072,7 +1066,7 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
         }
 
         // 只有在非 SELECT * 查询时才添加投影节点
-        if (!is_select_star)
+        if (!context->hasIsStarFlag())
         {
             auto post_filter_cols = column_requirements_.get_post_filter_cols(table);
             if (!post_filter_cols.empty())
@@ -1581,180 +1575,6 @@ std::shared_ptr<Plan> Planner::do_planner(std::shared_ptr<Query> query, Context 
 {
     switch (query->parse->Nodetype())
     {
-    case ast::TreeNodeType::ExplainStmt:
-    {
-        auto explain_stmt = std::static_pointer_cast<ast::ExplainStmt>(query->parse);
-        std::cout << "[Debug] Processing EXPLAIN statement" << std::endl;
-
-        // 递归处理内部的查询
-        auto inner_query = std::make_shared<Query>();
-        std::shared_ptr<ast::SelectStmt> select_stmt; // 声明在外部以便后续使用
-
-        // 从原始SELECT语句中获取列和表信息
-        if (auto stmt = std::dynamic_pointer_cast<ast::SelectStmt>(explain_stmt->query))
-        {
-            select_stmt = stmt; // 保存以便后续使用
-            std::cout << "[Debug] Found SELECT statement" << std::endl;
-            std::cout << "[Debug] Number of conditions in select_stmt: " << select_stmt->conds.size() << std::endl;
-
-            // 设置解析树
-            inner_query->parse = explain_stmt->query;
-
-            // 设置表信息
-            inner_query->tables = select_stmt->tabs;
-            std::cout << "[Debug] Tables: " << inner_query->tables.size() << std::endl;
-
-            // 设置列信息
-            if (select_stmt->is_select_star_query())
-            {
-                // 对于 SELECT *，保持原样
-                TabCol tab_col;
-                tab_col.col_name = "*";
-                inner_query->cols.push_back(tab_col);
-            }
-            else
-            {
-                for (const auto &col : select_stmt->cols)
-                {
-                    std::cout << "[Debug] Adding column: " << col->col_name << std::endl;
-                    TabCol tab_col;
-                    tab_col.tab_name = col->tab_name.empty() ? inner_query->tables[0] : col->tab_name;
-                    tab_col.col_name = col->col_name;
-                    inner_query->cols.push_back(tab_col);
-                }
-            }
-
-            // 设置条件信息
-            std::cout << "[Debug] Processing conditions from select statement" << std::endl;
-
-            // 建立表名到别名的映射
-            std::map<std::string, std::string> tab_aliases;
-            std::map<std::string, std::string> alias_to_table; // 别名到表名的映射
-            for (size_t i = 0; i < select_stmt->tabs.size(); ++i)
-            {
-                if (i < select_stmt->tab_aliases.size() && !select_stmt->tab_aliases[i].empty())
-                {
-                    std::cout << "[Debug] 表别名映射: " << select_stmt->tabs[i]
-                              << " -> " << select_stmt->tab_aliases[i] << std::endl;
-                    tab_aliases[select_stmt->tab_aliases[i]] = select_stmt->tabs[i];
-                    alias_to_table[select_stmt->tab_aliases[i]] = select_stmt->tabs[i];
-                }
-            }
-
-            for (const auto &cond : select_stmt->conds)
-            {
-                std::cout << "[Debug] Found condition in select statement" << std::endl;
-                std::cout << "[Debug] LHS column: " << cond->lhs->col_name << std::endl;
-
-                Condition condition;
-
-                // 处理左侧列的表名
-                if (cond->lhs->tab_name.empty())
-                {
-                    condition.lhs_col.tab_name = inner_query->tables[0];
-                }
-                else
-                {
-                    // 如果使用了别名，查找实际的表名
-                    auto it = alias_to_table.find(cond->lhs->tab_name);
-                    if (it != alias_to_table.end())
-                    {
-                        condition.lhs_col.tab_name = it->second;
-                    }
-                    else
-                    {
-                        condition.lhs_col.tab_name = cond->lhs->tab_name;
-                    }
-                }
-                condition.lhs_col.col_name = cond->lhs->col_name;
-
-                // 转换操作符
-                switch (cond->op)
-                {
-                case ast::SvCompOp::SV_OP_EQ:
-                    condition.op = CompOp::OP_EQ;
-                    std::cout << "[Debug] Operator: EQ" << std::endl;
-                    break;
-                case ast::SvCompOp::SV_OP_NE:
-                    condition.op = CompOp::OP_NE;
-                    std::cout << "[Debug] Operator: NE" << std::endl;
-                    break;
-                case ast::SvCompOp::SV_OP_LT:
-                    condition.op = CompOp::OP_LT;
-                    std::cout << "[Debug] Operator: LT" << std::endl;
-                    break;
-                case ast::SvCompOp::SV_OP_GT:
-                    condition.op = CompOp::OP_GT;
-                    std::cout << "[Debug] Operator: GT" << std::endl;
-                    break;
-                case ast::SvCompOp::SV_OP_LE:
-                    condition.op = CompOp::OP_LE;
-                    std::cout << "[Debug] Operator: LE" << std::endl;
-                    break;
-                case ast::SvCompOp::SV_OP_GE:
-                    condition.op = CompOp::OP_GE;
-                    std::cout << "[Debug] Operator: GE" << std::endl;
-                    break;
-                default:
-                    throw InternalError("Unsupported operator type");
-                }
-
-                // 处理右侧表达式
-                if (auto col = std::dynamic_pointer_cast<ast::Col>(cond->rhs))
-                {
-                    std::cout << "[Debug] RHS is column: " << col->col_name << std::endl;
-                    condition.is_rhs_val = false;
-                    condition.rhs_col.tab_name = inner_query->tables[0]; // 假设只有一个表
-                    condition.rhs_col.col_name = col->col_name;
-                }
-                else if (auto int_lit = std::dynamic_pointer_cast<ast::IntLit>(cond->rhs))
-                {
-                    std::cout << "[Debug] RHS is integer: " << int_lit->val << std::endl;
-                    condition.is_rhs_val = true;
-                    condition.rhs_val.type = TYPE_INT;
-                    condition.rhs_val.int_val = int_lit->val;
-                }
-                else if (auto float_lit = std::dynamic_pointer_cast<ast::FloatLit>(cond->rhs))
-                {
-                    std::cout << "[Debug] RHS is float: " << float_lit->val << std::endl;
-                    condition.is_rhs_val = true;
-                    condition.rhs_val.type = TYPE_FLOAT;
-                    condition.rhs_val.float_val = float_lit->val;
-                }
-                else if (auto str_lit = std::dynamic_pointer_cast<ast::StringLit>(cond->rhs))
-                {
-                    std::cout << "[Debug] RHS is string: " << str_lit->val << std::endl;
-                    condition.is_rhs_val = true;
-                    condition.rhs_val.type = TYPE_STRING;
-                    condition.rhs_val.str_val = str_lit->val;
-                }
-                else
-                {
-                    std::cout << "[Debug] Unknown RHS type" << std::endl;
-                    throw InternalError("Unsupported value type");
-                }
-                inner_query->conds.push_back(condition);
-                std::cout << "[Debug] Added condition to inner_query" << std::endl;
-            }
-        }
-
-        std::cout << "[Debug] Creating inner plan" << std::endl;
-        std::cout << "[Debug] Number of conditions in inner_query before analyze: " << inner_query->conds.size() << std::endl;
-
-        // 创建一个新的Analyze对象来处理内部查询
-        Analyze analyze(sm_manager_);
-        auto analyzed_query = analyze.do_analyze(inner_query->parse, context);
-
-        // 保持原始的列和条件信息
-        analyzed_query->cols = inner_query->cols;
-        analyzed_query->conds = inner_query->conds;
-        analyzed_query->tables = inner_query->tables;
-
-        auto inner_plan = do_planner(analyzed_query, context);
-        auto explain_plan = std::make_shared<ExplainPlan>(T_Explain, inner_plan);
-        explain_plan->select_stmt = select_stmt; // 现在 select_stmt 已在作用域内
-        return explain_plan;
-    }
     case ast::TreeNodeType::CreateTable:
     {
         auto x = std::static_pointer_cast<ast::CreateTable>(query->parse);
@@ -1867,7 +1687,7 @@ std::shared_ptr<Plan> Planner::do_planner(std::shared_ptr<Query> query, Context 
     return nullptr;
 }
 
-QueryColumnRequirement Planner::analyze_column_requirements(std::shared_ptr<Query> query)
+QueryColumnRequirement Planner::analyze_column_requirements(std::shared_ptr<Query> query, Context *context)
 {
     QueryColumnRequirement requirements;
     // 如果不是SELECT语句，返回空的需求
@@ -1888,8 +1708,7 @@ QueryColumnRequirement Planner::analyze_column_requirements(std::shared_ptr<Quer
         }
     }
 
-    bool is_select_all = (query->cols.size() == 0 || query->cols[0].col_name == "*");
-    if (is_select_all)
+    if (context->hasIsStarFlag())
     {
         // SELECT * 的情况，需要所有表的所有列
         for (const auto &table : query->tables)

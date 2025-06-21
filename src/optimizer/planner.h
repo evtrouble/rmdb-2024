@@ -120,7 +120,7 @@ private:
     QueryColumnRequirement column_requirements_;
 
     // 列需求分析函数
-    QueryColumnRequirement analyze_column_requirements(std::shared_ptr<Query> query);
+    QueryColumnRequirement analyze_column_requirements(std::shared_ptr<Query> query, Context *context);
 
     // 优化器辅助函数
     bool is_single_table_condition(const Condition &cond)
