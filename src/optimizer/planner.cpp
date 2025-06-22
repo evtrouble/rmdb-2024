@@ -513,7 +513,7 @@ std::shared_ptr<Query> Planner::logical_optimization(std::shared_ptr<Query> quer
         }
 
         // 4. 将分组后的条件存储回query对象
-        query->conds = std::move(join_conds);      // 保存连接条件
+        query->conds = std::move(join_conds); // 保存连接条件
     }
     return query;
 }
@@ -1415,10 +1415,10 @@ QueryColumnRequirement Planner::analyze_column_requirements(std::shared_ptr<Quer
     }
 
     // 4. 分析GROUP BY子句中需要的列
-    if(select_stmt->has_groupby)
+    if (select_stmt->has_groupby)
     {
-        requirements.groupby_cols.insert(query->groupby.begin(), 
-            query->groupby.end());
+        requirements.groupby_cols.insert(query->groupby.begin(),
+                                         query->groupby.end());
     }
 
     // 5. 分析HAVING子句中需要的列
@@ -1437,7 +1437,7 @@ QueryColumnRequirement Planner::analyze_column_requirements(std::shared_ptr<Quer
     // 6. 分析ORDER BY子句中需要的列
     if (select_stmt->has_sort)
     {
-        for(const auto &order_col : select_stmt->order->cols)
+        for (const auto &order_col : select_stmt->order->cols)
         {
             TabCol tab_col(order_col->tab_name, order_col->col_name);
             requirements.orderby_cols.emplace(std::move(tab_col));
