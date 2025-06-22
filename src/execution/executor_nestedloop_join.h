@@ -147,14 +147,17 @@ public:
         : left_(std::move(left)), right_(std::move(right)),
           fed_conds_(std::move(conds)), isend(false)
     {
-        len_ = left_->tupleLen() + right_->tupleLen();
+        int left_tupleLen = left_->tupleLen();
+        len_ = left_tupleLen + right_->tupleLen();
         cols_ = left_->cols();
-        auto right_cols = right_->cols();
-        for (auto &col : right_cols)
-        {
-            col.offset += left_->tupleLen();
-        }
+        auto &right_cols = right_->cols();
+        int right_start = cols_.size();
         cols_.insert(cols_.end(), right_cols.begin(), right_cols.end());
+        for (size_t i = right_start; i < cols_.size(); ++i)
+        {
+            cols_[i].offset += left_tupleLen;
+        }
+
         init_cols_sets();
     }
 

@@ -55,6 +55,7 @@ public:
     void beginTuple() override { prev_->beginTuple(); }
 
     void nextTuple() override { prev_->nextTuple(); }
+    size_t tupleLen() const override { return tuple_len_; };
 
     std::unique_ptr<RmRecord> Next() override
     {
