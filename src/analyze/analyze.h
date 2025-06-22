@@ -46,6 +46,8 @@ public:
     // limit条件
     int limit = -1;
     std::unordered_map<std::string, std::string> table_alias_map;
+
+    std::shared_ptr<Query> sub_query;
     Query() {}
 };
 

@@ -319,7 +319,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
         }
 
         // 将表名添加到查询的表列表中
-        query->tables = {x->tab_name};
+        // query->tables = {x->tab_name};
         // 获取所有列信息用于验证
         std::vector<ColMeta> all_cols;
         get_all_cols({x->tab_name}, all_cols, context);
@@ -366,7 +366,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
     case ast::TreeNodeType::DeleteStmt:
     {
         auto x = std::static_pointer_cast<ast::DeleteStmt>(parse);
-        query->tables = {x->tab_name};
+        // query->tables = {x->tab_name};
         // 处理where条件
         get_clause(x->conds, query->conds);
         check_clause({x->tab_name}, query->conds, false, context);
@@ -375,7 +375,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
     case ast::TreeNodeType::InsertStmt:
     {
         auto x = std::static_pointer_cast<ast::InsertStmt>(parse);
-        query->tables = {x->tab_name};
+        // query->tables = {x->tab_name};
 
         if (!sm_manager_->db_.is_table(x->tab_name))
         {
@@ -420,7 +420,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
     case ast::TreeNodeType::ExplainStmt:
     {
         auto x = std::static_pointer_cast<ast::ExplainStmt>(parse);
-        query = do_analyze(x->query, context);
+        query->sub_query = do_analyze(x->query, context);
     }
     break;
     default:

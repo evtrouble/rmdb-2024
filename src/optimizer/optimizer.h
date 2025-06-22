@@ -80,13 +80,7 @@ public:
         }
         case ast::TreeNodeType::ExplainStmt:
         {
-            auto x = std::static_pointer_cast<ast::ExplainStmt>(query->parse);
-            query->parse = x->query;
-            if(query->parse->Nodetype() == ast::TreeNodeType::SelectStmt) {
-                auto select_stmt = std::static_pointer_cast<ast::SelectStmt>(query->parse);
-                select_stmt->tabs = std::move(query->tables); // 设置查询的表名
-            }
-            auto subplan = plan_query(query, context);
+            auto subplan = plan_query(query->sub_query, context);
             return std::make_shared<ExplainPlan>(T_Explain, subplan);
         }
         default:
