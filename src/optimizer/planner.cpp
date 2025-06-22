@@ -549,51 +549,36 @@ std::shared_ptr<Plan> Planner::physical_optimization(std::shared_ptr<Query> quer
                 all_cols.insert(all_cols.end(), table_cols.begin(), table_cols.end());
             }
 
-            // 按字母顺序排序列（先按表名，再按列名）
-            std::sort(all_cols.begin(), all_cols.end(),
-                      [](const TabCol &a, const TabCol &b)
-                      {
-                          if (a.tab_name != b.tab_name)
-                          {
-                              return a.tab_name < b.tab_name;
-                          }
-                          return a.col_name < b.col_name;
-                      });
+            // 放到后面去做
+            //  按字母顺序排序列（先按表名，再按列名）
+            //  std::sort(all_cols.begin(), all_cols.end(),
+            //            [](const TabCol &a, const TabCol &b)
+            //            {
+            //                if (a.tab_name != b.tab_name)
+            //                {
+            //                    return a.tab_name < b.tab_name;
+            //                }
+            //                return a.col_name < b.col_name;
+            //            });
 
             plan = std::make_shared<ProjectionPlan>(PlanTag::T_Projection, plan, all_cols);
         }
         else
         {
             // SELECT 具体列情况
-            std::vector<TabCol> final_cols;
-            for (const auto &col : query->cols)
-            {
-                std::string display_name = col.tab_name;
-                std::string real_tab_name = col.tab_name;
+            std::vector<TabCol> final_cols(query->cols.begin(), query->cols.end());
 
-                // 处理表别名
-                if (alias_to_tab->find(col.tab_name) != alias_to_tab->end())
-                {
-                    real_tab_name = alias_to_tab->at(col.tab_name);
-                }
-                else if (tab_to_alias->find(col.tab_name) != tab_to_alias->end())
-                {
-                    display_name = tab_to_alias->at(col.tab_name);
-                }
-
-                final_cols.emplace_back(TabCol{display_name, col.col_name, col.aggFuncType, col.alias});
-            }
-
+            // 放到后面去
             // 按字母顺序排序列（先按表名，再按列名）
-            std::sort(final_cols.begin(), final_cols.end(),
-                      [](const TabCol &a, const TabCol &b)
-                      {
-                          if (a.tab_name != b.tab_name)
-                          {
-                              return a.tab_name < b.tab_name;
-                          }
-                          return a.col_name < b.col_name;
-                      });
+            // std::sort(final_cols.begin(), final_cols.end(),
+            //           [](const TabCol &a, const TabCol &b)
+            //           {
+            //               if (a.tab_name != b.tab_name)
+            //               {
+            //                   return a.tab_name < b.tab_name;
+            //               }
+            //               return a.col_name < b.col_name;
+            //           });
 
             plan = std::make_shared<ProjectionPlan>(PlanTag::T_Projection, plan, final_cols);
         }
@@ -679,83 +664,6 @@ std::unordered_map<std::string, size_t> calculate_table_cardinalities(const std:
     return table_cardinalities;
 }
 
-// std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Context *context)
-// {
-//     // 预先计算所有表的基数
-//     auto table_cardinalities = calculate_table_cardinalities(query->tables, sm_manager_);
-
-//     // 定义堆节点结构
-//     struct JoinNode {
-//         std::shared_ptr<Plan> plan;
-//         std::set<std::string> tables; // 该子树涉及的所有表
-//         size_t cardinality;           // 当前子树的基数估计
-//         // 堆排序：基数小的优先
-//         bool operator>(const JoinNode &rhs) const { return cardinality > rhs.cardinality; }
-//     };
-
-//     // 初始化每个表的扫描计划，放入最小堆
-//     std::priority_queue<JoinNode, std::vector<JoinNode>, std::greater<JoinNode>> heap;
-//     for (const auto &table : query->tables) {
-//         auto [index_meta, max_match_col_count] = get_index_cols(table, query->tab_conds[table]);
-//         std::shared_ptr<Plan> scan_plan;
-//         if (index_meta == nullptr) {
-//             scan_plan = std::make_shared<ScanPlan>(T_SeqScan, sm_manager_, table, std::vector<Condition>());
-//         } else {
-//             scan_plan = std::make_shared<ScanPlan>(T_IndexScan, sm_manager_, table, std::vector<Condition>(), *index_meta, max_match_col_count);
-//         }
-//         if (!query->tab_conds[table].empty()) {
-//             scan_plan = std::make_shared<FilterPlan>(PlanTag::T_Filter, scan_plan, query->tab_conds[table]);
-//         }
-//         if (!context->hasIsStarFlag()) {
-//             auto post_filter_cols = column_requirements_.get_post_filter_cols(table);
-//             if (!post_filter_cols.empty()) {
-//                 std::vector<TabCol> cols(post_filter_cols.begin(), post_filter_cols.end());
-//                 std::sort(cols.begin(), cols.end(), [](const TabCol &a, const TabCol &b) { return a.col_name < b.col_name; });
-//                 scan_plan = std::make_shared<ProjectionPlan>(PlanTag::T_Projection, scan_plan, cols);
-//             }
-//         }
-//         heap.push(JoinNode{scan_plan, {table}, table_cardinalities[table]});
-//     }
-//     // 只有一个表，直接返回
-//     if (heap.size() == 1) {
-//         return heap.top().plan;
-//     }
-//     // 辅助函数：判断两个子树是否有可用的连接条件
-//     auto find_join_conds = [&](const std::set<std::string> &left, const std::set<std::string> &right) {
-//         std::vector<Condition> join_conds;
-//         for (const auto &cond : query->conds) {
-//             if (!cond.is_rhs_val) {
-//                 const std::string &lhs_tab = cond.lhs_col.tab_name;
-//                 const std::string &rhs_tab = cond.rhs_col.tab_name;
-//                 if ((left.count(lhs_tab) && right.count(rhs_tab)) || (left.count(rhs_tab) && right.count(lhs_tab))) {
-//                     join_conds.push_back(cond);
-//                 }
-//             }
-//         }
-//         return join_conds;
-//     };
-//     // 主循环：每次弹出基数最小的两个子树合并
-//     while (heap.size() > 1) {
-//         auto node1 = heap.top(); heap.pop();
-//         auto node2 = heap.top(); heap.pop();
-//         // 查找连接条件
-//         auto join_conds = find_join_conds(node1.tables, node2.tables);
-//         // 合并表集合
-//         std::set<std::string> merged_tables = node1.tables;
-//         merged_tables.insert(node2.tables.begin(), node2.tables.end());
-//         // 估算新基数（简单乘法）
-//         size_t merged_card = node1.cardinality * node2.cardinality;
-//         // 创建连接计划
-//         auto join_plan = create_ordered_join(
-//             enable_nestedloop_join ? T_NestLoop : T_SortMerge,
-//             node1.plan, node2.plan, join_conds);
-//         // 插回堆
-//         heap.push(JoinNode{join_plan, merged_tables, merged_card});
-//     }
-//     // 堆中只剩一个计划树
-//     return heap.top().plan;
-// }
-
 std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Context *context)
 {
     // 预先计算所有表的基数
@@ -776,7 +684,6 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
         {
             scan_plan = std::make_shared<ScanPlan>(T_IndexScan, sm_manager_, table, std::vector<Condition>(), *index_meta, max_match_col_count);
         }
-
         // 如果有过滤条件，创建FilterPlan
         if (!query->tab_conds[table].empty())
         {
@@ -785,7 +692,6 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
                 scan_plan,
                 query->tab_conds[table]);
         }
-
         // 只有在非 SELECT * 查询时才添加投影节点
         if (!context->hasIsStarFlag())
         {
@@ -794,11 +700,12 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
             {
                 // 转换为vector并按字母顺序排序
                 std::vector<TabCol> cols(post_filter_cols.begin(), post_filter_cols.end());
-                std::sort(cols.begin(), cols.end(),
-                          [](const TabCol &a, const TabCol &b)
-                          {
-                              return a.col_name < b.col_name;
-                          });
+                // 排序逻辑放到输出去
+                //  std::sort(cols.begin(), cols.end(),
+                //            [](const TabCol &a, const TabCol &b)
+                //            {
+                //                return a.col_name < b.col_name;
+                //            });
 
                 scan_plan = std::make_shared<ProjectionPlan>(
                     PlanTag::T_Projection,
@@ -835,8 +742,8 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
                 min_card = join_card;
                 min_i = i;
                 min_j = j;
-                if (card_i > card_j)
-                    std::swap(min_i, min_j); // 小表放到左子树
+                // if (card_i > card_j)
+                //     std::swap(min_i, min_j); // 小表放到左子树
             }
         }
     }
@@ -850,16 +757,15 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
             std::string lhs_tab = cond.lhs_col.tab_name;
             std::string rhs_tab = cond.rhs_col.tab_name;
 
-            // 处理表别名
-            if (alias_to_tab->find(lhs_tab) != alias_to_tab->end())
-            {
-                lhs_tab = alias_to_tab->at(lhs_tab);
-            }
-            if (alias_to_tab->find(rhs_tab) != alias_to_tab->end())
-            {
-                rhs_tab = alias_to_tab->at(rhs_tab);
-            }
-
+            // analyse处理后，都是真实表名，不需要这些处理
+            //  if (alias_to_tab->find(lhs_tab) != alias_to_tab->end())
+            //  {
+            //      lhs_tab = alias_to_tab->at(lhs_tab);
+            //  }
+            //  if (alias_to_tab->find(rhs_tab) != alias_to_tab->end())
+            //  {
+            //      rhs_tab = alias_to_tab->at(rhs_tab);
+            //  }
             auto scan_i = extract_scan_plan(table_plans[min_i]);
             auto scan_j = extract_scan_plan(table_plans[min_j]);
 
@@ -902,16 +808,6 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
                 {
                     std::string lhs_tab = cond.lhs_col.tab_name;
                     std::string rhs_tab = cond.rhs_col.tab_name;
-
-                    // 处理表别名
-                    if (alias_to_tab->find(lhs_tab) != alias_to_tab->end())
-                    {
-                        lhs_tab = alias_to_tab->at(lhs_tab);
-                    }
-                    if (alias_to_tab->find(rhs_tab) != alias_to_tab->end())
-                    {
-                        rhs_tab = alias_to_tab->at(rhs_tab);
-                    }
 
                     if (lhs_tab == scan_plan->tab_name_ || rhs_tab == scan_plan->tab_name_)
                     {

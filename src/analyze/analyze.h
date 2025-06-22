@@ -45,7 +45,7 @@ public:
     std::vector<JoinExpr> jointree;
     // limit条件
     int limit = -1;
-    std::unordered_map<std::string, std::string> table_alias_map;
+    std::unordered_map<std::string, std::string> table_alias_map; // 将表的别名映射到实际的表名
 
     std::shared_ptr<Query> sub_query;
     Query() {}

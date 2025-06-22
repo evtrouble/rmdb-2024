@@ -69,5 +69,7 @@
         "cassert": "cpp",
         "shared_mutex": "cpp",
         "span": "cpp"
-    }
+    },
+    "C_Cpp.default.compilerPath": "/usr/bin/gcc",
+    "C_Cpp.intelliSenseCacheSize": 5120
 }

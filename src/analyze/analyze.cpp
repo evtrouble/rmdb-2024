@@ -33,19 +33,15 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
         // 处理表名
         query->tables = std::move(x->tabs);
 
-        // 建立表别名映射关系
+        // 建立表别名映射关系,别名->实际表名
         for (size_t i = 0; i < query->tables.size(); ++i)
         {
             std::string &table_name = query->tables[i];
-
             // 检查表是否存在
             if (!sm_manager_->db_.is_table(table_name))
             {
                 throw TableNotFoundError(table_name);
             }
-
-            // 如果AST中有表别名信息，在这里建立映射
-            // 假设 x->table_aliases 包含别名信息，需要根据实际AST结构调整
             if (x->tab_aliases.size() > i && !x->tab_aliases[i].empty())
             {
                 std::string &alias = x->tab_aliases[i];
@@ -55,6 +51,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
             table_alias_map_.emplace(table_name, table_name);
         }
         query->table_alias_map = table_alias_map_;
+
         // 处理target list，在target list中添加上表名，例如 a.id
         query->cols.reserve(x->cols.size());
         for (auto &sv_sel_col : x->cols)
@@ -92,8 +89,8 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
                 if (sel_col.col_name != "*")                                // 避免count(*)检查
                     sel_col = check_column(all_cols, sel_col, x->has_join); // 列元数据校验
             }
-            // 检查是否为“全选”
 
+            // 检查是否为“全选”
             if (query->cols.size() == all_cols.size())
             {
                 bool is_all = true;
