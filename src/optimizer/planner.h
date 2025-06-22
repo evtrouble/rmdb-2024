@@ -39,8 +39,8 @@ struct QueryColumnRequirement
 
     std::map<std::string, std::set<TabCol>> scan_level_cols;  // 扫描层需要的列
     std::map<std::string, std::set<TabCol>> post_filter_cols; // 过滤后需要的列
-    std::map<std::string, std::set<TabCol>> post_join_cols;   // 连接后需要的列
-    std::map<std::string, std::set<TabCol>> final_cols;       // 最终输出列
+    // std::map<std::string, std::set<TabCol>> post_join_cols;   // 连接后需要的列
+    std::map<std::string, std::set<TabCol>> final_cols; // 最终输出列
     // 中间分析数据（用于调试和优化）
     std::set<TabCol> select_cols;  // SELECT子句需要的列
     std::set<TabCol> join_cols;    // JOIN条件需要的列
@@ -89,15 +89,9 @@ private:
     bool enable_nestedloop_join = true;
     bool enable_sortmerge_join = false;
     std::unordered_map<std::string, std::string> *tab_to_alias = &empty_map_;
-    std::unordered_map<std::string, std::string> *alias_to_tab = &empty_map_;
     static std::unordered_map<std::string, std::string> empty_map_;
 
     std::vector<TabCol> get_table_all_cols(const std::string &table_name, std::vector<TabCol> &table_cols, Context *context);
-
-    // 投影下推相关的辅助函数
-    bool is_select_star_query(const std::shared_ptr<ast::SelectStmt> &select_stmt);
-    std::shared_ptr<Plan> add_leaf_projections(std::shared_ptr<Plan> plan, const std::vector<TabCol> &required_cols);
-    std::shared_ptr<Plan> apply_projection_pushdown(std::shared_ptr<Plan> plan, const std::shared_ptr<Query> &query);
 
 public:
     Planner(SmManager *sm_manager) : sm_manager_(sm_manager) {}
