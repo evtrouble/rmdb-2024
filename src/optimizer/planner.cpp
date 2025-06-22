@@ -723,15 +723,8 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
             auto post_filter_cols = column_requirements_.get_post_filter_cols(table);
             if (!post_filter_cols.empty())
             {
-                // 转换为vector并按字母顺序排序
+                // 转换为vector
                 std::vector<TabCol> cols(post_filter_cols.begin(), post_filter_cols.end());
-                // 排序逻辑放到输出去
-                //  std::sort(cols.begin(), cols.end(),
-                //            [](const TabCol &a, const TabCol &b)
-                //            {
-                //                return a.col_name < b.col_name;
-                //            });
-
                 scan_plan = std::make_shared<ProjectionPlan>(
                     PlanTag::T_Projection,
                     scan_plan,
@@ -767,8 +760,6 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
                 min_card = join_card;
                 min_i = i;
                 min_j = j;
-                // if (card_i > card_j)
-                //     std::swap(min_i, min_j); // 小表放到左子树
             }
         }
     }

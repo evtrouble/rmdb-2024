@@ -404,16 +404,16 @@ private:
             ss << val.int_val;
             break;
         case TYPE_FLOAT:
-            if (use_raw_float)
-            {
-                // 输出原始浮点值
-                ss << val.float_val;
-            }
-            else
-            {
-                // 输出六位精度格式化值
-                ss << std::fixed << std::setprecision(FLOAT_PRECISION) << val.float_val;
-            }
+            // if (use_raw_float)
+            // {
+            //     // 输出原始浮点值
+            //     ss << val.float_val;
+            // }
+            // else
+            // {
+            // 输出六位精度格式化值
+            ss << std::fixed << std::setprecision(FLOAT_PRECISION) << val.float_val;
+            // }
             break;
         case TYPE_STRING:
         case TYPE_DATETIME:
