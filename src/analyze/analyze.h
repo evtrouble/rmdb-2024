@@ -29,6 +29,9 @@ public:
     std::vector<Condition> conds;
     // 按表分组的条件
     std::map<std::string, std::vector<Condition>> tab_conds;
+    // join条件
+    std::vector<Condition> join_conds;
+
     // 投影列
     std::vector<TabCol> cols;
     // 表名

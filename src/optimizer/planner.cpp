@@ -491,29 +491,54 @@ std::shared_ptr<Query> Planner::logical_optimization(std::shared_ptr<Query> quer
 {
     if (query->parse->Nodetype() == ast::TreeNodeType::SelectStmt)
     {
-        // 1. 收集所有选择条件
-        auto &all_conds = query->conds;
+        // 1. 处理 WHERE 条件，将其分类
+        auto &where_conds = query->conds;
+        std::vector<Condition> where_join_conds; // WHERE 中的跨表条件
 
-        std::vector<Condition> join_conds;
-
-        // 2. 对每个选择条件进行分类和下推
-        join_conds.reserve(all_conds.size());
-        for (auto &cond : all_conds)
+        for (auto &cond : where_conds)
         {
             // 判断是否可以下推(只涉及一个表的条件可以下推)
             if (cond.is_rhs_val || cond.lhs_col.tab_name == cond.rhs_col.tab_name)
             {
-                // 3. 按表分组条件
+                // 单表条件，按表分组下推
                 query->tab_conds[cond.lhs_col.tab_name].emplace_back(std::move(cond));
             }
             else
             {
-                join_conds.emplace_back(std::move(cond));
+                // 跨表条件，作为连接条件
+                where_join_conds.emplace_back(std::move(cond));
             }
         }
 
-        // 4. 将分组后的条件存储回query对象
-        query->conds = std::move(join_conds); // 保存连接条件
+        // 2. 遍历 jointree，提取 JOIN 条件
+        std::vector<Condition> jointree_conds;
+        for (const auto &join_expr : query->jointree)
+        {
+            // 将每个 JoinExpr 中的条件添加到 jointree_conds
+            for (const auto &cond : join_expr.conds)
+            {
+                jointree_conds.emplace_back(cond);
+            }
+        }
+
+        // 3. 合并所有连接条件到 query->join_conds
+        query->join_conds.clear();
+        query->join_conds.reserve(where_join_conds.size() + jointree_conds.size());
+
+        // 添加 WHERE 中的跨表条件
+        for (auto &cond : where_join_conds)
+        {
+            query->join_conds.emplace_back(std::move(cond));
+        }
+
+        // 添加 jointree 中的条件
+        for (auto &cond : jointree_conds)
+        {
+            query->join_conds.emplace_back(std::move(cond));
+        }
+
+        // 4. 清空原始 WHERE 条件，因为已经分类处理了
+        query->conds.clear();
     }
     return query;
 }
@@ -750,7 +775,7 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
 
     // 2. 创建初始连接
     std::vector<Condition> join_conds;
-    for (const auto &cond : query->conds)
+    for (const auto &cond : query->join_conds)
     {
         if (!cond.is_rhs_val)
         {
@@ -802,7 +827,7 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
 
             // 收集与当前表相关的连接条件
             std::vector<Condition> curr_conds;
-            for (const auto &cond : query->conds)
+            for (const auto &cond : query->join_conds)
             {
                 if (!cond.is_rhs_val)
                 {
@@ -1072,7 +1097,7 @@ QueryColumnRequirement Planner::analyze_column_requirements(std::shared_ptr<Quer
     requirements.select_cols.insert(query->cols.begin(), query->cols.end());
 
     // 2. 分析JOIN条件中需要的列
-    for (const auto &cond : query->conds)
+    for (const auto &cond : query->join_conds)
     {
         // 处理左侧列
         requirements.join_cols.emplace(cond.lhs_col);

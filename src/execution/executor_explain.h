@@ -303,7 +303,7 @@ private:
             {
                 if (!cond.is_rhs_val) // 只处理列与列之间的连接条件
                 {
-                    conditions.push_back(formatCondition(cond, stmt));
+                    conditions.push_back(formatCondition(cond, stmt, true, false));
                 }
             }
 
