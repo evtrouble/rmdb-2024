@@ -12,7 +12,7 @@ See the Mulan PSL v2 for more details. */
 #include <vector>
 #include <string>
 #include <memory>
-
+#include <unordered_map>
 enum JoinType
 {
     INNER_JOIN,
@@ -294,8 +294,7 @@ namespace ast
         std::shared_ptr<Value> val;
         UpdateOp op;
 
-        SetClause(const std::string &col_name_, std::shared_ptr<Value> val_, UpdateOp op) : 
-            col_name(std::move(col_name_)), val(std::move(val_)), op(op) {}
+        SetClause(const std::string &col_name_, std::shared_ptr<Value> val_, UpdateOp op) : col_name(std::move(col_name_)), val(std::move(val_)), op(op) {}
         TreeNodeType Nodetype() const override { return TreeNodeType::SetClause; }
     };
 
@@ -405,6 +404,7 @@ namespace ast
         std::shared_ptr<OrderBy> order;
         int limit = -1;
         std::vector<std::string> tab_aliases;
+        std::unordered_map<std::string, std::string> *tab_to_alias;
 
         bool has_agg = false;
         bool has_groupby;

@@ -82,7 +82,7 @@ public:
         case PlanTag::T_ShowIndex:
         case PlanTag::T_Explain:
             return std::make_shared<PortalStmt>(PORTAL_MULTI_QUERY, plan);
-        case T_select:
+        case T_Select:
         {
             auto x = std::static_pointer_cast<DMLPlan>(plan);
             std::shared_ptr<ProjectionPlan> p = std::static_pointer_cast<ProjectionPlan>(x->subplan_);
@@ -290,20 +290,14 @@ public:
                     merged_conditions,
                     scan_plan->index_meta_,
                     scan_plan->max_match_col_count_);
-
                 // 递归处理新的 ScanPlan
                 return convert_plan_executor(new_scan_plan, context);
             }
             else
             {
-                // 如果子计划不是 ScanPlan，需要创建一个真正的 FilterExecutor
-                // 这里需要实现 FilterExecutor 类
-                auto child_executor = convert_plan_executor(child_plan, context);
 
-                // 注意：这需要实现 FilterExecutor 类
-                // return std::make_unique<FilterExecutor>(std::move(child_executor), x->conds_);
-
-                // 临时解决方案：如果没有 FilterExecutor，可以将条件处理逻辑放在其他地方
+                // auto child_executor = convert_plan_executor(child_plan, context);
+                // 临时解决方案
                 throw InternalError("FilterExecutor not implemented for non-scan children");
             }
         }

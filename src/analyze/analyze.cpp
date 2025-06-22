@@ -31,7 +31,8 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
     {
         auto x = std::static_pointer_cast<ast::SelectStmt>(parse);
         // 处理表名
-        query->tables = std::move(x->tabs);
+        //!!!!这里不能move，后面会用到
+        query->tables = x->tabs;
 
         // 建立表别名映射关系,别名->实际表名
         for (size_t i = 0; i < query->tables.size(); ++i)

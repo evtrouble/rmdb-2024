@@ -34,7 +34,7 @@ typedef enum PlanTag
     T_Insert,
     T_Update,
     T_Delete,
-    T_select,
+    T_Select,
     T_Transaction_begin,
     T_Transaction_commit,
     T_Transaction_abort,

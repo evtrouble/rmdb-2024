@@ -27,5 +27,6 @@ enum class ExecutionType
         Select,
         SeqScan,
         Update,
-        EXPLAIN
+        Explain,
+        Filter
 };

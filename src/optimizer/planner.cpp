@@ -1047,7 +1047,7 @@ std::shared_ptr<Plan> Planner::do_planner(std::shared_ptr<Query> query, Context 
         std::shared_ptr<plannerInfo> root = std::make_shared<plannerInfo>(x);
         // 生成select语句的查询执行计划
         std::shared_ptr<Plan> projection = generate_select_plan(std::move(query), context);
-        auto dml_plan = std::make_shared<DMLPlan>(T_select, projection, std::string(), std::vector<Value>(),
+        auto dml_plan = std::make_shared<DMLPlan>(T_Select, projection, std::string(), std::vector<Value>(),
                                                   std::vector<Condition>(), std::vector<SetClause>());
         dml_plan->parse = x; // 设置parse成员
         return dml_plan;
