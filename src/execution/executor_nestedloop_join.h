@@ -26,7 +26,24 @@ private:
     std::vector<Condition> fed_conds_; // join条件
     std::unique_ptr<RmRecord> left_current_;
     std::unique_ptr<RmRecord> right_current_;
+    // 维护两个unordered_set分别存储左右子树的列信息
+    std::unordered_set<std::string> left_cols_set_;
+    std::unordered_set<std::string> right_cols_set_;
     bool isend;
+    void init_cols_sets()
+    {
+        // 初始化左表列集合
+        for (const auto &col : left_->cols())
+        {
+            left_cols_set_.insert(col.tab_name + "." + col.name);
+        }
+
+        // 初始化右表列集合
+        for (const auto &col : right_->cols())
+        {
+            right_cols_set_.insert(col.tab_name + "." + col.name);
+        }
+    }
     void find_valid_tuples()
     {
         while (!left_->is_end())
@@ -55,22 +72,73 @@ private:
     }
     bool check_cond(const Condition &cond)
     {
-        auto left_col = left_->get_col(left_->cols(), cond.lhs_col);
-        char *left_value = left_current_->data + left_col->offset;
-        char *right_value;
-        ColType right_type;
-        if (cond.is_rhs_val)
+        char *lhs_value;
+        ColType lhs_type;
+        int lhs_len;
+
+        // 确定左操作数来自哪个子树
+        std::string lhs_col_full_name = cond.lhs_col.tab_name + "." + cond.lhs_col.col_name;
+        if (left_cols_set_.find(lhs_col_full_name) != left_cols_set_.end())
         {
-            right_type = cond.rhs_val.type;
-            right_value = cond.rhs_val.raw->data;
+            // 左操作数来自左表
+            auto left_col = left_->get_col(left_->cols(), cond.lhs_col);
+            lhs_value = left_current_->data + left_col->offset;
+            lhs_type = left_col->type;
+            lhs_len = left_col->len;
+        }
+        else if (right_cols_set_.find(lhs_col_full_name) != right_cols_set_.end())
+        {
+            // 左操作数来自右表
+            auto left_col = right_->get_col(right_->cols(), cond.lhs_col);
+            lhs_value = right_current_->data + left_col->offset;
+            lhs_type = left_col->type;
+            lhs_len = left_col->len;
         }
         else
         {
-            auto rhs_col = right_->get_col(right_->cols(), cond.rhs_col);
-            right_type = rhs_col->type;
-            right_value = right_current_->data + rhs_col->offset;
+            throw ColumnNotFoundError(lhs_col_full_name);
         }
-        return check_condition(left_value, left_col->type, right_value, right_type, cond.op, left_col->len);
+
+        char *rhs_value;
+        ColType rhs_type;
+        int rhs_len = lhs_len; // 默认使用左操作数的长度
+
+        if (cond.is_rhs_val)
+        {
+            // 右操作数是常量值
+            rhs_type = cond.rhs_val.type;
+            rhs_value = cond.rhs_val.raw->data;
+        }
+        else
+        {
+            // 右操作数是列，需要确定来自哪个子树
+            std::string rhs_col_full_name = cond.rhs_col.tab_name + "." + cond.rhs_col.col_name;
+            if (left_cols_set_.find(rhs_col_full_name) != left_cols_set_.end())
+            {
+                // 右操作数来自左表
+                auto rhs_col = left_->get_col(left_->cols(), cond.rhs_col);
+                rhs_value = left_current_->data + rhs_col->offset;
+                rhs_type = rhs_col->type;
+                rhs_len = rhs_col->len;
+            }
+            else if (right_cols_set_.find(rhs_col_full_name) != right_cols_set_.end())
+            {
+                // 右操作数来自右表
+                auto rhs_col = right_->get_col(right_->cols(), cond.rhs_col);
+                rhs_value = right_current_->data + rhs_col->offset;
+                rhs_type = rhs_col->type;
+                rhs_len = rhs_col->len;
+            }
+            else
+            {
+                throw ColumnNotFoundError(rhs_col_full_name);
+            }
+        }
+
+        // 对于字符串比较，使用较小的长度
+        int compare_len = (lhs_type == TYPE_STRING && rhs_type == TYPE_STRING) ? std::min(lhs_len, rhs_len) : std::max(lhs_len, rhs_len);
+
+        return check_condition(lhs_value, lhs_type, rhs_value, rhs_type, cond.op, compare_len);
     }
 
 public:
@@ -87,6 +155,7 @@ public:
             col.offset += left_->tupleLen();
         }
         cols_.insert(cols_.end(), right_cols.begin(), right_cols.end());
+        init_cols_sets();
     }
 
     void beginTuple() override
