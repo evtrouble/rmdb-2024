@@ -1449,11 +1449,12 @@ QueryColumnRequirement Planner::analyze_column_requirements(std::shared_ptr<Quer
         // SELECT * 的情况，需要所有表的所有列
         for (const auto &table : query->tables)
         {
-            const auto &table_cols = sm_manager_->db_.get_table(table).cols;
+            std::vector<TabCol> table_cols;
+            get_table_all_cols(table, table_cols, context);
             for (const auto &col : table_cols)
             {
                 // 使用表的原始名称，而不是别名
-                TabCol tab_col{table, col.name};
+                TabCol tab_col{table, col.col_name};
                 requirements.select_cols.emplace(std::move(tab_col));
             }
         }
@@ -1478,10 +1479,11 @@ QueryColumnRequirement Planner::analyze_column_requirements(std::shared_ptr<Quer
         // SELECT * 的情况，需要所有表的所有列
         for (const auto &table : query->tables)
         {
-            const auto &table_cols = sm_manager_->db_.get_table(table).cols;
+            std::vector<TabCol> table_cols;
+            get_table_all_cols(table, table_cols, context);
             for (const auto &col : table_cols)
             {
-                TabCol tab_col{table, col.name};
+                TabCol tab_col{table, col.col_name};
                 requirements.select_cols.insert(tab_col);
             }
         }
