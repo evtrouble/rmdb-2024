@@ -112,7 +112,7 @@ private:
         }
         else
         {
-            result += formatColumnName(cond.rhs_col, stmt);
+            result += formatColumnName(cond.rhs_col, stmt, use_alias, use_raw);
         }
 
         return result;
