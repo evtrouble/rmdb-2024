@@ -97,34 +97,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
             {
                 all_sel_col.insert(query_col.tab_name + "." + query_col.col_name);
             }
-            if (all_sel_col.size() == all_cols.size())
-            {
-                bool is_all = true;
-
-                // 检查query中的每一列是否都存在于all_cols中
-                 for (const auto &all_col : all_cols)
-                {
-                    bool found = false;
-                    for (const auto &query_col : query->cols)
-                    {
-                        if (query_col.col_name == all_col.name &&
-                            query_col.tab_name == all_col.tab_name)
-                        {
-                            found = true;
-                            break;
-                        }
-                    }
-                    if (!found)
-                    {
-                        is_all = false;
-                        break;
-                    }
-                }
-                if (is_all)
-                {
-                    context->setIsStarFlag(true);
-                }
-            }
+            context->setIsStarFlag(all_sel_col.size() == all_cols.size());
         }
         // groupby检查
         // 同时包含聚合函数和非聚合列时，必须有groupby
