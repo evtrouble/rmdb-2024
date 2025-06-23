@@ -837,13 +837,7 @@ std::shared_ptr<Plan> Planner::generate_sort_plan(std::shared_ptr<Query> query, 
     {
         return plan;
     }
-    std::vector<ColMeta> all_cols;
-    for (auto &sel_tab_name : tables)
-    {
-        // 这里db_不能写成get_db(), 注意要传指针
-        const auto &sel_tab_cols = sm_manager_->db_.get_table(sel_tab_name).cols;
-        all_cols.insert(all_cols.end(), sel_tab_cols.begin(), sel_tab_cols.end());
-    }
+
     // 准备多列排序参数
     std::vector<TabCol> sort_cols;
     std::vector<bool> is_desc_orders; // 每列对应的排序方向
@@ -853,25 +847,13 @@ std::shared_ptr<Plan> Planner::generate_sort_plan(std::shared_ptr<Query> query, 
     {
         auto &order_col = x->order->cols[i];
         auto &order_dir = x->order->dirs[i];
-
-        // 查找匹配的列
-        bool found = false;
-        for (auto &col : all_cols)
-        {
-            if (col.name.compare(order_col->col_name) == 0)
-            {
-                sort_cols.emplace_back(col.tab_name, col.name);
-                is_desc_orders.emplace_back(order_dir == ast::OrderByDir::OrderBy_DESC);
-                found = true;
-                break;
-            }
-        }
-
-        if (!found)
-        {
-            throw RMDBError("Sort column not found: " + order_col->col_name);
-        }
+        is_desc_orders.emplace_back(order_dir == ast::OrderByDir::OrderBy_DESC);
+        if(order_col->tab_name.empty())
+            order_col->tab_name = tables[0];
+        sort_cols.emplace_back(order_col->tab_name, order_col->col_name,
+                               order_col->agg_type);
     }
+    
     if (x->has_limit)
     {
         limit = x->limit;
