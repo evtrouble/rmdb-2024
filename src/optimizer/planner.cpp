@@ -558,12 +558,11 @@ std::shared_ptr<Plan> Planner::physical_optimization(std::shared_ptr<Query> quer
     // 处理orderby
     plan = generate_sort_plan(query, std::move(plan));
 
-    auto select_stmt = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
-
     // 添加最终的投影节点
-    if (select_stmt)
+    if (query->parse->Nodetype() == ast::TreeNodeType::SelectStmt 
+        && plan->tag != PlanTag::T_Projection)
     {
-        if (context->hasIsStarFlag())
+        if (context->hasIsStarFlag() )
         {
             // 对于 SELECT * 查询，获取所有表的所有列
             std::vector<TabCol> all_cols;
