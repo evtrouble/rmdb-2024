@@ -40,7 +40,7 @@ public:
 
         for (auto &sel_col : sel_cols)
         {
-            auto pos = get_col(prev_cols, sel_col);
+            auto pos = get_col(prev_cols, sel_col, true);
 
             cols_.emplace_back(*pos);
             col_indices_.emplace_back(pos - prev_cols.begin());

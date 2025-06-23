@@ -724,13 +724,11 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
             if (!post_filter_cols.empty())
             {
                 // 转换为vector并按字母顺序排序
-                std::vector<TabCol> cols(post_filter_cols.begin(), post_filter_cols.end());
-                // 排序逻辑放到输出去
-                //  std::sort(cols.begin(), cols.end(),
-                //            [](const TabCol &a, const TabCol &b)
-                //            {
-                //                return a.col_name < b.col_name;
-                //            });
+                std::vector<TabCol> cols;
+                cols.reserve(post_filter_cols.size());
+                for(auto& col : post_filter_cols) {
+                    cols.emplace_back(std::move(col));
+                }
 
                 scan_plan = std::make_shared<ProjectionPlan>(
                     PlanTag::T_Projection,

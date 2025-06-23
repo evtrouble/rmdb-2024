@@ -92,6 +92,7 @@ public:
                 col_meta = *temp;
                 col_meta.offset = offset;
             }
+            col_meta.aggFuncType = col.aggFuncType;
             TupleLen += col_meta.len;
             offset += col_meta.len;
             output_cols_.emplace_back(std::move(col_meta));

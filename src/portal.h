@@ -176,6 +176,15 @@ public:
         case PlanTag::T_Projection:
         {
             auto x = std::static_pointer_cast<ProjectionPlan>(plan);
+            // 检查子计划是否是 ScanPlan，如果是，将条件下推到 ScanPlan
+            auto child_plan = x->subplan_;
+            auto child_physical_plan = convert_plan_executor(child_plan, context);
+            if(child_physical_plan->type() == ExecutionType::IndexScan || 
+                child_physical_plan->type() == ExecutionType::SeqScan)
+            {
+                child_physical_plan->set_cols(x->sel_cols_);
+                return child_physical_plan;
+            }
             return std::make_unique<ProjectionExecutor>(convert_plan_executor(x->subplan_, context),
                                                         x->sel_cols_);
         }
