@@ -53,7 +53,7 @@ public:
         fh_ = sm_manager_->get_table_handle(tab_name_);
 
         // cols_ = tab_.cols;
-        len_ = cols_.back().offset + cols_.back().len;
+        len_ = tab_.cols.back().offset + tab_.cols.back().len;
 
         // fed_conds_ = conds_;
 
@@ -89,13 +89,6 @@ public:
             offset += col.len;
         }
 
-        // for (size_t id = 0; id < index_meta_.cols.size(); ++id) {
-        //     int offset = index_offsets[id];
-        //     int col_len = index_meta_.cols[id].len;
-        //     ColType col_type = index_meta_.cols[id].type;
-        //     inject_max_value(up_key + offset, col_type, col_len);
-        //     inject_min_value(low_key + offset, col_type, col_len);
-        // }
         memcpy(low_key, index_meta_.min_val.get(), index_meta_.col_tot_len);
         memcpy(up_key, index_meta_.max_val.get(), index_meta_.col_tot_len);
 
@@ -415,7 +408,7 @@ public:
 
     ExecutionType type() const override { return ExecutionType::IndexScan; }
 
-        void set_cols(const std::vector<TabCol> &sel_cols) override {
+    void set_cols(const std::vector<TabCol> &sel_cols) override {
         auto &prev_cols = tab_.cols;
         cols_.reserve(sel_cols.size());
         col_indices_.reserve(sel_cols.size());

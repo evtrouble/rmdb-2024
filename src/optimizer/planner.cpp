@@ -561,24 +561,14 @@ std::shared_ptr<Plan> Planner::physical_optimization(std::shared_ptr<Query> quer
     // 添加最终的投影节点
     if (query->parse->Nodetype() == ast::TreeNodeType::SelectStmt)
     {
-        // 放到后面去
-        // 按字母顺序排序列（先按表名，再按列名）
-        // std::sort(final_cols.begin(), final_cols.end(),
-        //           [](const TabCol &a, const TabCol &b)
-        //           {
-        //               if (a.tab_name != b.tab_name)
-        //               {
-        //                   return a.tab_name < b.tab_name;
-        //               }
-        //               return a.col_name < b.col_name;
-        //           });
-        if(plan->tag != PlanTag::T_Projection) {
-            plan = std::make_shared<ProjectionPlan>(PlanTag::T_Projection, plan, query->cols);
-        } else {
-            auto project_plan = std::static_pointer_cast<ProjectionPlan>(plan);
-            plan = std::make_shared<ProjectionPlan>(PlanTag::T_Projection, 
-                project_plan->subplan_, query->cols);
-        }
+        plan = std::make_shared<ProjectionPlan>(PlanTag::T_Projection, plan, query->cols);
+        // if(plan->tag != PlanTag::T_Projection) {
+        //     plan = std::make_shared<ProjectionPlan>(PlanTag::T_Projection, plan, query->cols);
+        // } else {
+        //     auto project_plan = std::static_pointer_cast<ProjectionPlan>(plan);
+        //     plan = std::make_shared<ProjectionPlan>(PlanTag::T_Projection, 
+        //         project_plan->subplan_, query->cols);
+        // }
     }
 
     return plan;
@@ -690,7 +680,7 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
                 query->tab_conds[table]);
         }
         // 只有在非 SELECT * 查询时才添加投影节点
-        if (!context->hasIsStarFlag())
+        if (!context->hasIsStarFlag() && query->tables.size() > 1)
         {
             auto post_filter_cols = column_requirements_.get_post_filter_cols(table);
             if (post_filter_cols.size())
@@ -708,7 +698,7 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
                     cols);
             }
         }
-        table_plans.push_back(scan_plan);
+        table_plans.emplace_back(scan_plan);
     }
 
     // 如果只有一个表，直接返回其扫描计划
@@ -752,15 +742,6 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
             std::string lhs_tab = cond.lhs_col.tab_name;
             std::string rhs_tab = cond.rhs_col.tab_name;
 
-            // analyse处理后，都是真实表名，不需要这些处理
-            //  if (alias_to_tab->find(lhs_tab) != alias_to_tab->end())
-            //  {
-            //      lhs_tab = alias_to_tab->at(lhs_tab);
-            //  }
-            //  if (alias_to_tab->find(rhs_tab) != alias_to_tab->end())
-            //  {
-            //      rhs_tab = alias_to_tab->at(rhs_tab);
-            //  }
             auto scan_i = extract_scan_plan(table_plans[min_i]);
             auto scan_j = extract_scan_plan(table_plans[min_j]);
 
