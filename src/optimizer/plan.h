@@ -131,7 +131,7 @@ public:
     SortPlan(PlanTag tag, std::shared_ptr<Plan> subplan, const TabCol &sel_col, bool is_desc, int limit = -1)
         : Plan(tag), subplan_(std::move(subplan)), limit_(limit)
     {
-        sel_cols_.emplace_back(sel_col);
+        sel_cols_.emplace_back(std::move(sel_col));
         is_desc_orders_.emplace_back(is_desc);
     }
     // 多列排序构造函数（支持每列独立排序方向）
@@ -141,8 +141,8 @@ public:
              int limit = -1)
         : Plan(tag),
           subplan_(std::move(subplan)),
-          sel_cols_(sel_cols),
-          is_desc_orders_(is_desc_orders),
+          sel_cols_(std::move(sel_cols)),
+          is_desc_orders_(std::move(is_desc_orders)),
           limit_(limit)
     {
         if (sel_cols.size() != is_desc_orders.size())
@@ -150,7 +150,7 @@ public:
             throw std::invalid_argument("Number of sort columns must match number of sort directions");
         }
     }
-    ~SortPlan() {}
+    ~SortPlan() = default;
     std::shared_ptr<Plan> subplan_;
     std::vector<TabCol> sel_cols_;
     std::vector<bool> is_desc_orders_;
@@ -234,7 +234,10 @@ public:
     std::vector<TabCol> groupby_cols_;
     std::vector<Condition> having_conds_;
 
-    AggPlan(PlanTag tag, std::shared_ptr<Plan> subplan, std::vector<TabCol> sel_cols_, std::vector<TabCol> groupby_cols_, std::vector<Condition> having_conds_) : Plan(tag), subplan_(std::move(subplan)), sel_cols_(std::move(sel_cols_)), groupby_cols_(std::move(groupby_cols_)), having_conds_(std::move(having_conds_)) {}
+    AggPlan(PlanTag tag, std::shared_ptr<Plan> subplan, std::vector<TabCol> sel_cols_, 
+        const std::vector<TabCol> &groupby_cols_, const std::vector<Condition>& having_conds_) 
+        : Plan(tag), subplan_(std::move(subplan)), sel_cols_(std::move(sel_cols_)), 
+        groupby_cols_(std::move(groupby_cols_)), having_conds_(std::move(having_conds_)) {}
 
     ~AggPlan() override = default;
 };

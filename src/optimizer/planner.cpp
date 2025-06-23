@@ -558,55 +558,17 @@ std::shared_ptr<Plan> Planner::physical_optimization(std::shared_ptr<Query> quer
     // 处理orderby
     plan = generate_sort_plan(query, std::move(plan));
 
-    auto select_stmt = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
-
     // 添加最终的投影节点
-    if (select_stmt)
+    if (query->parse->Nodetype() == ast::TreeNodeType::SelectStmt)
     {
-        if (context->hasIsStarFlag())
-        {
-            // 对于 SELECT * 查询，获取所有表的所有列
-            std::vector<TabCol> all_cols;
-            for (const auto &table_name : query->tables)
-            {
-                std::vector<TabCol> table_cols;
-                get_table_all_cols(table_name, table_cols, context);
-                all_cols.insert(all_cols.end(), table_cols.begin(), table_cols.end());
-            }
-
-            // 放到后面去做
-            //  按字母顺序排序列（先按表名，再按列名）
-            //  std::sort(all_cols.begin(), all_cols.end(),
-            //            [](const TabCol &a, const TabCol &b)
-            //            {
-            //                if (a.tab_name != b.tab_name)
-            //                {
-            //                    return a.tab_name < b.tab_name;
-            //                }
-            //                return a.col_name < b.col_name;
-            //            });
-
-            plan = std::make_shared<ProjectionPlan>(PlanTag::T_Projection, plan, all_cols);
-        }
-        else
-        {
-            // SELECT 具体列情况
-            std::vector<TabCol> final_cols(query->cols.begin(), query->cols.end());
-
-            // 放到后面去
-            // 按字母顺序排序列（先按表名，再按列名）
-            // std::sort(final_cols.begin(), final_cols.end(),
-            //           [](const TabCol &a, const TabCol &b)
-            //           {
-            //               if (a.tab_name != b.tab_name)
-            //               {
-            //                   return a.tab_name < b.tab_name;
-            //               }
-            //               return a.col_name < b.col_name;
-            //           });
-
-            plan = std::make_shared<ProjectionPlan>(PlanTag::T_Projection, plan, final_cols);
-        }
+        plan = std::make_shared<ProjectionPlan>(PlanTag::T_Projection, plan, query->cols);
+        // if(plan->tag != PlanTag::T_Projection) {
+        //     plan = std::make_shared<ProjectionPlan>(PlanTag::T_Projection, plan, query->cols);
+        // } else {
+        //     auto project_plan = std::static_pointer_cast<ProjectionPlan>(plan);
+        //     plan = std::make_shared<ProjectionPlan>(PlanTag::T_Projection, 
+        //         project_plan->subplan_, query->cols);
+        // }
     }
 
     return plan;
@@ -718,20 +680,25 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
                 query->tab_conds[table]);
         }
         // 只有在非 SELECT * 查询时才添加投影节点
-        if (!context->hasIsStarFlag())
+        if (!context->hasIsStarFlag() && query->tables.size() > 1)
         {
             auto post_filter_cols = column_requirements_.get_post_filter_cols(table);
-            if (!post_filter_cols.empty())
+            if (post_filter_cols.size())
             {
-                // 转换为vector
-                std::vector<TabCol> cols(post_filter_cols.begin(), post_filter_cols.end());
+                // 转换为vector并按字母顺序排序
+                std::vector<TabCol> cols;
+                cols.reserve(post_filter_cols.size());
+                for(auto& col : post_filter_cols) {
+                    cols.emplace_back(std::move(col));
+                }
+
                 scan_plan = std::make_shared<ProjectionPlan>(
                     PlanTag::T_Projection,
                     scan_plan,
                     cols);
             }
         }
-        table_plans.push_back(scan_plan);
+        table_plans.emplace_back(scan_plan);
     }
 
     // 如果只有一个表，直接返回其扫描计划
@@ -773,15 +740,6 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
             std::string lhs_tab = cond.lhs_col.tab_name;
             std::string rhs_tab = cond.rhs_col.tab_name;
 
-            // analyse处理后，都是真实表名，不需要这些处理
-            //  if (alias_to_tab->find(lhs_tab) != alias_to_tab->end())
-            //  {
-            //      lhs_tab = alias_to_tab->at(lhs_tab);
-            //  }
-            //  if (alias_to_tab->find(rhs_tab) != alias_to_tab->end())
-            //  {
-            //      rhs_tab = alias_to_tab->at(rhs_tab);
-            //  }
             auto scan_i = extract_scan_plan(table_plans[min_i]);
             auto scan_j = extract_scan_plan(table_plans[min_j]);
 
@@ -877,13 +835,7 @@ std::shared_ptr<Plan> Planner::generate_sort_plan(std::shared_ptr<Query> query, 
     {
         return plan;
     }
-    std::vector<ColMeta> all_cols;
-    for (auto &sel_tab_name : tables)
-    {
-        // 这里db_不能写成get_db(), 注意要传指针
-        const auto &sel_tab_cols = sm_manager_->db_.get_table(sel_tab_name).cols;
-        all_cols.insert(all_cols.end(), sel_tab_cols.begin(), sel_tab_cols.end());
-    }
+
     // 准备多列排序参数
     std::vector<TabCol> sort_cols;
     std::vector<bool> is_desc_orders; // 每列对应的排序方向
@@ -893,25 +845,13 @@ std::shared_ptr<Plan> Planner::generate_sort_plan(std::shared_ptr<Query> query, 
     {
         auto &order_col = x->order->cols[i];
         auto &order_dir = x->order->dirs[i];
-
-        // 查找匹配的列
-        bool found = false;
-        for (auto &col : all_cols)
-        {
-            if (col.name.compare(order_col->col_name) == 0)
-            {
-                sort_cols.emplace_back(col.tab_name, col.name);
-                is_desc_orders.emplace_back(order_dir == ast::OrderByDir::OrderBy_DESC);
-                found = true;
-                break;
-            }
-        }
-
-        if (!found)
-        {
-            throw RMDBError("Sort column not found: " + order_col->col_name);
-        }
+        is_desc_orders.emplace_back(order_dir == ast::OrderByDir::OrderBy_DESC);
+        if(order_col->tab_name.empty())
+            order_col->tab_name = tables[0];
+        sort_cols.emplace_back(order_col->tab_name, order_col->col_name,
+                               order_col->agg_type);
     }
+    
     if (x->has_limit)
     {
         limit = x->limit;

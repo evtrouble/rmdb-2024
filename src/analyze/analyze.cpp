@@ -92,34 +92,12 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
             }
 
             // 检查是否为“全选”
-            if (query->cols.size() == all_cols.size())
+            std::unordered_set<std::string> all_sel_col;
+            for (const auto &query_col : query->cols)
             {
-                bool is_all = true;
-
-                // 检查query中的每一列是否都存在于all_cols中
-                for (const auto &query_col : query->cols)
-                {
-                    bool found = false;
-                    for (const auto &all_col : all_cols)
-                    {
-                        if (query_col.col_name == all_col.name &&
-                            query_col.tab_name == all_col.tab_name)
-                        {
-                            found = true;
-                            break;
-                        }
-                    }
-                    if (!found)
-                    {
-                        is_all = false;
-                        break;
-                    }
-                }
-                if (is_all)
-                {
-                    context->setIsStarFlag(true);
-                }
+                all_sel_col.insert(query_col.tab_name + "." + query_col.col_name);
             }
+            context->setIsStarFlag(all_sel_col.size() == all_cols.size());
         }
         // groupby检查
         // 同时包含聚合函数和非聚合列时，必须有groupby

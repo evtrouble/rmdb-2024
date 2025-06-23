@@ -27,6 +27,8 @@ private:
     std::vector<Condition> fed_conds_; // 同conds_，两个字段相同
     TabMeta tab_;                      // 表的元数据
 
+    std::vector<size_t> col_indices_;        // 在原始记录中的列索引
+
     Rid rid_;
     std::unique_ptr<RmScan> scan_; // table_iterator
 
@@ -186,12 +188,12 @@ private:
                 if (satisfy_conditions(current.get()))
                 {
                     if(context_->hasJoinFlag() || result_cache_.empty()) {
-                        result_cache_.emplace_back(std::move(current));
+                        result_cache_.emplace_back(project(current));
                         ++cache_index_;
                     }
                     else
                     {
-                        result_cache_[0] = std::move(current);
+                        result_cache_[0] = project(current);
                     }
                     return;
                 }
@@ -210,7 +212,7 @@ public:
         // 检查文件句柄是否存在
         tab_ = sm_manager_->db_.get_table(tab_name_);
         fh_ = sm_manager_->get_table_handle(tab_name_);
-        cols_ = tab_.cols;
+        // cols_ = tab_.cols;
         len_ = tab_.cols.back().offset + tab_.cols.back().len;
 
         // 对条件进行排序，以便后续处理
@@ -254,10 +256,59 @@ public:
         return nullptr;  // 如果没有更多记录，返回空指针
     }
 
-    const std::vector<ColMeta> &cols() const override { return tab_.cols; }
+    const std::vector<ColMeta> &cols() const override { 
+        return (cols_.size() ? cols_ : tab_.cols); 
+    }
     size_t tupleLen() const override { return len_; }
 
     Rid &rid() override { return rid_; }
 
     ExecutionType type() const override { return ExecutionType::SeqScan; }
+
+    void set_cols(const std::vector<TabCol> &sel_cols) override {
+        auto &prev_cols = tab_.cols;
+        cols_.reserve(sel_cols.size());
+        col_indices_.reserve(sel_cols.size());
+
+        for (auto &sel_col : sel_cols)
+        {
+            auto pos = get_col(prev_cols, sel_col);
+
+            cols_.emplace_back(*pos);
+            col_indices_.emplace_back(pos - prev_cols.begin());
+        }
+        len_ = 0;
+        for (auto &col : cols_)
+        {
+            // 重新计算投影后的偏移
+            col.offset = len_;
+            len_ += col.len;
+        }
+    }
+
+    std::unique_ptr<RmRecord> project(std::unique_ptr<RmRecord>& prev_record)
+    {
+        if(cols_.empty())
+            return std::move(prev_record);
+        
+        // 创建新的投影记录
+        auto projected_record = std::make_unique<RmRecord>(len_);
+
+        // 获取原始记录的列信息
+        const auto &prev_cols = tab_.cols;
+
+        // 复制选定的列到新记录中
+        for (size_t i = 0; i < cols_.size(); ++i)
+        {
+            const auto &src_col = prev_cols[col_indices_[i]];
+            const auto &dst_col = cols_[i];
+
+            // 从原记录复制数据到新记录
+            memcpy(projected_record->data + dst_col.offset,
+                   prev_record->data + src_col.offset,
+                   src_col.len);
+        }
+
+        return projected_record;
+    }
 };

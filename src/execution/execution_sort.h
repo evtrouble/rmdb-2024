@@ -195,7 +195,7 @@ public:
         temp_dir_ = "/tmp/rmdb_sort_" + std::to_string(txn_id);
         // 获取所有排序列的元数据
         for (const auto &col : sel_cols) {  
-            sort_cols_.emplace_back(*get_col(prev_->cols(), col));
+            sort_cols_.emplace_back(*get_col(prev_->cols(), col, true));
         }
         record_size = prev_->tupleLen();
         if (mkdir(temp_dir_.c_str(), 0700) != 0 && errno != EEXIST) {
