@@ -199,8 +199,15 @@ public:
         if (concurrency_mode_ != ConcurrencyMode::MVCC) [[unlikely]] {
             return;
         }
-        txn_id_t txn_id = txn->get_transaction_id();
         txn->dup();
+        set_record_txn_id_without_dup(data, txn, is_delete);
+    }
+
+    void set_record_txn_id_without_dup(char* data, Transaction* txn, bool is_delete = false) const {
+        if (concurrency_mode_ != ConcurrencyMode::MVCC) [[unlikely]] {
+            return;
+        }
+        txn_id_t txn_id = txn->get_transaction_id();
         if (is_delete)
             txn_id |= TXN_DELETE_TAG;
         memcpy(data, &txn_id, sizeof(txn_id_t));
