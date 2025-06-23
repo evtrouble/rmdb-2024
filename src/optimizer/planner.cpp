@@ -559,52 +559,25 @@ std::shared_ptr<Plan> Planner::physical_optimization(std::shared_ptr<Query> quer
     plan = generate_sort_plan(query, std::move(plan));
 
     // 添加最终的投影节点
-    if (query->parse->Nodetype() == ast::TreeNodeType::SelectStmt 
-        && plan->tag != PlanTag::T_Projection)
+    if (query->parse->Nodetype() == ast::TreeNodeType::SelectStmt)
     {
-        if (context->hasIsStarFlag() )
-        {
-            // 对于 SELECT * 查询，获取所有表的所有列
-            std::vector<TabCol> all_cols;
-            for (const auto &table_name : query->tables)
-            {
-                std::vector<TabCol> table_cols;
-                get_table_all_cols(table_name, table_cols, context);
-                all_cols.insert(all_cols.end(), table_cols.begin(), table_cols.end());
-            }
-
-            // 放到后面去做
-            //  按字母顺序排序列（先按表名，再按列名）
-            //  std::sort(all_cols.begin(), all_cols.end(),
-            //            [](const TabCol &a, const TabCol &b)
-            //            {
-            //                if (a.tab_name != b.tab_name)
-            //                {
-            //                    return a.tab_name < b.tab_name;
-            //                }
-            //                return a.col_name < b.col_name;
-            //            });
-
-            plan = std::make_shared<ProjectionPlan>(PlanTag::T_Projection, plan, all_cols);
-        }
-        else
-        {
-            // SELECT 具体列情况
-            std::vector<TabCol> final_cols(query->cols.begin(), query->cols.end());
-
-            // 放到后面去
-            // 按字母顺序排序列（先按表名，再按列名）
-            // std::sort(final_cols.begin(), final_cols.end(),
-            //           [](const TabCol &a, const TabCol &b)
-            //           {
-            //               if (a.tab_name != b.tab_name)
-            //               {
-            //                   return a.tab_name < b.tab_name;
-            //               }
-            //               return a.col_name < b.col_name;
-            //           });
-
-            plan = std::make_shared<ProjectionPlan>(PlanTag::T_Projection, plan, final_cols);
+        // 放到后面去
+        // 按字母顺序排序列（先按表名，再按列名）
+        // std::sort(final_cols.begin(), final_cols.end(),
+        //           [](const TabCol &a, const TabCol &b)
+        //           {
+        //               if (a.tab_name != b.tab_name)
+        //               {
+        //                   return a.tab_name < b.tab_name;
+        //               }
+        //               return a.col_name < b.col_name;
+        //           });
+        if(plan->tag != PlanTag::T_Projection) {
+            plan = std::make_shared<ProjectionPlan>(PlanTag::T_Projection, plan, query->cols);
+        } else {
+            auto project_plan = std::static_pointer_cast<ProjectionPlan>(plan);
+            plan = std::make_shared<ProjectionPlan>(PlanTag::T_Projection, 
+                project_plan->subplan_, query->cols);
         }
     }
 
@@ -720,7 +693,7 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
         if (!context->hasIsStarFlag())
         {
             auto post_filter_cols = column_requirements_.get_post_filter_cols(table);
-            if (!post_filter_cols.empty())
+            if (post_filter_cols.size())
             {
                 // 转换为vector并按字母顺序排序
                 std::vector<TabCol> cols;
