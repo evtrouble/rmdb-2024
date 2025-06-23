@@ -566,7 +566,7 @@ std::shared_ptr<Plan> Planner::physical_optimization(std::shared_ptr<Query> quer
         //     plan = std::make_shared<ProjectionPlan>(PlanTag::T_Projection, plan, query->cols);
         // } else {
         //     auto project_plan = std::static_pointer_cast<ProjectionPlan>(plan);
-        //     plan = std::make_shared<ProjectionPlan>(PlanTag::T_Projection, 
+        //     plan = std::make_shared<ProjectionPlan>(PlanTag::T_Projection,
         //         project_plan->subplan_, query->cols);
         // }
     }
@@ -679,7 +679,7 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
                 scan_plan,
                 query->tab_conds[table]);
         }
-        // 只有在非 SELECT * 查询时才添加投影节点
+        // 只有在非 SELECT * 查询时才添加投影节点,单表不添加
         if (!context->hasIsStarFlag() && query->tables.size() > 1)
         {
             auto post_filter_cols = column_requirements_.get_post_filter_cols(table);
@@ -688,7 +688,8 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
                 // 转换为vector并按字母顺序排序
                 std::vector<TabCol> cols;
                 cols.reserve(post_filter_cols.size());
-                for(auto& col : post_filter_cols) {
+                for (auto &col : post_filter_cols)
+                {
                     cols.emplace_back(std::move(col));
                 }
 
@@ -848,12 +849,12 @@ std::shared_ptr<Plan> Planner::generate_sort_plan(std::shared_ptr<Query> query, 
         auto &order_col = x->order->cols[i];
         auto &order_dir = x->order->dirs[i];
         is_desc_orders.emplace_back(order_dir == ast::OrderByDir::OrderBy_DESC);
-        if(order_col->tab_name.empty())
+        if (order_col->tab_name.empty())
             order_col->tab_name = tables[0];
         sort_cols.emplace_back(order_col->tab_name, order_col->col_name,
                                order_col->agg_type);
     }
-    
+
     if (x->has_limit)
     {
         limit = x->limit;
