@@ -37,15 +37,22 @@ public:
 
     virtual std::string getType() { return "AbstractExecutor"; };
 
-    virtual void beginTuple() {};
+    // 批量获取下一个batch_size个满足条件的元组，最少一页，最多batch_size且为页的整数倍
+    virtual std::vector<std::unique_ptr<RmRecord>> next_batch(size_t batch_size = BATCH_SIZE) 
+    {
+        return {};
+    }
 
-    virtual void nextTuple() {};
+    virtual void beginTuple() {}
+    
+    // 获取当前批次所有可见记录的RID
+    virtual std::vector<Rid> rid_batch(size_t batch_size = BATCH_SIZE) const {
+        return {};
+    }
 
-    virtual bool is_end() const { return true; };
+    // virtual Rid &rid() = 0;
 
-    virtual Rid &rid() = 0;
-
-    virtual std::unique_ptr<RmRecord> Next() = 0;
+    // virtual std::unique_ptr<RmRecord> Next() = 0;
 
     virtual ExecutionType type() const = 0;
 

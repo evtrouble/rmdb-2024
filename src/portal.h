@@ -18,7 +18,9 @@ See the Mulan PSL v2 for more details. */
 #include "execution/executor_nestedloop_join.h"
 #include "execution/executor_projection.h"
 #include "execution/executor_seq_scan.h"
+#include "execution/executor_seq_cache_scan.h"
 #include "execution/executor_index_scan.h"
+#include "execution/executor_index_cache_scan.h"
 #include "execution/executor_update.h"
 #include "execution/executor_insert.h"
 #include "execution/executor_delete.h"
@@ -94,12 +96,14 @@ public:
             auto x = std::static_pointer_cast<DMLPlan>(plan);
             std::unique_ptr<AbstractExecutor> scan = convert_plan_executor(x->subplan_, context);
             std::vector<Rid> rids;
-            for (scan->beginTuple(); !scan->is_end(); scan->nextTuple())
-            {
-                rids.emplace_back(scan->rid());
+            auto batch = scan->rid_batch();
+
+            while(batch.size()) {
+                rids.insert(rids.end(), batch.begin(), batch.end());
+                batch = scan->rid_batch();
             }
             std::unique_ptr<AbstractExecutor> root = std::make_unique<UpdateExecutor>(sm_manager_,
-                                                                                      x->tab_name_, x->set_clauses_, rids, context);
+                                            x->tab_name_, x->set_clauses_, rids, context);
             return std::make_shared<PortalStmt>(PORTAL_DML_WITHOUT_SELECT, std::move(root), plan);
         }
         case T_Delete:
@@ -107,11 +111,12 @@ public:
             auto x = std::static_pointer_cast<DMLPlan>(plan);
             std::unique_ptr<AbstractExecutor> scan = convert_plan_executor(x->subplan_, context);
             std::vector<Rid> rids;
-            for (scan->beginTuple(); !scan->is_end(); scan->nextTuple())
-            {
-                rids.emplace_back(scan->rid());
-            }
+            auto batch = scan->rid_batch();
 
+            while(batch.size()) {
+                rids.insert(rids.end(), batch.begin(), batch.end());
+                batch = scan->rid_batch();
+            }
             std::unique_ptr<AbstractExecutor> root =
                 std::make_unique<DeleteExecutor>(sm_manager_, x->tab_name_, rids, context);
 
@@ -138,31 +143,31 @@ public:
     {
         switch (portal->tag)
         {
-        case PORTAL_ONE_SELECT:
-        {
-            ql->select_from(std::move(portal->root), std::move(portal->sel_cols), context);
-            break;
-        }
+            case PORTAL_ONE_SELECT:
+            {
+                ql->select_from(std::move(portal->root), std::move(portal->sel_cols), context);
+                break;
+            }
 
-        case PORTAL_DML_WITHOUT_SELECT:
-        {
-            ql->run_dml(std::move(portal->root));
-            break;
-        }
-        case PORTAL_MULTI_QUERY:
-        {
-            ql->run_mutli_query(portal->plan, context);
-            break;
-        }
-        case PORTAL_CMD_UTILITY:
-        {
-            ql->run_cmd_utility(portal->plan, txn_id, context);
-            break;
-        }
-        default:
-        {
-            throw InternalError("Unexpected field type");
-        }
+            case PORTAL_DML_WITHOUT_SELECT:
+            {
+                ql->run_dml(std::move(portal->root));
+                break;
+            }
+            case PORTAL_MULTI_QUERY:
+            {
+                ql->run_mutli_query(portal->plan, context);
+                break;
+            }
+            case PORTAL_CMD_UTILITY:
+            {
+                ql->run_cmd_utility(portal->plan, txn_id, context);
+                break;
+            }
+            default:
+            {
+                throw InternalError("Unexpected field type");
+            }
         }
     }
 
@@ -189,48 +194,18 @@ public:
         case PlanTag::T_SeqScan:
         {
             auto x = std::static_pointer_cast<ScanPlan>(plan);
-            // 处理条件里面的子查询
-            // for (auto &cond : x->conds_)
-            // {
-            //     if (!cond.is_subquery || cond.subQuery->stmt == nullptr)
-            //         continue;
-            //     // 如果条件左边是浮点数，右边是整数，需要转换
-            //     bool convert = false;
-            //     TabMeta &tab = sm_manager_->db_.get_table(x->tab_name_);
-            //     auto lhs_col = tab.get_col(cond.lhs_col.col_name);
-            //     if (lhs_col->type == TYPE_FLOAT && cond.subQuery->subquery_type == TYPE_INT)
-            //         convert = true;
-            //     cond.subQuery->result = QlManager::sub_select_from(std::move(start(cond.subQuery->plan, context)->root), convert);
-            //     // 如果是标量子查询，结果集大小不为1，报错
-            //     if (cond.subQuery->is_scalar && cond.subQuery->result.size() != 1)
-            //     {
-            //         throw RMDBError("Scalar subquery result size is not 1");
-            //     }
-            // }
-
+            if(context->hasJoinFlag()) {
+                return std::make_unique<SeqCacheScanExecutor>(sm_manager_, x->tab_name_, x->fed_conds_, context);
+            }
             return std::make_unique<SeqScanExecutor>(sm_manager_, x->tab_name_, x->fed_conds_, context);
         }
         case PlanTag::T_IndexScan:
         {
             auto x = std::static_pointer_cast<ScanPlan>(plan);
-            // 处理条件里面的子查询
-            // for (auto &cond : x->conds_)
-            // {
-            //     if (!cond.is_subquery || cond.subQuery->stmt == nullptr)
-            //         continue;
-            //     // 如果条件左边是浮点数，右边是整数，需要转换
-            //     bool convert = false;
-            //     TabMeta &tab = sm_manager_->db_.get_table(x->tab_name_);
-            //     auto lhs_col = tab.get_col(cond.lhs_col.col_name);
-            //     if (lhs_col->type == TYPE_FLOAT && cond.subQuery->subquery_type == TYPE_INT)
-            //         convert = true;
-            //     cond.subQuery->result = QlManager::sub_select_from(std::move(start(cond.subQuery->plan, context)->root), convert);
-            //     // 如果是标量子查询，结果集大小不为1，报错
-            //     if (cond.subQuery->is_scalar && cond.subQuery->result.size() != 1)
-            //     {
-            //         throw RMDBError("Scalar subquery result size is not 1");
-            //     }
-            // }
+            if(context->hasJoinFlag()) {
+                std::make_unique<IndexCacheScanExecutor>(sm_manager_, x->tab_name_, x->fed_conds_, x->index_meta_,
+                                                       x->max_match_col_count_, context);
+            }
             return std::make_unique<IndexScanExecutor>(sm_manager_, x->tab_name_, x->fed_conds_, x->index_meta_,
                                                        x->max_match_col_count_, context);
         }

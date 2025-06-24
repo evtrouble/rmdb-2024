@@ -318,20 +318,17 @@ IxNodeHandle IxIndexHandle::find_leaf_page(const char *key, Operation operation,
  * @param transaction 事务指针
  * @return bool 返回目标键值对是否存在
  */
-bool IxIndexHandle::get_value(const char *key, std::vector<Rid> *result, Transaction *transaction)
+bool IxIndexHandle::get_value(const char *key, Rid *result, Transaction *transaction)
 {
     // 1. 获取目标key值所在的叶子结点
     root_lacth_.lock_shared();
     auto leaf = find_leaf_page(key, Operation::FIND, transaction);
     // 2. 在叶子节点中查找目标key值的位置，并读取key对应的rid
-    Rid *rid = nullptr;
-    bool exist = leaf.leaf_lookup(key, &rid);
+    bool exist = leaf.leaf_lookup(key, &result);
     unlock_shared(leaf);
 
     // 3. 把rid存入result参数中
     // 提示：使用完buffer_pool提供的page之后，记得unpin page；记得处理并发的上锁
-    if (exist)
-        result->emplace_back(*rid);
     return exist;
 }
 
@@ -740,21 +737,20 @@ Rid IxIndexHandle::get_rid(const Iid &iid) const
  * @note 上层传入的key本来是int类型，通过(const char *)&key进行了转换
  * 可用*(int *)key转换回去
  */
-Iid IxIndexHandle::lower_bound(const char *key)
+std::pair<IxNodeHandle, int> IxIndexHandle::lower_bound(const char *key)
 {
     root_lacth_.lock_shared();
     auto node = find_leaf_page(key, Operation::FIND, nullptr);
-    Iid ret;
 
     int key_idx = node.lower_bound(key);
     if (key_idx >= node.page_hdr->num_key && node.get_next_leaf() != IX_LEAF_HEADER_PAGE)
     {
-        ret = Iid{.page_no = node.get_next_leaf(), .slot_no = 0};
+        auto next_node = fetch_node(node.get_next_leaf());
+        next_node.page->latch_.lock_shared();
+        unlock_shared(node);
+        return std::make_pair(next_node, 0);
     }
-    else
-        ret = Iid{.page_no = node.get_page_no(), .slot_no = key_idx};
-    unlock_shared(node);
-    return ret;
+    return std::make_pair(node, key_idx);
 }
 /**
  * @brief FindLeafPage + upper_bound
@@ -762,11 +758,10 @@ Iid IxIndexHandle::lower_bound(const char *key)
  * @param key
  * @return Iid
  */
-Iid IxIndexHandle::upper_bound(const char *key)
+std::pair<IxNodeHandle, int> IxIndexHandle::upper_bound(const char *key)
 {
     root_lacth_.lock_shared();
     auto node = find_leaf_page(key, Operation::FIND, nullptr);
-    Iid ret;
 
     int key_idx = node.upper_bound(key);
     if(key_idx == 1 && ix_compare(key, node.get_key(0), file_hdr_->col_types_, file_hdr_->col_lens_) < 0)
@@ -775,12 +770,12 @@ Iid IxIndexHandle::upper_bound(const char *key)
     }
     if (key_idx >= node.page_hdr->num_key && node.get_next_leaf() != IX_LEAF_HEADER_PAGE)
     {
-        ret = Iid{.page_no = node.get_next_leaf(), .slot_no = 0};
+        auto next_node = fetch_node(node.get_next_leaf());
+        next_node.page->latch_.lock_shared();
+        unlock_shared(node);
+        return std::make_pair(next_node, 0);
     }
-    else
-        ret = Iid{.page_no = node.get_page_no(), .slot_no = key_idx};
-    unlock_shared(node);
-    return ret;
+    return std::make_pair(node, key_idx);
 }
 
 /**
@@ -789,35 +784,35 @@ Iid IxIndexHandle::upper_bound(const char *key)
  *
  * @return Iid
  */
-Iid IxIndexHandle::leaf_end()
-{
-    root_lacth_.lock_shared();
-    Page *prev_page = nullptr;
-    IxNodeHandle node;
-    auto next_page_id = file_hdr_->root_page_;
-    // 2. 从根节点开始不断向下查找目标key
-    while (true)
-    {
-        node = fetch_node(next_page_id);
-        node.page->latch_.lock_shared();
-        if (prev_page != nullptr)
-        {
-            prev_page->latch_.unlock_shared();
-            ix_manager_->buffer_pool_manager_->unpin_page(prev_page->get_page_id(), false);
-        }
-        else
-            root_lacth_.unlock_shared();
-        if (node.is_leaf_page())
-        {
-            break;
-        }
-        next_page_id = node.get_rid(node.get_size() - 1)->page_no;
-        prev_page = node.page;
-    }
-    Iid ret{.page_no = node.get_page_no(), .slot_no = node.get_size()};
-    unlock_shared(node);
-    return ret;
-}
+// Iid IxIndexHandle::leaf_end()
+// {
+//     root_lacth_.lock_shared();
+//     Page *prev_page = nullptr;
+//     IxNodeHandle node;
+//     auto next_page_id = file_hdr_->root_page_;
+//     // 2. 从根节点开始不断向下查找目标key
+//     while (true)
+//     {
+//         node = fetch_node(next_page_id);
+//         node.page->latch_.lock_shared();
+//         if (prev_page != nullptr)
+//         {
+//             prev_page->latch_.unlock_shared();
+//             ix_manager_->buffer_pool_manager_->unpin_page(prev_page->get_page_id(), false);
+//         }
+//         else
+//             root_lacth_.unlock_shared();
+//         if (node.is_leaf_page())
+//         {
+//             break;
+//         }
+//         next_page_id = node.get_rid(node.get_size() - 1)->page_no;
+//         prev_page = node.page;
+//     }
+//     Iid ret{.page_no = node.get_page_no(), .slot_no = node.get_size()};
+//     unlock_shared(node);
+//     return ret;
+// }
 
 /**
  * @brief 指向第一个叶子的第一个结点
@@ -825,35 +820,35 @@ Iid IxIndexHandle::leaf_end()
  *
  * @return Iid
  */
-Iid IxIndexHandle::leaf_begin()
-{
-    root_lacth_.lock_shared();
-    Page *prev_page = nullptr;
-    IxNodeHandle node;
-    auto next_page_id = file_hdr_->root_page_;
-    // 2. 从根节点开始不断向下查找目标key
-    while (true)
-    {
-        node = fetch_node(next_page_id);
-        node.page->latch_.lock_shared();
-        if (prev_page != nullptr)
-        {
-            prev_page->latch_.unlock_shared();
-            ix_manager_->buffer_pool_manager_->unpin_page(prev_page->get_page_id(), false);
-        }
-        else
-            root_lacth_.unlock_shared();
-        if (node.is_leaf_page())
-        {
-            break;
-        }
-        next_page_id = node.get_rid(0)->page_no;
-        prev_page = node.page;
-    }
-    Iid ret{.page_no = node.get_page_no(), .slot_no = 0};
-    unlock_shared(node);
-    return ret;
-}
+// Iid IxIndexHandle::leaf_begin()
+// {
+//     root_lacth_.lock_shared();
+//     Page *prev_page = nullptr;
+//     IxNodeHandle node;
+//     auto next_page_id = file_hdr_->root_page_;
+//     // 2. 从根节点开始不断向下查找目标key
+//     while (true)
+//     {
+//         node = fetch_node(next_page_id);
+//         node.page->latch_.lock_shared();
+//         if (prev_page != nullptr)
+//         {
+//             prev_page->latch_.unlock_shared();
+//             ix_manager_->buffer_pool_manager_->unpin_page(prev_page->get_page_id(), false);
+//         }
+//         else
+//             root_lacth_.unlock_shared();
+//         if (node.is_leaf_page())
+//         {
+//             break;
+//         }
+//         next_page_id = node.get_rid(0)->page_no;
+//         prev_page = node.page;
+//     }
+//     Iid ret{.page_no = node.get_page_no(), .slot_no = 0};
+//     unlock_shared(node);
+//     return ret;
+// }
 
 /**
  * @brief 获取一个指定结点
@@ -949,7 +944,7 @@ void IxIndexHandle::lock_shared(IxNodeHandle &node)
     node.page->latch_.lock_shared();
 }
 
-void IxIndexHandle::unlock_shared(IxNodeHandle &node)
+void IxIndexHandle::unlock_shared(IxNodeHandle &node) const
 {
     node.page->latch_.unlock_shared();
     ix_manager_->buffer_pool_manager_->unpin_page(node.get_page_id(), false);

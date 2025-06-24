@@ -37,13 +37,17 @@ class RmScan : public RecScan {
     Rid rid() const override;   // 获取当前记录的RID
 
     // 单记录访问
-    void record(std::unique_ptr<RmRecord> &out) {
+    std::unique_ptr<RmRecord> &get_record() override { 
+        return current_records_[current_record_idx_].first; 
+    }
+
+    inline void record(std::unique_ptr<RmRecord> &out) override{
         out = std::move(current_records_[current_record_idx_].first);
     }
 
     // 批量访问接口
-    std::vector<Rid> rid_batch() const;  // 获取当前页所有记录的RID
-    std::vector<std::unique_ptr<RmRecord>> record_batch() const;  // 获取当前页所有记录
+    std::vector<Rid> rid_batch() const override;  // 获取当前页所有记录的RID
+    std::vector<std::unique_ptr<RmRecord>> record_batch() override;  // 获取当前页所有记录
 
    private:
     void load_next_page();  // 加载下一页数据

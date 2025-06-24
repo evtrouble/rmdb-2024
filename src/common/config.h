@@ -57,3 +57,4 @@ static const std::string LOG_BAK_FILE_NAME = "db.log.bak";
 
 static const std::string DB_META_NAME = "db.meta";
 constexpr double multiplier = 1000000.0;
+constexpr size_t BATCH_SIZE = 256;

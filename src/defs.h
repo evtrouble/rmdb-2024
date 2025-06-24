@@ -12,6 +12,8 @@ See the Mulan PSL v2 for more details. */
 
 #include <iostream>
 #include <map>
+#include <memory>
+#include <vector>
 
 // 此处重载了<<操作符，在ColMeta中进行了调用
 template <typename T, typename = typename std::enable_if<std::is_enum<T>::value, T>::type>
@@ -81,6 +83,8 @@ inline std::string coltype2str(ColType type)
     return m.at(type);
 }
 
+struct RmRecord;
+
 class RecScan
 {
 public:
@@ -91,4 +95,14 @@ public:
     virtual bool is_end() const = 0;
 
     virtual Rid rid() const = 0;
+
+    // 单记录访问
+    virtual void record(std::unique_ptr<RmRecord> &out) = 0;
+    virtual std::unique_ptr<RmRecord> &get_record() = 0;
+
+    virtual void next_batch() = 0;
+
+    // 批量访问接口
+    virtual std::vector<Rid> rid_batch() const = 0;
+    virtual std::vector<std::unique_ptr<RmRecord>> record_batch() = 0;
 };

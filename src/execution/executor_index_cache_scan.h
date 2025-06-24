@@ -16,7 +16,7 @@ See the Mulan PSL v2 for more details. */
 #include "index/ix.h"
 #include "system/sm.h"
 
-class IndexScanExecutor : public AbstractExecutor {
+class IndexCacheScanExecutor : public AbstractExecutor {
 private:
     SmManager *sm_manager_;
     std::string tab_name_;                      // 表名称
@@ -31,9 +31,11 @@ private:
     std::unique_ptr<RecScan> scan_;
 
     int max_match_col_count_;  // 最大匹配列数
+    size_t cache_index_;
+    std::vector<std::unique_ptr<RmRecord>> result_cache_;
 
 public:
-    IndexScanExecutor(SmManager *sm_manager, const std::string& tab_name, const std::vector<Condition> &conds, const IndexMeta& index_meta,
+    IndexCacheScanExecutor(SmManager *sm_manager, const std::string& tab_name, const std::vector<Condition> &conds, const IndexMeta& index_meta,
                       int max_match_col_count, Context *context) : AbstractExecutor(context), sm_manager_(sm_manager), 
         tab_name_(std::move(tab_name)), fed_conds_(std::move(conds)), index_meta_(std::move(index_meta)), max_match_col_count_(max_match_col_count) {
 
@@ -51,6 +53,19 @@ public:
 
         // 加表级意向共享锁
         // context_->lock_mgr_->lock_IS_on_table(context_->txn_, fh_->GetFd());
+        setup_scan();
+
+        while (!scan_->is_end())
+        {
+            auto rid_batch = scan_->rid_batch();
+            for (auto &rid : rid_batch) {
+                auto record = fh_->get_record(rid, context_);
+                if (check_cons(fed_conds_, record.get())) {
+                    result_cache_.emplace_back(project(record));
+                }
+            }
+            scan_->next_batch();
+        } 
     }
 
     void setup_scan() {
@@ -217,43 +232,22 @@ public:
     
     // 批量获取下一个batch_size个满足条件的元组，最少一页，最多batch_size且为页的整数倍
     std::vector<std::unique_ptr<RmRecord>> next_batch(size_t batch_size) override {
-        std::vector<std::unique_ptr<RmRecord>> batch;
-        size_t count = 0;
-        batch.reserve(batch_size);
-        while (count < batch_size && !scan_->is_end())
-        {
-            auto rid_batch = scan_->rid_batch();
-            for (auto &rid : rid_batch) {
-                auto record = fh_->get_record(rid, context_);
-                if (check_cons(fed_conds_, record.get())) {
-                    batch.emplace_back(project(record));
-                    ++count;
-                }
-            }
-            scan_->next_batch();
-        } 
-        return batch;
+        std::vector<std::unique_ptr<RmRecord>> results;
+        size_t num = std::min(batch_size, result_cache_.size() - cache_index_);
+        if(num == 0)
+            return results;
+        results.reserve(num);
+        for (size_t id = 0; id < num; id++) {
+            auto &cache = result_cache_[cache_index_ + id];
+            results.emplace_back(cache->data, cache->size, false);
+        }
+        cache_index_ += num;
+        return results;
     }
-    
-    // 获取当前批次所有可见记录的RID
-    std::vector<Rid> rid_batch(size_t batch_size) const override {
-        std::vector<Rid> batch;
-        batch.reserve(batch_size);
-        size_t count = 0;
-        while (count < batch_size && !scan_->is_end())
-        {
-            auto rids = scan_->rid_batch();
-            auto rid_batch = scan_->rid_batch();
-            for (auto &rid : rid_batch) {
-                auto record = fh_->get_record(rid, context_);
-                if (check_cons(fed_conds_, record.get())) {
-                    batch.emplace_back(rid);
-                    ++count;
-                }
-            }
-            scan_->next_batch();
-        } 
-        return batch;
+
+    void beginTuple() override
+    {
+        cache_index_ = 0;
     }
 
     const std::vector<ColMeta> &cols() const override {

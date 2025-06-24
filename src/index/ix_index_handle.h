@@ -70,42 +70,42 @@ class IxNodeHandle
         rids = reinterpret_cast<Rid *>(keys + file_hdr->keys_size_);
     }
 
-    int get_size() { return page_hdr->num_key; }
+    inline int get_size() const { return page_hdr->num_key; }
 
-    void set_size(int size) { page_hdr->num_key = size; }
+    inline void set_size(int size) { page_hdr->num_key = size; }
 
-    int get_max_size() { return file_hdr->btree_order_ + 1; }
+    inline int get_max_size() { return file_hdr->btree_order_ + 1; }
 
-    int get_min_size() { return get_max_size() / 2; }
+    inline int get_min_size() { return get_max_size() / 2; }
 
-    int key_at(int i) { return *(int *)get_key(i); }
+    inline int key_at(int i) { return *(int *)get_key(i); }
 
     /* 得到第i个孩子结点的page_no */
-    page_id_t value_at(int i) { return get_rid(i)->page_no; }
+    inline page_id_t value_at(int i) { return get_rid(i)->page_no; }
 
-    page_id_t get_page_no() { return page->get_page_id().page_no; }
+    inline page_id_t get_page_no() { return page->get_page_id().page_no; }
 
-    PageId get_page_id() { return page->get_page_id(); }
+    inline PageId get_page_id() { return page->get_page_id(); }
 
-    page_id_t get_next_leaf() { return page_hdr->next_leaf; }
+    inline page_id_t get_next_leaf() const { return page_hdr->next_leaf; }
 
-    page_id_t get_parent_page_no() { return page_hdr->parent; }
+    inline page_id_t get_parent_page_no() { return page_hdr->parent; }
 
-    bool is_leaf_page() { return page_hdr->is_leaf; }
+    inline bool is_leaf_page() { return page_hdr->is_leaf; }
 
-    bool is_root_page() { return get_parent_page_no() == INVALID_PAGE_ID; }
+    inline bool is_root_page() { return get_parent_page_no() == INVALID_PAGE_ID; }
 
-    void set_next_leaf(page_id_t page_no) { page_hdr->next_leaf = page_no; }
+    inline void set_next_leaf(page_id_t page_no) { page_hdr->next_leaf = page_no; }
 
-    void set_parent_page_no(page_id_t parent) { page_hdr->parent = parent; }
+    inline void set_parent_page_no(page_id_t parent) { page_hdr->parent = parent; }
 
-    char *get_key(int key_idx) const { return keys + key_idx * file_hdr->col_tot_len_; }
+    inline char *get_key(int key_idx) const { return keys + key_idx * file_hdr->col_tot_len_; }
 
-    Rid *get_rid(int rid_idx) const { return &rids[rid_idx]; }
+    inline Rid *get_rid(int rid_idx) const { return &rids[rid_idx]; }
 
-    void set_key(int key_idx, const char *key) { memcpy(keys + key_idx * file_hdr->col_tot_len_, key, file_hdr->col_tot_len_); }
+    inline void set_key(int key_idx, const char *key) { memcpy(keys + key_idx * file_hdr->col_tot_len_, key, file_hdr->col_tot_len_); }
 
-    void set_rid(int rid_idx, const Rid &rid) { rids[rid_idx] = rid; }
+    inline void set_rid(int rid_idx, const Rid &rid) { rids[rid_idx] = rid; }
 
     int lower_bound(const char *target) const;
 
@@ -120,7 +120,7 @@ class IxNodeHandle
     int insert(const char *key, const Rid &value);
 
     // 用于在结点中的指定位置插入单个键值对
-    void insert_pair(int pos, const char *key, const Rid &rid) { insert_pairs(pos, key, &rid, 1); }
+    inline void insert_pair(int pos, const char *key, const Rid &rid) { insert_pairs(pos, key, &rid, 1); }
 
     void erase_pair(int pos);
 
@@ -189,8 +189,8 @@ public:
     inline void mark_deleted() { is_deleted = true; }
 
     // for search
-    bool get_value(const char *key, std::vector<Rid> *result, Transaction *transaction);
-    bool get_value(const char *key, Rid& result, Transaction *transaction);
+    // bool get_value(const char *key, std::vector<Rid> *result, Transaction *transaction);
+    bool get_value(const char *key, Rid* result, Transaction *transaction);
 
     IxNodeHandle find_leaf_page(const char *key, Operation operation, Transaction *transaction,
                                                  bool find_first = true);
@@ -213,16 +213,16 @@ public:
 
     bool coalesce(IxNodeHandle neighbor_node, IxNodeHandle node, IxNodeHandle &parent, int index, Transaction *transaction);
 
-    Iid lower_bound(const char *key);
+    std::pair<IxNodeHandle, int> lower_bound(const char *key);
 
-    Iid upper_bound(const char *key);
+    std::pair<IxNodeHandle, int> upper_bound(const char *key);
 
-    Iid leaf_end();
+    // Iid leaf_end();
 
-    Iid leaf_begin();
+    // Iid leaf_begin();
 
     void lock_shared(IxNodeHandle &page_no);
-    void unlock_shared(IxNodeHandle &page_no);
+    void unlock_shared(IxNodeHandle &page_no) const;
 
 private:
     // 辅助函数

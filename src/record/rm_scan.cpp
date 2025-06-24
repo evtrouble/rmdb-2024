@@ -113,13 +113,13 @@ std::vector<Rid> RmScan::rid_batch() const {
     return rids;
 }
 
-std::vector<std::unique_ptr<RmRecord>> RmScan::record_batch() const {
+std::vector<std::unique_ptr<RmRecord>> RmScan::record_batch() {
     std::vector<std::unique_ptr<RmRecord>> records;
     records.reserve(current_records_.size());
     
     // current_records_中的记录都已经是可见的了
-    for(const auto& record_pair : current_records_) {
-        records.push_back(std::make_unique<RmRecord>(std::move(*record_pair.first)));
+    for(auto& record_pair : current_records_) {
+        records.emplace_back(std::move(record_pair.first));
     }
     return records;
 }

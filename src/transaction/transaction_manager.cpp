@@ -304,10 +304,7 @@ std::optional<RmRecord> TransactionManager::GetVisibleRecord(std::shared_ptr<Pag
         int ts = current->txn_->get_commit_ts();
         if (ts != INVALID_TIMESTAMP && ts <= current_txn->get_start_ts())
         {
-            // if(current->is_deleted_) {
-            //     return std::nullopt; // 如果是删除标记，直接返回空
-            // }
-            return current->tuple_;
+            return RmRecord(current->tuple_.data, current->tuple_.size, false);
         }
 
         // 获取前一个版本

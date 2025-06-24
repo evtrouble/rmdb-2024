@@ -10,28 +10,48 @@ See the Mulan PSL v2 for more details. */
 
 #include "ix_scan.h"
 
-/**
- * @brief
- * @todo 加上读锁（需要使用缓冲池得到page）
- */
-void IxScan::next()
-{
-    assert(!is_end());
-    IxNodeHandle node = ih_->fetch_node(iid_.page_no);
-    ih_->lock_shared(node);
-    assert(node.is_leaf_page());
-    assert(iid_.slot_no < node.get_size());
-    // increment slot no
-    ++iid_.slot_no;
-    if (node.get_next_leaf() != IX_LEAF_HEADER_PAGE && iid_.slot_no == node.get_size())
-    {
-        // go to next leaf
-        iid_.slot_no = 0;
-        iid_.page_no = node.get_next_leaf();
+void IxScan::next() {
+    ++pos_;
+    if (pos_ >= node_.get_size()) {
+        // 需要切换到下一个叶子节点
+        next_batch();
     }
-    ih_->unlock_shared(node);
 }
-Rid IxScan::rid() const
-{
-    return ih_->get_rid(iid_);
+
+void IxScan::next_batch() {
+    page_id_t next_leaf = node_.get_next_leaf();
+    if (next_leaf == IX_LEAF_HEADER_PAGE) {
+        ih_->unlock_shared(node_);
+        return;
+    }
+    // 先获取新节点并加锁，再释放当前节点锁，避免锁空窗
+    IxNodeHandle new_node = ih_->fetch_node(next_leaf);
+    ih_->lock_shared(new_node);
+    ih_->unlock_shared(node_);
+    node_ = std::move(new_node);
+    pos_ = 0;
+    update_max_pos();
+}
+
+std::vector<Rid> IxScan::rid_batch() const {
+    std::vector<Rid> batch;
+    batch.resize(max_pos_ - pos_);
+    memcpy(batch.data(), node_.get_rid(pos_), (max_pos_ - pos_) * sizeof(Rid));
+    return batch;
+}
+
+// RecScan标准批量接口：IxScan不支持直接返回记录，抛异常或返回空
+std::vector<std::unique_ptr<RmRecord>> IxScan::record_batch() {
+    // std::vector<std::unique_ptr<RmRecord>> batch;
+    // int cur_pos = pos_;
+    // int end_pos = close_ ? node_.upper_bound(max_key_.c_str()) : node_.lower_bound(max_key_.c_str());
+    // end_pos = std::min(end_pos, node_.get_size());
+    // // 若有RmRecord构造接口可用，否则留空
+    // for (int i = cur_pos; i < end_pos; ++i) {
+    //     // 伪代码: batch.push_back(std::make_unique<RmRecord>(node_.get_key(i), node_.get_rid(i)));
+    //     // 实际实现需根据RmRecord定义调整
+    // }
+    // return batch;
+    // mvcc下待支持
+    return {}; // IxScan不支持直接返回记录，返回空
 }

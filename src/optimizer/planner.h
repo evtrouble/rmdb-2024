@@ -193,13 +193,8 @@ private:
             }
 
             // 如果不是连接条件，就是选择条件
-            std::cout << "  -> 添加到选择条件" << std::endl;
             select_conds.push_back(cond);
         }
-
-        std::cout << "[Debug] 分离结果:" << std::endl;
-        std::cout << "  连接条件数: " << join_conds.size() << std::endl;
-        std::cout << "  选择条件数: " << select_conds.size() << std::endl;
 
         return {join_conds, select_conds};
     }
@@ -216,7 +211,6 @@ private:
             auto scan_plan = std::dynamic_pointer_cast<ScanPlan>(plan);
             if (scan_plan->tab_name_ == tab_name)
             {
-                std::cout << "[Debug] Found scan node for table: " << tab_name << std::endl;
                 return plan;
             }
         }

@@ -57,17 +57,28 @@ struct RmRecord
 
     RmRecord() = default;
 
-    RmRecord(const char *data, int size) : data(new char[size]), size(size), allocated_(true)
+    RmRecord(char *data, int size, bool allocate = true)
+        : size(size), allocated_(allocate)
     {
-        memcpy(this->data, data, size);
+        if(allocated_) {
+            this->data = new char[size];
+            memcpy(this->data, data, size);
+        } else {
+            this->data = data;
+        }
     }
-    RmRecord(const RmRecord &other) : size(other.size), allocated_(true)
+    RmRecord(const RmRecord &other) : size(other.size), allocated_(other.allocated_)
     {
-        data = new char[size];
-        memcpy(data, other.data, size);
+        if(allocated_) {
+            data = new char[size];
+            memcpy(data, other.data, size);
+        } else {
+            data = other.data;
+        }
     };
 
-    RmRecord(RmRecord &&other) noexcept : data(other.data), size(other.size), allocated_(true)
+    RmRecord(RmRecord &&other) noexcept : data(other.data), size(other.size), 
+        allocated_(other.allocated_)
     {
         other.data = nullptr;
         other.size = 0;
@@ -76,16 +87,24 @@ struct RmRecord
 
     RmRecord &operator=(const RmRecord &other)
     {
-        if (size <= other.size)
-        {
+        if(other.allocated_) {
+            if (size <= other.size)
+            {
+                size = other.size;
+                if (allocated_)
+                    delete[] data;
+                data = new char[size];
+            }
+
+            memcpy(data, other.data, size);
+            allocated_ = true;
+        } else {
             size = other.size;
             if (allocated_)
                 delete[] data;
-            data = new char[size];
+            data = other.data;
+            allocated_ = false;
         }
-
-        memcpy(data, other.data, size);
-        allocated_ = true;
         return *this;
     };
     RmRecord &operator=(RmRecord &&other)
@@ -96,22 +115,12 @@ struct RmRecord
         data = other.data;
         other.data = nullptr;
         other.size = 0;
+        allocated_ = other.allocated_;
         other.allocated_ = false;
-        allocated_ = true;
         return *this;
     };
 
     RmRecord(int size_) : data(new char[size_]), size(size_), allocated_(true) {}
-
-    RmRecord(int size_, char *data_) : data(new char[size_]), size(size_), allocated_(true)
-    {
-        memcpy(data, data_, size_);
-    }
-
-    // void SetData(char *data_)
-    // {
-    //     memcpy(data, data_, size);
-    // }
 
     void Deserialize(const char *data_)
     {
