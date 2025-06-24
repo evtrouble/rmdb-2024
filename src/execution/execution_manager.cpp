@@ -259,70 +259,74 @@ void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, 
     [[maybe_unused]] ssize_t discard;
 
     // 执行query_plan
-    for (executorTreeRoot->beginTuple(); !executorTreeRoot->is_end(); executorTreeRoot->nextTuple())
+    auto Tuples = executorTreeRoot->next_batch();
+    while (Tuples.size())
     {
-        auto Tuple = executorTreeRoot->Next();
-        std::vector<std::string> columns;
-        for (auto &col : executorTreeRoot->cols())
-        {
-            std::string col_str;
-            char *rec_buf = Tuple->data + col.offset;
-            switch (col.type)
+        for(auto& Tuple : Tuples) {
+            std::vector<std::string> columns;
+            for (auto &col : executorTreeRoot->cols())
             {
-            case TYPE_INT:
+                std::string col_str;
+                char *rec_buf = Tuple->data + col.offset;
+                switch (col.type)
+                {
+                case TYPE_INT:
+                {
+                    auto val = *(int *)rec_buf;
+                    if (std::numeric_limits<int>::max() == val || std::numeric_limits<int>::min() == val)
+                        col_str = "";
+                    else
+                        col_str = std::to_string(*(int *)rec_buf);
+                    break;
+                }
+                case TYPE_FLOAT:
+                {
+                    auto val = *(float *)rec_buf;
+                    if (std::numeric_limits<float>::max() == val || std::numeric_limits<float>::lowest() == val)
+                        col_str = "";
+                    else
+                        col_str = std::to_string(*(float *)rec_buf);
+                    break;
+                }
+                case TYPE_STRING:
+                {
+                    col_str.reserve(col.len);
+                    for (int i = 0; i < col.len && rec_buf[i] != '\0'; i++)
+                        col_str.append(1, rec_buf[i]);
+                    break;
+                }
+                case TYPE_DATETIME:
+                {
+                    // 这里假设rec_buf是一个字符串，格式为"YYYY-MM-DD HH:MM:SS"
+                    // 如果rec_buf是其他格式的时间数据，需要根据实际情况进行转换
+                    col_str = std::string(rec_buf, col.len);
+                    break;
+                }
+                default:
+                    break;
+                }
+                columns.emplace_back(std::move(col_str));
+            }
+            // print record into buffer
+            rec_printer.print_record(columns, context);
+            // print record into file
+            buffer.append("|");
+            for (size_t i = 0; i < columns.size(); ++i)
             {
-                auto val = *(int *)rec_buf;
-                if (std::numeric_limits<int>::max() == val || std::numeric_limits<int>::min() == val)
-                    col_str = "";
-                else
-                    col_str = std::to_string(*(int *)rec_buf);
-                break;
+                buffer.append(" ").append(columns[i]).append(" |");
             }
-            case TYPE_FLOAT:
+            buffer.append("\n");
+            num_rec++;
+            // 缓冲区满时写入
+            if (buffer.size() >= 8096)
             {
-                auto val = *(float *)rec_buf;
-                if (std::numeric_limits<float>::max() == val || std::numeric_limits<float>::lowest() == val)
-                    col_str = "";
-                else
-                    col_str = std::to_string(*(float *)rec_buf);
-                break;
+                discard = ::write(fd, buffer.data(), buffer.size());
+                buffer.clear();
             }
-            case TYPE_STRING:
-            {
-                col_str.reserve(col.len);
-                for (int i = 0; i < col.len && rec_buf[i] != '\0'; i++)
-                    col_str.append(1, rec_buf[i]);
-                break;
-            }
-            case TYPE_DATETIME:
-            {
-                // 这里假设rec_buf是一个字符串，格式为"YYYY-MM-DD HH:MM:SS"
-                // 如果rec_buf是其他格式的时间数据，需要根据实际情况进行转换
-                col_str = std::string(rec_buf, col.len);
-                break;
-            }
-            default:
-                break;
-            }
-            columns.emplace_back(std::move(col_str));
         }
-        // print record into buffer
-        rec_printer.print_record(columns, context);
-        // print record into file
-        buffer.append("|");
-        for (size_t i = 0; i < columns.size(); ++i)
-        {
-            buffer.append(" ").append(columns[i]).append(" |");
-        }
-        buffer.append("\n");
-        num_rec++;
-        // 缓冲区满时写入
-        if (buffer.size() >= 8096)
-        {
-            discard = ::write(fd, buffer.data(), buffer.size());
-            buffer.clear();
-        }
+        Tuples = executorTreeRoot->next_batch();
     }
+
     // 写入剩余数据
     if (buffer.size())
     {
@@ -338,60 +342,5 @@ void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, 
 // 执行DML语句
 void QlManager::run_dml(std::unique_ptr<AbstractExecutor> exec)
 {
-    exec->Next();
+    exec->next_batch();
 }
-// std::unordered_set<Value>
-// QlManager::sub_select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, bool converse_to_float)
-// {
-//     std::unordered_set<Value> results;
-//     // 确保一列
-//     if (executorTreeRoot->cols().size() != 1)
-//         throw RMDBError("subquery must have only one column");
-//     const auto &col = executorTreeRoot->cols()[0];
-
-//     // 执行query_plan
-//     for (executorTreeRoot->beginTuple(); !executorTreeRoot->is_end(); executorTreeRoot->nextTuple())
-//     {
-//         auto Tuple = executorTreeRoot->Next();
-//         char *rec_buf = Tuple->data + col.offset;
-//         Value value;
-//         switch (col.type)
-//         {
-//         case TYPE_INT:
-//         {
-//             auto val = *reinterpret_cast<int *>(rec_buf);
-//             if (val != INT_MAX)
-//             {
-//                 if (!converse_to_float)
-//                     value.set_int(val);
-//                 else
-//                     value.set_float(static_cast<float>(val));
-//             }
-//             break;
-//         }
-//         case TYPE_FLOAT:
-//         {
-//             auto val = *reinterpret_cast<float *>(rec_buf);
-//             if (val != FLT_MAX)
-//             {
-//                 value.set_float(val);
-//             }
-//             break;
-//         }
-//         case TYPE_STRING:
-//         {
-//             std::string col_str(reinterpret_cast<char *>(rec_buf), col.len);
-//             col_str.resize(strlen(col_str.c_str()));
-//             value.set_str(col_str);
-//             break;
-//         }
-//         default:
-//         {
-//             throw RMDBError("Unsupported column type");
-//         }
-//         }
-//         results.insert(value);
-//     }
-
-//     return results;
-// }

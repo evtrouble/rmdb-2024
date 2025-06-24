@@ -59,11 +59,8 @@ public:
         }
     }
 
-    std::unique_ptr<RmRecord> Next() override
+    std::vector<std::unique_ptr<RmRecord>> next_batch(size_t batch_size = BATCH_SIZE) override
     {
-        if (rids_.empty())
-            return nullptr;
-
         TransactionManager *txn_mgr = context_->txn_->get_txn_manager();
         // 遍历所有需要删除的记录
         for (auto &rid : rids_)
@@ -105,9 +102,8 @@ public:
             }
         }
 
-        return nullptr;
+        return {};
     }
 
-    Rid &rid() override { return _abstract_rid; }
     ExecutionType type() const override { return ExecutionType::Delete; }
 };

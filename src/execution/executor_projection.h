@@ -54,22 +54,24 @@ public:
 
     void beginTuple() override { prev_->beginTuple(); }
 
-    void nextTuple() override { prev_->nextTuple(); }
-    size_t tupleLen() const override { return tuple_len_; };
-
-    std::unique_ptr<RmRecord> Next() override
-    {
-        auto prev_record = prev_->Next();
-        if (!prev_record)
-        {
-            return nullptr;
+    std::vector<std::unique_ptr<RmRecord>> next_batch(size_t batch_size = BATCH_SIZE) override 
+    { 
+        auto batch = prev_->next_batch();
+        std::vector<std::unique_ptr<RmRecord>> ans;
+        const auto &prev_cols = prev_->cols();
+        ans.reserve(batch.size());
+        for(auto& tuple : batch) {
+            ans.emplace_back(project(tuple, prev_cols));
         }
+        return ans;
+    }
+    size_t tupleLen() const override { return tuple_len_; }
 
+    std::unique_ptr<RmRecord> project(std::unique_ptr<RmRecord>& prev_record, 
+        const std::vector<ColMeta> &prev_cols)
+    {        
         // 创建新的投影记录
         auto projected_record = std::make_unique<RmRecord>(tuple_len_);
-
-        // 获取原始记录的列信息
-        const auto &prev_cols = prev_->cols();
 
         // 复制选定的列到新记录中
         for (size_t i = 0; i < cols_.size(); ++i)
@@ -85,9 +87,6 @@ public:
 
         return projected_record;
     }
-    bool is_end() const override { return prev_->is_end(); };
-
-    Rid &rid() override { return _abstract_rid; }
 
     ExecutionType type() const override { return ExecutionType::Projection; }
 };

@@ -471,27 +471,7 @@ public:
         return result_;
     }
 
-    std::string getType() override { return "ExplainExecutor"; }
-
     ExecutionType type() const override { return ExecutionType::Explain; }
-
-    bool is_end() const override { return done_; }
-
-    Rid &rid() override { return _abstract_rid; }
-
-    std::unique_ptr<RmRecord> Next() override
-    {
-        if (done_)
-        {
-            return nullptr;
-        }
-        done_ = true;
-
-        int len = result_.length();
-        auto record = std::make_unique<RmRecord>(len);
-        memcpy(record->data, result_.c_str(), len);
-        return record;
-    }
 
     // 保留原有的兼容性方法
     std::string format_list(const std::vector<std::string> &items)

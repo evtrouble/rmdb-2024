@@ -94,10 +94,7 @@ public:
         init(); // 初始化需要更新的索引信息和列元数据
     }
 
-    std::unique_ptr<RmRecord> Next() override {
-        if (rids_.empty())
-            return nullptr;
-
+    std::vector<std::unique_ptr<RmRecord>> next_batch(size_t batch_size = BATCH_SIZE) override {
         // 遍历所有需要更新的记录
         TransactionManager *txn_mgr = context_->txn_->get_txn_manager();
         RmRecord old_rec;
@@ -211,10 +208,8 @@ public:
             }
         }
 
-        return nullptr;
+        return {};
     }
-
-    Rid &rid() override { return _abstract_rid; }
 
     ExecutionType type() const override { return ExecutionType::Update; }
 };

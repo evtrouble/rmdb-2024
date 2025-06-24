@@ -18,8 +18,6 @@ See the Mulan PSL v2 for more details. */
 class AbstractExecutor
 {
 public:
-    Rid _abstract_rid;
-
     Context *context_;
     AbstractExecutor() = default;
     AbstractExecutor(Context *context) : context_(context) {}
@@ -34,8 +32,6 @@ public:
     };
 
     virtual void set_cols(const std::vector<TabCol> &sel_cols) {}
-
-    virtual std::string getType() { return "AbstractExecutor"; };
 
     // 批量获取下一个batch_size个满足条件的元组，最少一页，最多batch_size且为页的整数倍
     virtual std::vector<std::unique_ptr<RmRecord>> next_batch(size_t batch_size = BATCH_SIZE) 

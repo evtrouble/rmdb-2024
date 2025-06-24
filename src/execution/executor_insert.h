@@ -47,7 +47,7 @@ public:
         }
     };
 
-    std::unique_ptr<RmRecord> Next() override {
+    std::vector<std::unique_ptr<RmRecord>> next_batch(size_t batch_size = BATCH_SIZE) override {
         // Make record buffer
         RmRecord rec(fh_->get_file_hdr().record_size);
         
@@ -89,9 +89,8 @@ public:
         //记录日志
         InsertLogRecord log_record(context_->txn_->get_transaction_id(), rec, rid_, tab_name_);
         context_->log_mgr_->add_log_to_buffer(&log_record);
-        return nullptr;
+        return {};
     }
 
-    Rid &rid() override { return rid_; }
     ExecutionType type() const override { return ExecutionType::Insert; }
 };
