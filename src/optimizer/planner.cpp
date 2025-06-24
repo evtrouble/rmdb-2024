@@ -825,8 +825,22 @@ std::shared_ptr<Plan> Planner::generate_agg_plan(const std::shared_ptr<Query> &q
     {
         return plan;
     }
-    // 生成聚合计划
-    plan = std::make_shared<AggPlan>(T_Agg, std::move(plan), query->cols, query->groupby, query->having_conds);
+
+    // 准备 ORDER BY 列
+    std::vector<TabCol> order_by_cols;
+    if (x->has_sort)
+    {
+        for (size_t i = 0; i < x->order->cols.size(); ++i)
+        {
+            auto &order_col = x->order->cols[i];
+            if (order_col->tab_name.empty())
+                order_col->tab_name = query->tables[0];
+            order_by_cols.emplace_back(order_col->tab_name, order_col->col_name, order_col->agg_type);
+        }
+    }
+
+    // 生成聚合计划，增加 ORDER BY 列参数
+    plan = std::make_shared<AggPlan>(T_Agg, std::move(plan), query->cols, query->groupby, query->having_conds, order_by_cols);
     return plan;
 }
 std::shared_ptr<Plan> Planner::generate_sort_plan(std::shared_ptr<Query> query, std::shared_ptr<Plan> plan)

@@ -178,7 +178,7 @@ public:
             auto x = std::static_pointer_cast<ProjectionPlan>(plan);
             // 检查子计划是否是 ScanPlan，如果是，将条件下推到 ScanPlan
             auto child_physical_plan = convert_plan_executor(x->subplan_, context);
-            if(child_physical_plan->type() == ExecutionType::IndexScan || 
+            if (child_physical_plan->type() == ExecutionType::IndexScan ||
                 child_physical_plan->type() == ExecutionType::SeqScan)
             {
                 child_physical_plan->set_cols(x->sel_cols_);
@@ -265,14 +265,15 @@ public:
         {
             auto x = std::static_pointer_cast<SortPlan>(plan);
             return std::make_unique<SortExecutor>(convert_plan_executor(x->subplan_, context),
-                                                  x->sel_cols_, x->is_desc_orders_, x->limit_, context);
+                                                  x->sort_cols_, x->is_desc_orders_, x->limit_, context);
         }
         case PlanTag::T_Agg:
         {
             auto x = std::static_pointer_cast<AggPlan>(plan);
             context->setAggFlag(true);
             return std::make_unique<AggExecutor>(convert_plan_executor(x->subplan_, context),
-                                                 x->sel_cols_, x->groupby_cols_, x->having_conds_, context);
+                                                 x->sel_cols_, x->groupby_cols_, x->having_conds_, x->order_by_cols_,
+                                                 context);
         }
         case PlanTag::T_Filter:
         {
