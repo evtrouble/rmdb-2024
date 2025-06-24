@@ -67,6 +67,14 @@ struct RmRecord
             this->data = data;
         }
     }
+
+    RmRecord(const char *data, int size)
+        : size(size), allocated_(true)
+    {
+        this->data = new char[size];
+        memcpy(this->data, data, size);
+    }
+
     RmRecord(const RmRecord &other) : size(other.size), allocated_(other.allocated_)
     {
         if(allocated_) {
