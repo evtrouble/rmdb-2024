@@ -23,6 +23,7 @@ private:
     std::vector<TabCol> sel_cols_;                                              // 聚合的目标列
     std::vector<TabCol> group_by_cols_;                                         // GROUP BY 列
     std::vector<Condition> having_conds_;                                       // HAVING 条件
+    std::vector<TabCol> order_by_cols_;                                         // ORDER BY 列
     std::vector<ColMeta> output_cols_;                                          // 输出列的元数据
     size_t TupleLen;                                                            // 输出元组的长度
     std::unordered_map<std::string, std::vector<Value>> agg_groups_;            // 分组聚合值
@@ -47,6 +48,9 @@ private:
     std::unordered_map<std::string, std::vector<AvgState>> avg_states_;            // 分组键 -> AVG状态数组
     std::unordered_map<std::string, std::vector<AvgState>> having_lhs_avg_states_; // HAVING左AVG状态
     std::unordered_map<std::string, std::vector<AvgState>> having_rhs_avg_states_; // HAVING右AVG状态
+    std::unordered_map<std::string, std::vector<Value>> order_by_agg_groups_;      // ORDER BY 聚合值
+    std::unordered_map<std::string, std::vector<AvgState>> order_by_avg_states_;   // ORDER BY AVG 状态
+    std::vector<std::vector<ColMeta>::const_iterator> order_by_col_metas_;         // ORDER BY 列元数据
 
     void avg_calculate(const std::vector<TabCol> &sel_cols, std::vector<AvgState> avg_states, std::vector<Value> &agg_values);
 
@@ -60,13 +64,15 @@ private:
 public:
     AggExecutor(std::unique_ptr<AbstractExecutor> child_executor, const std::vector<TabCol> &sel_cols,
                 const std::vector<TabCol> &group_by_cols, const std::vector<Condition> &having_conds,
+                const std::vector<TabCol> &order_by_cols,
                 Context *context)
         : AbstractExecutor(context), child_executor_(std::move(child_executor)),
           sel_cols_(std::move(sel_cols)), group_by_cols_(std::move(group_by_cols)), having_conds_(std::move(having_conds)),
-          TupleLen(0), current_group_index_(0)
+          order_by_cols_(std::move(order_by_cols)), TupleLen(0), current_group_index_(0)
     {
         // 初始化输出列
         int offset = 0;
+        // 先处理 SELECT 列
         for (const auto &col : sel_cols_)
         {
             ColMeta col_meta;
@@ -92,10 +98,38 @@ public:
                 col_meta = *temp;
                 col_meta.offset = offset;
             }
+            col_meta.aggFuncType = col.aggFuncType;
             TupleLen += col_meta.len;
             offset += col_meta.len;
             output_cols_.emplace_back(std::move(col_meta));
         }
+
+        // 新增：处理 ORDER BY 列
+        for (const auto &col : order_by_cols_)
+        {
+            ColMeta col_meta;
+            if (ast::AggFuncType::COUNT == col.aggFuncType)
+            {
+                col_meta = {col.tab_name, col.col_name, TYPE_INT, sizeof(int), offset};
+            }
+            else if (ast::AggFuncType::AVG == col.aggFuncType)
+            {
+                col_meta = {col.tab_name, col.col_name, TYPE_STRING, 20, offset};
+            }
+            else
+            {
+                // 对于非聚合列，获取原始列的元数据
+                auto temp = get_col(child_executor_->cols(), col);
+                col_meta = *temp;
+                col_meta.offset = offset;
+            }
+
+            col_meta.aggFuncType = col.aggFuncType;
+            TupleLen += col_meta.len;
+            offset += col_meta.len;
+            output_cols_.emplace_back(std::move(col_meta));
+        }
+
         // 初始化 GROUP BY 列元数据
         for (const auto &col : group_by_cols_)
         {
@@ -154,6 +188,70 @@ public:
         avg_states_.clear();
         having_lhs_avg_states_.clear();
         having_rhs_avg_states_.clear();
+
+        // 初始化 ORDER BY 列元数据
+        for (const auto &col : order_by_cols_)
+        {
+            // 如果是 GROUP BY 列，直接使用已有的元数据
+            auto group_by_it = std::find_if(group_by_cols_.begin(), group_by_cols_.end(),
+                                            [&col](const TabCol &group_col)
+                                            {
+                                                return col.tab_name == group_col.tab_name && col.col_name == group_col.col_name;
+                                            });
+
+            if (group_by_it != group_by_cols_.end())
+            {
+                // 如果是 GROUP BY 列，复用其元数据
+                auto temp = get_col(child_executor_->cols(), col);
+                order_by_col_metas_.emplace_back(std::move(temp));
+            }
+            else
+            {
+                // 检查是否是 SELECT 列
+                auto sel_it = std::find_if(sel_cols_.begin(), sel_cols_.end(),
+                                           [&col](const TabCol &sel_col)
+                                           {
+                                               return col.tab_name == sel_col.tab_name && col.col_name == sel_col.col_name;
+                                           });
+
+                if (sel_it != sel_cols_.end())
+                {
+                    // 如果是 SELECT 列，复用其元数据
+                    auto temp = get_col(child_executor_->cols(), col);
+                    order_by_col_metas_.emplace_back(std::move(temp));
+                }
+                else
+                {
+                    // 如果是新的聚合列，需要额外处理
+                    if (col.aggFuncType != ast::AggFuncType::NO_TYPE)
+                    {
+                        // 处理新的聚合列
+                        ColMeta col_meta;
+                        if (ast::AggFuncType::COUNT == col.aggFuncType)
+                        {
+                            col_meta = {col.tab_name, col.col_name, TYPE_INT, sizeof(int), 0};
+                        }
+                        else if (ast::AggFuncType::AVG == col.aggFuncType)
+                        {
+                            col_meta = {col.tab_name, col.col_name, TYPE_STRING, 20, 0};
+                        }
+                        else
+                        {
+                            auto temp = get_col(child_executor_->cols(), col);
+                            col_meta = *temp;
+                        }
+                        order_by_col_metas_.emplace_back(output_cols_.begin());
+                    }
+                    else
+                    {
+                        throw std::runtime_error("Order by column not found in GROUP BY or SELECT columns");
+                    }
+                }
+            }
+        }
+        // 初始化 ORDER BY 聚合值
+        order_by_agg_groups_.clear();
+        order_by_avg_states_.clear();
     }
 
     size_t tupleLen() const
@@ -175,6 +273,8 @@ public:
         avg_states_.clear();
         having_lhs_avg_states_.clear();
         having_rhs_avg_states_.clear();
+        order_by_agg_groups_.clear();
+        order_by_avg_states_.clear();
         while (!child_executor_->is_end())
         {
             auto record = child_executor_->Next();
@@ -214,7 +314,9 @@ public:
             RmRecord record(TupleLen);
             int offset = 0;
             std::vector<Value> agg_values;
-            agg_values.resize(sel_cols_.size());
+            agg_values.resize(sel_cols_.size() + order_by_cols_.size());
+
+            // 初始化 SELECT 列的值
             for (size_t i = 0; i < sel_cols_.size(); ++i)
             {
                 auto agg_type = sel_cols_[i].aggFuncType;
@@ -250,14 +352,56 @@ public:
                     }
                 }
             }
-            for (size_t i = 0; i < sel_cols_.size(); ++i)
+
+            // 初始化 ORDER BY 列的值
+            for (size_t i = 0; i < order_by_cols_.size(); ++i)
+            {
+                auto agg_type = order_by_cols_[i].aggFuncType;
+                if (ast::AggFuncType::COUNT == agg_type)
+                {
+                    agg_values[sel_cols_.size() + i].set_int(0);
+                }
+                else if (ast::AggFuncType::AVG == agg_type)
+                {
+                    agg_values[sel_cols_.size() + i].type = TYPE_STRING;
+                    agg_values[sel_cols_.size() + i].set_str("0.000000");
+                }
+                else if (ast::AggFuncType::SUM == agg_type || ast::AggFuncType::MAX == agg_type || ast::AggFuncType::MIN == agg_type)
+                {
+                    auto col = get_col(child_executor_->cols(), {order_by_cols_[i].tab_name, order_by_cols_[i].col_name});
+                    if (ast::AggFuncType::MIN == agg_type)
+                        agg_values[sel_cols_.size() + i].set_max(col->type, col->len);
+                    else if (ast::AggFuncType::MAX == agg_type)
+                        agg_values[sel_cols_.size() + i].set_min(col->type, col->len);
+                    else
+                    {
+                        switch (col->type)
+                        {
+                        case TYPE_INT:
+                            agg_values[sel_cols_.size() + i].set_int(0);
+                            break;
+                        case TYPE_FLOAT:
+                            agg_values[sel_cols_.size() + i].set_float(0.0f);
+                            break;
+                        default:
+                            throw RMDBError();
+                        }
+                    }
+                }
+            }
+
+            // 将值写入记录
+            for (size_t i = 0; i < agg_values.size(); ++i)
             {
                 agg_values[i].export_val(record.data + offset, output_cols_[i].len);
                 offset += output_cols_[i].len;
             }
+
             results_.emplace_back(std::move(record));
             return;
         }
+
+        // 如果当前分组索引超出范围，直接返回
         if (current_group_index_ >= insert_order_.size())
         {
             return;
@@ -273,24 +417,38 @@ public:
         auto &having_lhs_avg_states = having_lhs_avg_states_[group_key];
         auto &having_rhs_avg_states = having_rhs_avg_states_[group_key];
 
+        // 计算 AVG 值
         avg_calculate(sel_cols_, avg_states, agg_values);
         avg_calculate(having_lhs_cols_, having_lhs_avg_states, having_lhs_agg_values);
         avg_calculate(having_rhs_cols_, having_rhs_avg_states, having_rhs_agg_values);
 
-        // 检查是否满足having条件
+        // 检查是否满足 HAVING 条件
         if (!check_having_conditions(having_lhs_agg_values, having_rhs_agg_values))
         {
             ++current_group_index_;
             return addResult(); // 跳过不满足条件的分组
         }
+
+        // 创建结果记录
         RmRecord record(TupleLen);
         int offset = 0;
 
-        // 遍历 sel_cols_，动态写入值
+        // 写入 SELECT 列的值
         for (size_t i = 0; i < sel_cols_.size(); ++i)
         {
             agg_values[i].export_val(record.data + offset, output_cols_[i].len);
             offset += output_cols_[i].len;
+        }
+
+        // 写入 ORDER BY 列的值
+        auto &order_by_agg_values = order_by_agg_groups_[group_key];
+        auto &order_by_avg_states = order_by_avg_states_[group_key];
+        avg_calculate(order_by_cols_, order_by_avg_states, order_by_agg_values);
+
+        for (size_t i = 0; i < order_by_cols_.size(); ++i)
+        {
+            order_by_agg_values[i].export_val(record.data + offset, output_cols_[sel_cols_.size() + i].len);
+            offset += output_cols_[sel_cols_.size() + i].len;
         }
 
         // 移动到下一个分组
@@ -487,6 +645,20 @@ void AggExecutor::aggregate(const RmRecord &record)
     aggregate_values(agg_values, avg_states, sel_cols_, sel_col_metas_, record);
     aggregate_values(having_lhs_agg_values, having_lhs_avg_states, having_lhs_cols_, having_lhs_col_metas_, record);
     aggregate_values(having_rhs_agg_values, having_rhs_avg_states, having_rhs_cols_, having_rhs_col_metas_, record);
+
+    // 增加 ORDER BY 列的聚合处理
+    auto &order_by_agg_values = order_by_agg_groups_[group_key];
+    auto &order_by_avg_states = order_by_avg_states_[group_key];
+
+    if (order_by_agg_values.empty())
+    {
+        order_by_agg_values.resize(order_by_cols_.size());
+        order_by_avg_states.resize(order_by_cols_.size());
+
+        init(order_by_agg_values, order_by_cols_, record);
+    }
+
+    aggregate_values(order_by_agg_values, order_by_avg_states, order_by_cols_, order_by_col_metas_, record);
 }
 
 std::string AggExecutor::get_group_key(const RmRecord &record)

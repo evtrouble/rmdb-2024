@@ -33,6 +33,8 @@ public:
         return *_cols;
     };
 
+    virtual void set_cols(const std::vector<TabCol> &sel_cols) {}
+
     virtual std::string getType() { return "AbstractExecutor"; };
 
     virtual void beginTuple() {};
@@ -49,10 +51,15 @@ public:
 
     virtual ColMeta get_col_offset(const TabCol &target) { return ColMeta(); };
 
-    std::vector<ColMeta>::const_iterator get_col(const std::vector<ColMeta> &rec_cols, const TabCol &target)
+    std::vector<ColMeta>::const_iterator get_col(const std::vector<ColMeta> &rec_cols, 
+        const TabCol &target, bool need_check_agg = false)
     {
         auto pos = std::find_if(rec_cols.begin(), rec_cols.end(), [&](const ColMeta &col)
-                                { return col.tab_name == target.tab_name && col.name == target.col_name; });
+                                { 
+                                    bool ret = (col.tab_name == target.tab_name &&
+                                         col.name == target.col_name);
+                                    ret = ret && (!need_check_agg || col.aggFuncType == target.aggFuncType);
+                                    return ret; });
         if (pos == rec_cols.end())
         {
             throw ColumnNotFoundError(target.tab_name + '.' + target.col_name);

@@ -26,6 +26,7 @@ struct ColMeta {
     ColType type;           // 字段类型
     int len;                // 字段长度
     int offset;             // 字段位于记录中的偏移量
+    ast::AggFuncType aggFuncType = ast::AggFuncType::NO_TYPE;
 
     friend std::ostream &operator<<(std::ostream &os, const ColMeta &col) {
         // ColMeta中有各个基本类型的变量，然后调用重载的这些变量的操作符<<（具体实现逻辑在defs.h）

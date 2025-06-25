@@ -25,6 +25,7 @@ private:
     std::shared_ptr<RmFileHandle> fh_;          // 表的数据文件句柄
     std::vector<ColMeta> cols_;                 // 需要读取的字段
     size_t len_;                                // 选取出来的一条记录的长度 
+    std::vector<size_t> col_indices_;        // 在原始记录中的列索引
 
     IndexMeta index_meta_;                      // index scan涉及到的索引元数据
     Rid rid_;
@@ -51,8 +52,8 @@ public:
         // 增加错误检查
         fh_ = sm_manager_->get_table_handle(tab_name_);
 
-        cols_ = tab_.cols;
-        len_ = cols_.back().offset + cols_.back().len;
+        // cols_ = tab_.cols;
+        len_ = tab_.cols.back().offset + tab_.cols.back().len;
 
         // fed_conds_ = conds_;
 
@@ -88,13 +89,6 @@ public:
             offset += col.len;
         }
 
-        // for (size_t id = 0; id < index_meta_.cols.size(); ++id) {
-        //     int offset = index_offsets[id];
-        //     int col_len = index_meta_.cols[id].len;
-        //     ColType col_type = index_meta_.cols[id].type;
-        //     inject_max_value(up_key + offset, col_type, col_len);
-        //     inject_min_value(low_key + offset, col_type, col_len);
-        // }
         memcpy(low_key, index_meta_.min_val.get(), index_meta_.col_tot_len);
         memcpy(up_key, index_meta_.max_val.get(), index_meta_.col_tot_len);
 
@@ -331,12 +325,12 @@ public:
                 auto record = fh_->get_record(rid_, context_);
                 if (check_cons(fed_conds_, record.get())) {
                     if(context_->hasJoinFlag() || result_cache_.empty()) {
-                        result_cache_.emplace_back(std::move(record));
+                        result_cache_.emplace_back(project(record));
                         ++cache_index_;
                     }
                     else
                     {
-                        result_cache_[0] = std::move(record);
+                        result_cache_[0] = project(record);
                     }
                     scan_->next();
                     return;
@@ -370,7 +364,7 @@ public:
     }
 
     const std::vector<ColMeta> &cols() const override {
-        return cols_;
+        return (cols_.size() ? cols_ : tab_.cols); 
     }
 
     size_t tupleLen() const override {
@@ -413,4 +407,51 @@ public:
     // }
 
     ExecutionType type() const override { return ExecutionType::IndexScan; }
+
+    void set_cols(const std::vector<TabCol> &sel_cols) override {
+        auto &prev_cols = tab_.cols;
+        cols_.reserve(sel_cols.size());
+        col_indices_.reserve(sel_cols.size());
+
+        for (auto &sel_col : sel_cols)
+        {
+            auto pos = get_col(prev_cols, sel_col);
+
+            cols_.emplace_back(*pos);
+            col_indices_.emplace_back(pos - prev_cols.begin());
+        }
+        len_ = 0;
+        for (auto &col : cols_)
+        {
+            // 重新计算投影后的偏移
+            col.offset = len_;
+            len_ += col.len;
+        }
+    }
+
+    std::unique_ptr<RmRecord> project(std::unique_ptr<RmRecord>& prev_record)
+    {
+        if(cols_.empty())
+            return std::move(prev_record);
+        
+        // 创建新的投影记录
+        auto projected_record = std::make_unique<RmRecord>(len_);
+
+        // 获取原始记录的列信息
+        const auto &prev_cols = tab_.cols;
+
+        // 复制选定的列到新记录中
+        for (size_t i = 0; i < cols_.size(); ++i)
+        {
+            const auto &src_col = prev_cols[col_indices_[i]];
+            const auto &dst_col = cols_[i];
+
+            // 从原记录复制数据到新记录
+            memcpy(projected_record->data + dst_col.offset,
+                   prev_record->data + src_col.offset,
+                   src_col.len);
+        }
+
+        return projected_record;
+    }
 };
