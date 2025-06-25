@@ -127,7 +127,6 @@ void TransactionManager::abort(Context *context, LogManager *log_manager)
 
     // 1. 回滚所有写操作
     auto write_set = txn->get_write_set();
-    std::unordered_set<Rid> abort_set;
     while (write_set->size())
     {
         auto write_record = write_set->front(); // 获取最后一个写记录
@@ -137,14 +136,11 @@ void TransactionManager::abort(Context *context, LogManager *log_manager)
         switch (write_record->GetWriteType())
         {
             case WType::INSERT_TUPLE:
-                abort_set.emplace(rid);
                 txn->release();
                 sm_manager_->get_table_handle(write_record->GetTableName())
                     ->abort_insert_record(rid);
                 break;
             case WType::DELETE_TUPLE: {
-                if(abort_set.count(rid))break;
-                abort_set.emplace(rid);
                 auto undolog = write_record->GetUndoLog();
                 auto fh = sm_manager_->get_table_handle(write_record->GetTableName());
                 if (undolog == nullptr)
@@ -160,8 +156,6 @@ void TransactionManager::abort(Context *context, LogManager *log_manager)
                 break;
             }
             case WType::UPDATE_TUPLE:{
-                if(abort_set.count(rid))break;
-                abort_set.emplace(rid);
                 auto undolog = write_record->GetUndoLog();
                 auto fh = sm_manager_->get_table_handle(write_record->GetTableName());
                 if (undolog == nullptr)

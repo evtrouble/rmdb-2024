@@ -150,7 +150,7 @@ public:
             throw std::invalid_argument("Number of sort columns must match number of sort directions");
         }
     }
-    ~SortPlan() {}
+    ~SortPlan() = default;
     std::shared_ptr<Plan> subplan_;
     std::vector<TabCol> sort_cols_;
     std::vector<bool> is_desc_orders_;

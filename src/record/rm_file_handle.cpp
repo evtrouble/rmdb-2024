@@ -235,14 +235,18 @@ void RmFileHandle::delete_record(const Rid &rid, Context *context)
                 AbortReason::UPGRADE_CONFLICT);
         }
 
-        UndoLog *undolog = new UndoLog(RmRecord(data, file_hdr_.record_size),
+        if(record_txn != context->txn_) {
+            UndoLog *undolog = new UndoLog(RmRecord(data, file_hdr_.record_size),
                                        record_txn);
-        txn_mgr->UpdateUndoLink(fd_, rid, undolog);
-        txn_mgr->set_record_txn_id(data, context->txn_, true);
+            txn_mgr->UpdateUndoLink(fd_, rid, undolog);
+            txn_mgr->set_record_txn_id(data, context->txn_, true);
 
-        auto write_record = new WriteRecord(WType::DELETE_TUPLE, rm_manager_->disk_manager_->get_file_name(fd_), 
-            rid, undolog);
-        context->txn_->append_write_record(write_record);
+            auto write_record = new WriteRecord(WType::DELETE_TUPLE, rm_manager_->disk_manager_->get_file_name(fd_), 
+                rid, undolog);
+            context->txn_->append_write_record(write_record);
+        } else {
+            txn_mgr->set_record_txn_id_without_dup(data, context->txn_, true);
+        }
     } else {
         Bitmap::reset(page_handle.bitmap, rid.slot_no);
         page_handle.page_hdr->num_records--;
@@ -303,14 +307,19 @@ void RmFileHandle::update_record(const Rid &rid, char *buf, Context *context)
             throw TransactionAbortException(context->txn_->get_transaction_id(), 
                 AbortReason::UPGRADE_CONFLICT);
         }
-        txn_mgr->set_record_txn_id(buf, context->txn_);
-        UndoLog *undolog = new UndoLog(RmRecord(data, file_hdr_.record_size),
-                                       record_txn);
-        txn_mgr->UpdateUndoLink(fd_, rid, undolog);
+        if(record_txn != context->txn_) {
+            txn_mgr->set_record_txn_id(buf, context->txn_);
+            UndoLog *undolog = new UndoLog(RmRecord(data, file_hdr_.record_size),
+                                        record_txn);
+            txn_mgr->UpdateUndoLink(fd_, rid, undolog);
 
-        auto write_record = new WriteRecord(WType::UPDATE_TUPLE, rm_manager_->disk_manager_->get_file_name(fd_), 
-            rid, undolog);
-        context->txn_->append_write_record(write_record);
+            auto write_record = new WriteRecord(WType::UPDATE_TUPLE, rm_manager_->disk_manager_->get_file_name(fd_), 
+                rid, undolog);
+            context->txn_->append_write_record(write_record);
+            memcpy(page_handle.get_slot(rid.slot_no), buf, file_hdr_.record_size);
+        } else {
+            txn_mgr->set_record_txn_id_without_dup(buf, context->txn_);
+        }
     }
 
     memcpy(page_handle.get_slot(rid.slot_no), buf, file_hdr_.record_size);
