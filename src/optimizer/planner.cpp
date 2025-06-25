@@ -658,8 +658,11 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
 
     // 为每个表创建基础扫描计划
     std::vector<std::shared_ptr<Plan>> table_plans;
-    for (const auto &table : query->tables)
+    std::vector<bool> table_used(query->tables.size(), false); // 跟踪哪些表已被使用
+
+    for (size_t i = 0; i < query->tables.size(); ++i)
     {
+        const auto &table = query->tables[i];
         auto [index_meta, max_match_col_count] = get_index_cols(table, query->tab_conds[table]);
         std::shared_ptr<Plan> scan_plan;
 
@@ -671,6 +674,7 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
         {
             scan_plan = std::make_shared<ScanPlan>(T_IndexScan, sm_manager_, table, std::vector<Condition>(), *index_meta, max_match_col_count);
         }
+
         // 如果有过滤条件，创建FilterPlan
         if (!query->tab_conds[table].empty())
         {
@@ -679,6 +683,7 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
                 scan_plan,
                 query->tab_conds[table]);
         }
+
         // 只有在非 SELECT * 查询时才添加投影节点,单表不添加
         if (!context->hasIsStarFlag() && query->tables.size() > 1)
         {
@@ -702,120 +707,223 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
         table_plans.emplace_back(scan_plan);
     }
 
-    // 如果只有一个表，直接返回其扫描计划
-    if (table_plans.size() == 1)
-    {
-        return table_plans[0];
-    }
+    std::shared_ptr<Plan> current_plan = nullptr;
 
-    // 使用贪心算法选择连接顺序
-    // 1. 找到基数最小的两个表作为起点
-    size_t min_i = 0, min_j = 1;
-    size_t min_card = SIZE_MAX;
-
-    for (size_t i = 0; i < table_plans.size(); i++)
+    // 先处理jointree中的SEMI JOIN
+    if (!query->jointree.empty())
     {
-        for (size_t j = i + 1; j < table_plans.size(); j++)
+        for (auto &join_expr : query->jointree)
         {
-            auto scan_i = extract_scan_plan(table_plans[i]);
-            auto scan_j = extract_scan_plan(table_plans[j]);
-            size_t card_i = table_cardinalities[scan_i->tab_name_];
-            size_t card_j = table_cardinalities[scan_j->tab_name_];
-            size_t join_card = card_i * card_j; // 简单估计连接基数
-
-            if (join_card < min_card)
+            if (SEMI_JOIN == join_expr.type)
             {
-                min_card = join_card;
-                min_i = i;
-                min_j = j;
-            }
-        }
-    }
+                // 获取左右表的索引
+                auto left_it = std::find(query->tables.begin(), query->tables.end(), join_expr.left);
+                auto right_it = std::find(query->tables.begin(), query->tables.end(), join_expr.right);
 
-    // 2. 创建初始连接
-    std::vector<Condition> join_conds;
-    for (const auto &cond : query->join_conds)
-    {
-        if (!cond.is_rhs_val)
-        {
-            std::string lhs_tab = cond.lhs_col.tab_name;
-            std::string rhs_tab = cond.rhs_col.tab_name;
-
-            auto scan_i = extract_scan_plan(table_plans[min_i]);
-            auto scan_j = extract_scan_plan(table_plans[min_j]);
-
-            if ((lhs_tab == scan_i->tab_name_ && rhs_tab == scan_j->tab_name_) ||
-                (lhs_tab == scan_j->tab_name_ && rhs_tab == scan_i->tab_name_))
-            {
-                join_conds.push_back(cond);
-            }
-        }
-    }
-
-    auto current_plan = create_ordered_join(
-        enable_nestedloop_join ? T_NestLoop : T_SortMerge,
-        table_plans[min_i],
-        table_plans[min_j],
-        join_conds);
-
-    // 3. 移除已使用的表
-    table_plans.erase(table_plans.begin() + std::max(min_i, min_j));
-    table_plans.erase(table_plans.begin() + std::min(min_i, min_j));
-
-    // 4. 逐个添加剩余的表
-    while (!table_plans.empty())
-    {
-        size_t best_idx = 0;
-        size_t min_result_card = SIZE_MAX;
-        std::vector<Condition> best_conds;
-
-        // 找到添加后产生最小中间结果的表
-        for (size_t i = 0; i < table_plans.size(); i++)
-        {
-            auto scan_plan = extract_scan_plan(table_plans[i]);
-            size_t table_card = table_cardinalities[scan_plan->tab_name_];
-
-            // 收集与当前表相关的连接条件
-            std::vector<Condition> curr_conds;
-            for (const auto &cond : query->join_conds)
-            {
-                if (!cond.is_rhs_val)
+                if (left_it == query->tables.end() || right_it == query->tables.end())
                 {
-                    std::string lhs_tab = cond.lhs_col.tab_name;
-                    std::string rhs_tab = cond.rhs_col.tab_name;
+                    continue; // 跳过无效的表名
+                }
 
-                    if (lhs_tab == scan_plan->tab_name_ || rhs_tab == scan_plan->tab_name_)
+                auto left_idx = std::distance(query->tables.begin(), left_it);
+                auto right_idx = std::distance(query->tables.begin(), right_it);
+
+                auto left_plan = table_plans[left_idx];
+                auto right_plan = table_plans[right_idx];
+
+                // 标记表为已使用
+                table_used[left_idx] = true;
+                table_used[right_idx] = true;
+
+                // 创建SEMI JOIN计划
+                auto semi_join_plan = std::make_shared<JoinPlan>(
+                    T_SemiJoin,
+                    std::move(left_plan),
+                    std::move(right_plan),
+                    join_expr.conds);
+
+                if (!current_plan)
+                {
+                    current_plan = std::move(semi_join_plan);
+                }
+                else
+                {
+                    // 如果已经有其他连接，将SEMI JOIN与现有计划合并
+                    current_plan = std::make_shared<JoinPlan>(
+                        enable_nestedloop_join ? T_NestLoop : T_SortMerge,
+                        std::move(current_plan),
+                        std::move(semi_join_plan),
+                        std::vector<Condition>());
+                }
+            }
+        }
+    }
+
+    // 收集未使用的表计划
+    std::vector<std::shared_ptr<Plan>> unused_table_plans;
+    std::vector<size_t> unused_table_indices;
+
+    for (size_t i = 0; i < table_plans.size(); ++i)
+    {
+        if (!table_used[i])
+        {
+            unused_table_plans.push_back(table_plans[i]);
+            unused_table_indices.push_back(i);
+        }
+    }
+
+    // 如果只有一个表且没有SEMI JOIN，直接返回其扫描计划
+    if (unused_table_plans.size() == 1 && !current_plan)
+    {
+        return unused_table_plans[0];
+    }
+
+    // 如果所有表都被SEMI JOIN使用了，直接返回当前计划
+    if (unused_table_plans.empty())
+    {
+        return current_plan ? current_plan : table_plans[0];
+    }
+
+    // 使用贪心算法选择连接顺序处理剩余的表
+    if (unused_table_plans.size() >= 2)
+    {
+        // 1. 找到基数最小的两个表作为起点
+        size_t min_i = 0, min_j = 1;
+        size_t min_card = SIZE_MAX;
+
+        for (size_t i = 0; i < unused_table_plans.size(); i++)
+        {
+            for (size_t j = i + 1; j < unused_table_plans.size(); j++)
+            {
+                auto scan_i = extract_scan_plan(unused_table_plans[i]);
+                auto scan_j = extract_scan_plan(unused_table_plans[j]);
+                size_t card_i = table_cardinalities[scan_i->tab_name_];
+                size_t card_j = table_cardinalities[scan_j->tab_name_];
+                size_t join_card = card_i * card_j; // 简单估计连接基数
+
+                if (join_card < min_card)
+                {
+                    min_card = join_card;
+                    min_i = i;
+                    min_j = j;
+                }
+            }
+        }
+
+        // 2. 创建初始连接
+        std::vector<Condition> join_conds;
+        for (const auto &cond : query->join_conds)
+        {
+            if (!cond.is_rhs_val)
+            {
+                std::string lhs_tab = cond.lhs_col.tab_name;
+                std::string rhs_tab = cond.rhs_col.tab_name;
+
+                auto scan_i = extract_scan_plan(unused_table_plans[min_i]);
+                auto scan_j = extract_scan_plan(unused_table_plans[min_j]);
+
+                if ((lhs_tab == scan_i->tab_name_ && rhs_tab == scan_j->tab_name_) ||
+                    (lhs_tab == scan_j->tab_name_ && rhs_tab == scan_i->tab_name_))
+                {
+                    join_conds.push_back(cond);
+                }
+            }
+        }
+
+        auto table_join_plan = create_ordered_join(
+            enable_nestedloop_join ? T_NestLoop : T_SortMerge,
+            unused_table_plans[min_i],
+            unused_table_plans[min_j],
+            join_conds);
+
+        // 3. 移除已使用的表
+        unused_table_plans.erase(unused_table_plans.begin() + std::max(min_i, min_j));
+        unused_table_plans.erase(unused_table_plans.begin() + std::min(min_i, min_j));
+
+        // 4. 逐个添加剩余的表
+        while (!unused_table_plans.empty())
+        {
+            size_t best_idx = 0;
+            size_t min_result_card = SIZE_MAX;
+            std::vector<Condition> best_conds;
+
+            // 找到添加后产生最小中间结果的表
+            for (size_t i = 0; i < unused_table_plans.size(); i++)
+            {
+                auto scan_plan = extract_scan_plan(unused_table_plans[i]);
+                size_t table_card = table_cardinalities[scan_plan->tab_name_];
+
+                // 收集与当前表相关的连接条件
+                std::vector<Condition> curr_conds;
+                for (const auto &cond : query->join_conds)
+                {
+                    if (!cond.is_rhs_val)
                     {
-                        curr_conds.push_back(cond);
+                        std::string lhs_tab = cond.lhs_col.tab_name;
+                        std::string rhs_tab = cond.rhs_col.tab_name;
+
+                        if (lhs_tab == scan_plan->tab_name_ || rhs_tab == scan_plan->tab_name_)
+                        {
+                            curr_conds.push_back(cond);
+                        }
                     }
+                }
+
+                // 简单估计连接结果的基数
+                size_t result_card = table_card; // 可以在这里添加更复杂的基数估计
+
+                if (result_card < min_result_card)
+                {
+                    min_result_card = result_card;
+                    best_idx = i;
+                    best_conds = curr_conds;
                 }
             }
 
-            // 简单估计连接结果的基数
-            size_t result_card = table_card; // 可以在这里添加更复杂的基数估计
+            // 添加选中的表
+            table_join_plan = create_ordered_join(
+                enable_nestedloop_join ? T_NestLoop : T_SortMerge,
+                table_join_plan,
+                unused_table_plans[best_idx],
+                best_conds);
 
-            if (result_card < min_result_card)
-            {
-                min_result_card = result_card;
-                best_idx = i;
-                best_conds = curr_conds;
-            }
+            // 移除已使用的表
+            unused_table_plans.erase(unused_table_plans.begin() + best_idx);
         }
 
-        // 添加选中的表
-        current_plan = create_ordered_join(
-            enable_nestedloop_join ? T_NestLoop : T_SortMerge,
-            current_plan,
-            table_plans[best_idx],
-            best_conds);
-
-        // 移除已使用的表
-        table_plans.erase(table_plans.begin() + best_idx);
+        // 5. 将表连接计划与SEMI JOIN计划合并
+        if (current_plan)
+        {
+            current_plan = create_ordered_join(
+                enable_nestedloop_join ? T_NestLoop : T_SortMerge,
+                current_plan,
+                table_join_plan,
+                std::vector<Condition>());
+        }
+        else
+        {
+            current_plan = table_join_plan;
+        }
+    }
+    else if (unused_table_plans.size() == 1)
+    {
+        // 只有一个未使用的表，直接与现有计划连接
+        if (current_plan)
+        {
+            current_plan = create_ordered_join(
+                enable_nestedloop_join ? T_NestLoop : T_SortMerge,
+                current_plan,
+                unused_table_plans[0],
+                std::vector<Condition>());
+        }
+        else
+        {
+            current_plan = unused_table_plans[0];
+        }
     }
 
     return current_plan;
 }
-
 std::shared_ptr<Plan> Planner::generate_agg_plan(const std::shared_ptr<Query> &query, std::shared_ptr<Plan> plan)
 {
     auto x = std::static_pointer_cast<ast::SelectStmt>(query->parse);
