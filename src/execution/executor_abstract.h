@@ -42,7 +42,7 @@ public:
     virtual void beginTuple() {}
     
     // 获取当前批次所有可见记录的RID
-    virtual std::vector<Rid> rid_batch(size_t batch_size = BATCH_SIZE) const {
+    virtual std::vector<Rid> rid_batch(size_t batch_size = BATCH_SIZE) {
         return {};
     }
 
@@ -72,7 +72,8 @@ public:
 
 protected:
     // 检查条件是否满足的通用函数
-    bool check_condition(char *lhs_value, ColType lhs_type, char *rhs_value, ColType rhs_type, CompOp op, int len)
+    bool check_condition(char *lhs_value, ColType lhs_type, 
+        char *rhs_value, ColType rhs_type, CompOp op, int len) const
     {
         int cmp;
 

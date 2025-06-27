@@ -46,7 +46,7 @@ private:
     }
 
     // 检查记录是否满足所有条件
-    bool satisfy_conditions(const RmRecord *rec) const
+    bool satisfy_conditions(const RmRecord *rec)
     {
         return std::all_of(fed_conds_.begin(), fed_conds_.end(), [&](auto &cond)
                            {
@@ -101,7 +101,7 @@ public:
     }
     
     // 获取当前批次所有可见记录的RID
-    std::vector<Rid> rid_batch(size_t batch_size = BATCH_SIZE) const override {
+    std::vector<Rid> rid_batch(size_t batch_size = BATCH_SIZE) override {
         std::vector<Rid> batch;
         batch.reserve(batch_size);
         size_t count = 0;

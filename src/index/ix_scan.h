@@ -20,6 +20,7 @@ See the Mulan PSL v2 for more details. */
 // TODO：对page遍历时，要加上读锁
 class IxScan : public RecScan
 {
+    static std::unique_ptr<RmRecord> temp;
     std::shared_ptr<IxIndexHandle> ih_;
     IxNodeHandle node_;
     int pos_;
@@ -54,6 +55,11 @@ public:
 
     Rid rid() const override {
         return *node_.get_rid(pos_);
+    }
+
+    // 单记录访问
+    std::unique_ptr<RmRecord> &get_record() override {
+        return temp;
     }
 
     const IxNodeHandle& node() const { return node_; }

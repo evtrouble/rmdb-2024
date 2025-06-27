@@ -166,7 +166,7 @@ public:
     /**
      * @brief 检查元组是否满足条件
      */
-    bool check_con(Condition &cond, const RmRecord *record) {
+    bool check_con(const Condition &cond, const RmRecord *record) {
         auto& lhs_col = get_col_meta(cond.lhs_col.col_name);
         char *lhs_data = record->data + lhs_col.offset;
         char *rhs_data = nullptr;
@@ -209,7 +209,7 @@ public:
     /**
      * @brief 检查元组是否满足条件组
      */
-    inline bool check_cons(const std::vector<Condition> &conds, const RmRecord *record) const {
+    inline bool check_cons(const std::vector<Condition> &conds, const RmRecord *record) {
         return std::all_of(conds.begin(), conds.end(), [&](auto &cond) {
             return check_con(cond, record);
         });
@@ -236,7 +236,7 @@ public:
     }
     
     // 获取当前批次所有可见记录的RID
-    std::vector<Rid> rid_batch(size_t batch_size) const override {
+    std::vector<Rid> rid_batch(size_t batch_size) override {
         std::vector<Rid> batch;
         batch.reserve(batch_size);
         size_t count = 0;
