@@ -22,6 +22,7 @@ See the Mulan PSL v2 for more details. */
 #include "concurrency/lock_manager.h"
 #include "system/sm_manager.h"
 #include "common/exception.h"
+#include "system/sm_meta.h"
 
 /* 系统采用的并发控制算法，当前题目中要求两阶段封锁并发控制算法 */
 enum class ConcurrencyMode
@@ -84,14 +85,8 @@ public:
     LockManager *get_lock_manager() { return lock_manager_; }
     inline Transaction *get_start_txn() { return start_txn_; }
     inline void init_txn() {
-        std::ifstream fin("txn_map.txt");
-        if(fin) {
-            timestamp_t init_timestamp;
-            fin >> init_timestamp >> start_txn_id_;
-            fin.close();
-            next_timestamp_ = init_timestamp;
-            next_txn_id_ = start_txn_id_;
-        }
+        start_txn_id_ = sm_manager_->db_.get_txn_id();
+        next_txn_id_ = start_txn_id_;
     }
 
     /**
@@ -133,9 +128,8 @@ public:
     void StartPurgeCleaner();
     inline void StopPurgeCleaner() { 
         terminate_purge_cleaner_ = true;
-        std::ofstream fout("txn_map.txt", std::ios::out | std::ios::trunc);
-        fout << next_timestamp_ << " " << next_txn_id_ << std::endl;
-        fout.close();
+        sm_manager_->db_.set_txn_id(next_txn_id_);
+        sm_manager_->flush_meta();
     }
 
     void remove_txn(txn_id_t txn_id) {
