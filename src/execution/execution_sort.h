@@ -16,7 +16,8 @@ See the Mulan PSL v2 for more details. */
 #include "index/ix.h"
 #include "system/sm.h"
 
-class SortExecutor : public AbstractExecutor {
+class SortExecutor : public AbstractExecutor
+{
 private:
     std::unique_ptr<AbstractExecutor> prev_;
     std::vector<ColMeta> sort_cols_;           // 排序列元数据
@@ -40,8 +41,9 @@ private:
             bool desc = is_desc_orders_[i];
             Value val_a = get_col_value(a, col_meta);
             Value val_b = get_col_value(b, col_meta);
-            
-            if (val_a != val_b) {
+
+            if (val_a != val_b)
+            {
                 return desc ? (val_a > val_b) : (val_a < val_b);
             }
         }
@@ -53,18 +55,20 @@ private:
         Value value;
         const char *data = record.data + col_meta.offset;
 
-        switch (col_meta.type) {
-            case TYPE_INT:
-                value.set_int(*reinterpret_cast<const int*>(data));
-                break;
-            case TYPE_FLOAT:
-                value.set_float(*reinterpret_cast<const float*>(data));
-                break;
-            case TYPE_STRING:
-                value.set_str(std::string(data, col_meta.len));
-                break;
-            default:
-                throw RMDBError("Unsupported column type");
+        switch (col_meta.type)
+        {
+        case TYPE_INT:
+            value.set_int(*reinterpret_cast<const int *>(data));
+            break;
+        case TYPE_FLOAT:
+            value.set_float(*reinterpret_cast<const float *>(data));
+            break;
+        case TYPE_STRING:
+        case TYPE_DATETIME:
+            value.set_str(std::string(data, col_meta.len));
+            break;
+        default:
+            throw RMDBError("Unsupported column type");
         }
         return value;
     }

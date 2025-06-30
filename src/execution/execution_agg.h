@@ -23,6 +23,7 @@ private:
     std::vector<TabCol> sel_cols_;                                              // 聚合的目标列
     std::vector<TabCol> group_by_cols_;                                         // GROUP BY 列
     std::vector<Condition> having_conds_;                                       // HAVING 条件
+    std::vector<TabCol> order_by_cols_;                                         // ORDER BY 列
     std::vector<ColMeta> output_cols_;                                          // 输出列的元数据
     size_t TupleLen;                                                            // 输出元组的长度
     std::unordered_map<std::string, std::vector<Value>> agg_groups_;            // 分组聚合值
@@ -49,6 +50,9 @@ private:
     std::unordered_map<std::string, std::vector<AvgState>> avg_states_;            // 分组键 -> AVG状态数组
     std::unordered_map<std::string, std::vector<AvgState>> having_lhs_avg_states_; // HAVING左AVG状态
     std::unordered_map<std::string, std::vector<AvgState>> having_rhs_avg_states_; // HAVING右AVG状态
+    std::unordered_map<std::string, std::vector<Value>> order_by_agg_groups_;      // ORDER BY 聚合值
+    std::unordered_map<std::string, std::vector<AvgState>> order_by_avg_states_;   // ORDER BY AVG 状态
+    std::vector<std::vector<ColMeta>::const_iterator> order_by_col_metas_;         // ORDER BY 列元数据
 
     void avg_calculate(const std::vector<TabCol> &sel_cols, std::vector<AvgState> avg_states, std::vector<Value> &agg_values);
     void init(std::vector<Value> &agg_values, const std::vector<TabCol> &sel_cols_, const RmRecord &record);
@@ -65,13 +69,15 @@ private:
 public:
     AggExecutor(std::unique_ptr<AbstractExecutor> child_executor, const std::vector<TabCol> &sel_cols,
                 const std::vector<TabCol> &group_by_cols, const std::vector<Condition> &having_conds,
+                const std::vector<TabCol> &order_by_cols,
                 Context *context)
         : AbstractExecutor(context), child_executor_(std::move(child_executor)),
           sel_cols_(std::move(sel_cols)), group_by_cols_(std::move(group_by_cols)), having_conds_(std::move(having_conds)),
-          TupleLen(0), current_group_index_(0)
+          order_by_cols_(std::move(order_by_cols)), TupleLen(0), current_group_index_(0)
     {
         // 初始化输出列
         int offset = 0;
+        // 先处理 SELECT 列
         for (const auto &col : sel_cols_)
         {
             ColMeta col_meta;
@@ -102,6 +108,33 @@ public:
             offset += col_meta.len;
             output_cols_.emplace_back(std::move(col_meta));
         }
+
+        // 新增：处理 ORDER BY 列
+        for (const auto &col : order_by_cols_)
+        {
+            ColMeta col_meta;
+            if (ast::AggFuncType::COUNT == col.aggFuncType)
+            {
+                col_meta = {col.tab_name, col.col_name, TYPE_INT, sizeof(int), offset};
+            }
+            else if (ast::AggFuncType::AVG == col.aggFuncType)
+            {
+                col_meta = {col.tab_name, col.col_name, TYPE_STRING, 20, offset};
+            }
+            else
+            {
+                // 对于非聚合列，获取原始列的元数据
+                auto temp = get_col(child_executor_->cols(), col);
+                col_meta = *temp;
+                col_meta.offset = offset;
+            }
+
+            col_meta.aggFuncType = col.aggFuncType;
+            TupleLen += col_meta.len;
+            offset += col_meta.len;
+            output_cols_.emplace_back(std::move(col_meta));
+        }
+
         // 初始化 GROUP BY 列元数据
         for (const auto &col : group_by_cols_)
         {
@@ -247,7 +280,9 @@ private:
             RmRecord record(TupleLen);
             int offset = 0;
             std::vector<Value> agg_values;
-            agg_values.resize(sel_cols_.size());
+            agg_values.resize(sel_cols_.size() + order_by_cols_.size());
+
+            // 初始化 SELECT 列的值
             for (size_t i = 0; i < sel_cols_.size(); ++i)
             {
                 auto agg_type = sel_cols_[i].aggFuncType;
@@ -285,11 +320,51 @@ private:
                     }
                 }
             }
-            for (size_t i = 0; i < sel_cols_.size(); ++i)
+
+            // 初始化 ORDER BY 列的值
+            for (size_t i = 0; i < order_by_cols_.size(); ++i)
+            {
+                auto agg_type = order_by_cols_[i].aggFuncType;
+                if (ast::AggFuncType::COUNT == agg_type)
+                {
+                    agg_values[sel_cols_.size() + i].set_int(0);
+                }
+                else if (ast::AggFuncType::AVG == agg_type)
+                {
+                    agg_values[sel_cols_.size() + i].type = TYPE_STRING;
+                    agg_values[sel_cols_.size() + i].set_str("0.000000");
+                }
+                else if (ast::AggFuncType::SUM == agg_type || ast::AggFuncType::MAX == agg_type || ast::AggFuncType::MIN == agg_type)
+                {
+                    auto col = get_col(child_executor_->cols(), {order_by_cols_[i].tab_name, order_by_cols_[i].col_name});
+                    if (ast::AggFuncType::MIN == agg_type)
+                        agg_values[sel_cols_.size() + i].set_max(col->type, col->len);
+                    else if (ast::AggFuncType::MAX == agg_type)
+                        agg_values[sel_cols_.size() + i].set_min(col->type, col->len);
+                    else
+                    {
+                        switch (col->type)
+                        {
+                        case TYPE_INT:
+                            agg_values[sel_cols_.size() + i].set_int(0);
+                            break;
+                        case TYPE_FLOAT:
+                            agg_values[sel_cols_.size() + i].set_float(0.0f);
+                            break;
+                        default:
+                            throw RMDBError();
+                        }
+                    }
+                }
+            }
+
+            // 将值写入记录
+            for (size_t i = 0; i < agg_values.size(); ++i)
             {
                 agg_values[i].export_val(record.data + offset, output_cols_[i].len);
                 offset += output_cols_[i].len;
             }
+
             results_.emplace_back(std::move(record));
         }
         result_it_ = results_.begin();

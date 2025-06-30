@@ -203,3 +203,8 @@ class DivisionByZeroError : public RMDBError
 public:
     DivisionByZeroError(const std::string &msg) : RMDBError(msg) {}
 };
+class InvalidDatetimeFormatError : public RMDBError
+{
+public:
+    InvalidDatetimeFormatError(const std::string &msg) : RMDBError(msg) {}
+};

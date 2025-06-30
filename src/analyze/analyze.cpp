@@ -589,6 +589,11 @@ void Analyze::check_clause(const std::vector<std::string> &tab_names,
                         cond.rhs_val.set_int(int_val);
                         rhs_type = TYPE_INT;
                     }
+                    else if(lhs_type == TYPE_DATETIME && rhs_type == TYPE_STRING)
+                    {
+                        cond.rhs_val.set_datetime();
+                        rhs_type = TYPE_DATETIME;
+                    }
                 }
                 cond.rhs_val.raw = nullptr;
                 cond.rhs_val.init_raw(lhs_col->len);
@@ -703,6 +708,10 @@ bool Analyze::can_cast_type(ColType from, ColType to)
         return true;
     if (from == TYPE_FLOAT && to == TYPE_INT)
         return true;
+    if(from == TYPE_DATETIME && to == TYPE_STRING)
+        return true;
+    if(from == TYPE_STRING && to == TYPE_DATETIME)
+        return true;   
     return false;
 }
 void Analyze::cast_value(Value &val, ColType to)

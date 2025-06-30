@@ -22,6 +22,7 @@ void IxScan::next_batch() {
     page_id_t next_leaf = node_.get_next_leaf();
     if (next_leaf == IX_LEAF_HEADER_PAGE) {
         ih_->unlock_shared(node_);
+        pos_ = max_pos_;
         return;
     }
     // 先获取新节点并加锁，再释放当前节点锁，避免锁空窗

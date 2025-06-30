@@ -48,6 +48,7 @@ public:
         fh_ = sm_manager_->get_table_handle(tab_name_);
 
         len_ = tab_.cols.back().offset + tab_.cols.back().len;
+        setup_scan();
 
         // 加表级意向共享锁
         // context_->lock_mgr_->lock_IS_on_table(context_->txn_, fh_->GetFd());

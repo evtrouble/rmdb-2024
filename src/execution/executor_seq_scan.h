@@ -79,6 +79,7 @@ public:
         fh_ = sm_manager_->get_table_handle(tab_name_);
         len_ = tab_.cols.back().offset + tab_.cols.back().len;
         std::sort(fed_conds_.begin(), fed_conds_.end());
+        scan_ = std::make_unique<RmScan>(fh_, context_);
     }
 
     // 批量获取下一个batch_size个满足条件的元组，最少一页，最多batch_size且为页的整数倍

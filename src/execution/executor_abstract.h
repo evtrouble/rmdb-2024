@@ -120,6 +120,7 @@ protected:
                 cmp = (lhs < rhs) ? -1 : ((lhs > rhs) ? 1 : 0);
                 break;
             }
+            case TYPE_DATETIME:
             case TYPE_STRING:
             {
                 cmp = memcmp(lhs_value, rhs_value, len);

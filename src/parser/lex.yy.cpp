@@ -1341,7 +1341,7 @@ case 64:
 YY_RULE_SETUP
 #line 138 "lex.l"
 {
-    float raw_val = atof(yytext);
+    double  raw_val = atof(yytext);
     // 对浮点数进行精度处理
     yylval->sv_float = std::round(raw_val * FLOAT_PRECISION_MULTIPLIER) / FLOAT_PRECISION_MULTIPLIER;
     yylval->sv_str = yytext;  // 保存原始文本

@@ -128,31 +128,31 @@ public:
 class SortPlan : public Plan
 {
 public:
-    SortPlan(PlanTag tag, std::shared_ptr<Plan> subplan, const TabCol &sel_col, bool is_desc, int limit = -1)
+    SortPlan(PlanTag tag, std::shared_ptr<Plan> subplan, const TabCol &sort_col, bool is_desc, int limit = -1)
         : Plan(tag), subplan_(std::move(subplan)), limit_(limit)
     {
-        sel_cols_.emplace_back(std::move(sel_col));
+        sort_cols_.emplace_back(sort_col);
         is_desc_orders_.emplace_back(is_desc);
     }
     // 多列排序构造函数（支持每列独立排序方向）
     SortPlan(PlanTag tag, std::shared_ptr<Plan> subplan,
-             const std::vector<TabCol> &sel_cols,
+             const std::vector<TabCol> &sort_cols,
              const std::vector<bool> &is_desc_orders,
              int limit = -1)
         : Plan(tag),
           subplan_(std::move(subplan)),
-          sel_cols_(std::move(sel_cols)),
-          is_desc_orders_(std::move(is_desc_orders)),
+          sort_cols_(sort_cols),
+          is_desc_orders_(is_desc_orders),
           limit_(limit)
     {
-        if (sel_cols.size() != is_desc_orders.size())
+        if (sort_cols.size() != is_desc_orders.size())
         {
             throw std::invalid_argument("Number of sort columns must match number of sort directions");
         }
     }
     ~SortPlan() = default;
     std::shared_ptr<Plan> subplan_;
-    std::vector<TabCol> sel_cols_;
+    std::vector<TabCol> sort_cols_;
     std::vector<bool> is_desc_orders_;
     int limit_;
 };
@@ -233,11 +233,16 @@ public:
     std::vector<TabCol> sel_cols_;
     std::vector<TabCol> groupby_cols_;
     std::vector<Condition> having_conds_;
+    std::vector<TabCol> order_by_cols_; // 新增 ORDER BY 列
 
-    AggPlan(PlanTag tag, std::shared_ptr<Plan> subplan, std::vector<TabCol> sel_cols_, 
-        const std::vector<TabCol> &groupby_cols_, const std::vector<Condition>& having_conds_) 
-        : Plan(tag), subplan_(std::move(subplan)), sel_cols_(std::move(sel_cols_)), 
-        groupby_cols_(std::move(groupby_cols_)), having_conds_(std::move(having_conds_)) {}
+    AggPlan(PlanTag tag, std::shared_ptr<Plan> subplan, std::vector<TabCol> sel_cols_,
+            const std::vector<TabCol> &groupby_cols_, const std::vector<Condition> &having_conds_,
+            const std::vector<TabCol> &order_by_cols_ = {}) // 增加默认参数
+        : Plan(tag), subplan_(std::move(subplan)), sel_cols_(std::move(sel_cols_)),
+          groupby_cols_(std::move(groupby_cols_)), having_conds_(std::move(having_conds_)),
+          order_by_cols_(std::move(order_by_cols_))
+    {
+    }
 
     ~AggPlan() override = default;
 };

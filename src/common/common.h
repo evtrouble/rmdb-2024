@@ -65,7 +65,8 @@ struct Value
     {
         type = TYPE_FLOAT;
         // 对浮点数进行精度处理
-        float_val = std::round(float_val_ * FLOAT_PRECISION_MULTIPLIER) / FLOAT_PRECISION_MULTIPLIER;
+        double temp = std::round(static_cast<double>(float_val_) * FLOAT_PRECISION_MULTIPLIER) / FLOAT_PRECISION_MULTIPLIER;
+        float_val = static_cast<float>(temp);
     }
 
     void set_str(const std::string &str_val_)
@@ -74,11 +75,17 @@ struct Value
         str_val = std::move(str_val_);
     }
 
-    void set_datetime(const std::string &datetime_val_)
+    // void set_datetime(const std::string &datetime_val_)
+    // {
+    //     type = TYPE_DATETIME;
+    //     str_val = std::move(datetime_val_);
+    // }
+    void set_datetime()
     {
         type = TYPE_DATETIME;
-        str_val = std::move(datetime_val_);
+        // str_val = std::move(datetime_val_);
     }
+
 
     void init_raw(int len)
     {

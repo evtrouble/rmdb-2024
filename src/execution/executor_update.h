@@ -25,24 +25,29 @@ private:
     std::vector<SetClause> set_clauses_;
     SmManager *sm_manager_;
     std::unordered_set<int> changes;
-    std::vector<ColMeta*> set_col_metas; // 缓存set_clauses对应的列元数据
+    std::vector<ColMeta *> set_col_metas;                                    // 缓存set_clauses对应的列元数据
     std::vector<std::pair<std::shared_ptr<IxIndexHandle>, IndexMeta &>> ihs; // 缓存需要更新的索引信息
-    std::vector<std::unique_ptr<char[]>> datas; // 缓存索引键数据
+    std::vector<std::unique_ptr<char[]>> datas;                              // 缓存索引键数据
 
     // 初始化需要更新的索引信息和列元数据
-    void init() {
+    void init()
+    {
         // 缓存set_clauses对应的列元数据
         set_col_metas.reserve(set_clauses_.size());
-        for (auto &set_clause : set_clauses_) {
+        for (auto &set_clause : set_clauses_)
+        {
             set_col_metas.emplace_back(&*tab_.get_col(set_clause.lhs.col_name));
         }
 
         // 找出需要更新索引的情况
         ihs.reserve(tab_.indexes.size());
         datas.reserve(tab_.indexes.size());
-        for (auto &index : tab_.indexes) {
-            for (int i = 0; i < index.col_num; ++i) {
-                if (changes.count(index.cols[i].offset)) {
+        for (auto &index : tab_.indexes)
+        {
+            for (int i = 0; i < index.col_num; ++i)
+            {
+                if (changes.count(index.cols[i].offset))
+                {
                     ihs.emplace_back(sm_manager_->get_index_handle(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)), index);
                     datas.emplace_back(new char[index.col_tot_len]);
                     break;
@@ -52,20 +57,24 @@ private:
     }
 
     // 更新索引
-    void update_indexes(const RmRecord& old_rec, const RmRecord& rec, const Rid& rid) {
-        for (size_t id = 0; id < ihs.size(); id++) {
+    void update_indexes(const RmRecord &old_rec, const RmRecord &rec, const Rid &rid)
+    {
+        for (size_t id = 0; id < ihs.size(); id++)
+        {
             auto &[ih, index] = ihs[id];
             char *key = datas[id].get();
             // 删除旧索引
             int offset = 0;
-            for (int i = 0; i < index.col_num; ++i) {
+            for (int i = 0; i < index.col_num; ++i)
+            {
                 memcpy(key + offset, old_rec.data + index.cols[i].offset, index.cols[i].len);
                 offset += index.cols[i].len;
             }
             ih->delete_entry(key, rid, context_->txn_);
             // 插入新索引
             offset = 0;
-            for (int i = 0; i < index.col_num; ++i) {
+            for (int i = 0; i < index.col_num; ++i)
+            {
                 if (changes.count(index.cols[i].offset))
                     memcpy(key + offset, rec.data + index.cols[i].offset, index.cols[i].len);
                 offset += index.cols[i].len;
@@ -77,16 +86,40 @@ private:
 public:
     UpdateExecutor(SmManager *sm_manager, const std::string &tab_name, const std::vector<SetClause> &set_clauses,
                    const std::vector<Rid> &rids, Context *context)
-            : AbstractExecutor(context), rids_(std::move(rids)),
-              tab_name_(std::move(tab_name)), set_clauses_(std::move(set_clauses)),
-              sm_manager_(sm_manager) {
+        : AbstractExecutor(context), rids_(std::move(rids)),
+          tab_name_(std::move(tab_name)), set_clauses_(std::move(set_clauses)),
+          sm_manager_(sm_manager)
+    {
         tab_ = sm_manager_->db_.get_table(tab_name_);
         fh_ = sm_manager_->get_table_handle(tab_name_);
-        for (auto &set_clause : set_clauses_) {
+        for (auto &set_clause : set_clauses_)
+        {
             // 找到要更新的列的元数据
             auto col = tab_.get_col(set_clause.lhs.col_name);
             // 检查类型是否匹配
-            if (col->type != set_clause.rhs.type) {
+            bool type_compatible = false;
+            if (col->type == set_clause.rhs.type)
+            {
+                type_compatible = true;
+            }
+            else if (col->type == TYPE_DATETIME && set_clause.rhs.type == TYPE_STRING)
+            {
+                // 允许 STRING 赋值给 DATETIME
+                type_compatible = true;
+                // 可以在这里添加日期格式验证
+                if (!is_valid_datetime_format(set_clause.rhs.str_val))
+                {
+                    throw InvalidDatetimeFormatError(set_clause.rhs.str_val);
+                }
+            }
+            else if (col->type == TYPE_STRING && set_clause.rhs.type == TYPE_DATETIME)
+            {
+                // 允许 DATETIME 赋值给 STRING
+                type_compatible = true;
+            }
+
+            if (!type_compatible)
+            {
                 throw IncompatibleTypeError(coltype2str(col->type), coltype2str(set_clause.rhs.type));
             }
             changes.insert(col->offset);
@@ -98,77 +131,88 @@ public:
         // 遍历所有需要更新的记录
         TransactionManager *txn_mgr = context_->txn_->get_txn_manager();
         RmRecord old_rec;
-        for (auto &rid : rids_) {
+        for (auto &rid : rids_)
+        {
             // 获取原记录
             RmRecord rec = *fh_->get_record(rid, context_);
             old_rec = rec;
             // 根据set_clauses_更新记录值
-            for (size_t i = 0; i < set_clauses_.size(); ++i) {
-                auto& set_clause = set_clauses_[i];
-                auto& set_col_meta = set_col_metas[i];
-                switch (set_clause.op) {
+            for (size_t i = 0; i < set_clauses_.size(); ++i)
+            {
+                auto &set_clause = set_clauses_[i];
+                auto &set_col_meta = set_col_metas[i];
+                switch (set_clause.op)
+                {
                 case ast::UpdateOp::SELF_ADD:
                     switch (set_col_meta->type)
                     {
-                        case TYPE_INT:*reinterpret_cast<int *>(rec.data + set_col_meta->offset) = 
+                    case TYPE_INT:
+                        *reinterpret_cast<int *>(rec.data + set_col_meta->offset) =
                             *reinterpret_cast<int *>(old_rec.data + set_col_meta->offset) + set_clause.rhs.int_val;
-                            break;
-                        case TYPE_FLOAT:*reinterpret_cast<float *>(rec.data + set_col_meta->offset) =
+                        break;
+                    case TYPE_FLOAT:
+                        *reinterpret_cast<float *>(rec.data + set_col_meta->offset) =
                             *reinterpret_cast<float *>(old_rec.data + set_col_meta->offset) + set_clause.rhs.float_val;
-                            break;
-                        case TYPE_STRING:
-                            std::strncat(rec.data + set_col_meta->offset, set_clause.rhs.str_val.c_str(), 
-                            set_col_meta->len - std::strlen(rec.data + set_col_meta->offset));
-                            break;
-                        default:
-                            break; // TODO: Handle datetime addition if needed
+                        break;
+                    case TYPE_STRING:
+                        std::strncat(rec.data + set_col_meta->offset, set_clause.rhs.str_val.c_str(),
+                                     set_col_meta->len - std::strlen(rec.data + set_col_meta->offset));
+                        break;
+                    default:
+                        break; // TODO: Handle datetime addition if needed
                     }
                     break;
                 case ast::UpdateOp::SELF_SUB:
                     switch (set_col_meta->type)
                     {
-                        case TYPE_INT:*reinterpret_cast<int *>(rec.data + set_col_meta->offset) = 
+                    case TYPE_INT:
+                        *reinterpret_cast<int *>(rec.data + set_col_meta->offset) =
                             *reinterpret_cast<int *>(old_rec.data + set_col_meta->offset) - set_clause.rhs.int_val;
-                            break;
-                        case TYPE_FLOAT:*reinterpret_cast<float *>(rec.data + set_col_meta->offset) =
+                        break;
+                    case TYPE_FLOAT:
+                        *reinterpret_cast<float *>(rec.data + set_col_meta->offset) =
                             *reinterpret_cast<float *>(old_rec.data + set_col_meta->offset) - set_clause.rhs.float_val;
-                            break;
-                        default:
-                            break; // TODO: Handle datetime addition if needed
+                        break;
+                    default:
+                        break; // TODO: Handle datetime addition if needed
                     }
                     break;
                 case ast::UpdateOp::SELF_MUT:
                     switch (set_col_meta->type)
                     {
-                        case TYPE_INT:*reinterpret_cast<int *>(rec.data + set_col_meta->offset) = 
+                    case TYPE_INT:
+                        *reinterpret_cast<int *>(rec.data + set_col_meta->offset) =
                             *reinterpret_cast<int *>(old_rec.data + set_col_meta->offset) * set_clause.rhs.int_val;
-                            break;
-                        case TYPE_FLOAT:*reinterpret_cast<float *>(rec.data + set_col_meta->offset) =
+                        break;
+                    case TYPE_FLOAT:
+                        *reinterpret_cast<float *>(rec.data + set_col_meta->offset) =
                             *reinterpret_cast<float *>(old_rec.data + set_col_meta->offset) * set_clause.rhs.float_val;
-                            break;
-                        default:
-                            break; // TODO: Handle datetime addition if needed
+                        break;
+                    default:
+                        break; // TODO: Handle datetime addition if needed
                     }
                     break;
                 case ast::UpdateOp::SELF_DIV:
                     switch (set_col_meta->type)
                     {
-                        case TYPE_INT:
-                            if(set_clause.rhs.int_val == 0) {
-                                throw DivisionByZeroError("Division by zero in update operation");
-                            }
-                            *reinterpret_cast<int *>(rec.data + set_col_meta->offset) = 
-                                *reinterpret_cast<int *>(old_rec.data + set_col_meta->offset) / set_clause.rhs.int_val;
-                            break;
-                        case TYPE_FLOAT:
-                            if(set_clause.rhs.float_val == 0) {
-                                throw DivisionByZeroError("Division by zero in update operation");
-                            }
-                            *reinterpret_cast<float *>(rec.data + set_col_meta->offset) =
-                                *reinterpret_cast<float *>(old_rec.data + set_col_meta->offset) / set_clause.rhs.float_val;
-                            break;
-                        default:
-                            break; // TODO: Handle datetime addition if needed
+                    case TYPE_INT:
+                        if (set_clause.rhs.int_val == 0)
+                        {
+                            throw DivisionByZeroError("Division by zero in update operation");
+                        }
+                        *reinterpret_cast<int *>(rec.data + set_col_meta->offset) =
+                            *reinterpret_cast<int *>(old_rec.data + set_col_meta->offset) / set_clause.rhs.int_val;
+                        break;
+                    case TYPE_FLOAT:
+                        if (set_clause.rhs.float_val == 0)
+                        {
+                            throw DivisionByZeroError("Division by zero in update operation");
+                        }
+                        *reinterpret_cast<float *>(rec.data + set_col_meta->offset) =
+                            *reinterpret_cast<float *>(old_rec.data + set_col_meta->offset) / set_clause.rhs.float_val;
+                        break;
+                    default:
+                        break; // TODO: Handle datetime addition if needed
                     }
                     break;
                 case ast::UpdateOp::ASSINGMENT:
@@ -186,13 +230,14 @@ public:
             // 更新记录
             // if(!context_->lock_mgr_->lock_exclusive_on_key(context_->txn_, fh_->GetFd(),
             //      old_rec.data + txn_mgr->get_start_offset())) {
-            //     throw TransactionAbortException(context_->txn_->get_transaction_id(), 
+            //     throw TransactionAbortException(context_->txn_->get_transaction_id(),
             //         AbortReason::UPGRADE_CONFLICT);
             // }
-            if(!context_->lock_mgr_->lock_exclusive_on_key(context_->txn_, fh_->GetFd(),
-                 rec.data + txn_mgr->get_start_offset())) {
+            if (!context_->lock_mgr_->lock_exclusive_on_key(context_->txn_, fh_->GetFd(),
+                                                            rec.data + txn_mgr->get_start_offset()))
+            {
                 throw TransactionAbortException(context_->txn_->get_transaction_id(),
-                    AbortReason::UPGRADE_CONFLICT);
+                                                AbortReason::UPGRADE_CONFLICT);
             }
             fh_->update_record(rid, rec.data, context_);
 
@@ -200,10 +245,10 @@ public:
             UpdateLogRecord log_record(context_->txn_->get_transaction_id(), rid, old_rec, rec, tab_name_);
             context_->log_mgr_->add_log_to_buffer(&log_record);
 
-            if(txn_mgr->get_concurrency_mode() != ConcurrencyMode::MVCC)
+            if (txn_mgr->get_concurrency_mode() != ConcurrencyMode::MVCC)
             {
                 auto write_record = new WriteRecord(WType::UPDATE_TUPLE,
-                    tab_name_, rid, old_rec);
+                                                    tab_name_, rid, old_rec);
                 context_->txn_->append_write_record(write_record);
             }
         }
@@ -212,4 +257,35 @@ public:
     }
 
     ExecutionType type() const override { return ExecutionType::Update; }
+    bool is_valid_datetime_format(const std::string &datetime_str)
+    {
+        // 简单的格式检查：YYYY-MM-DD HH:MM:SS
+        if (datetime_str.length() != 19)
+        {
+            return false;
+        }
+
+        // 检查基本格式：YYYY-MM-DD HH:MM:SS
+        if (datetime_str[4] != '-' || datetime_str[7] != '-' ||
+            datetime_str[10] != ' ' || datetime_str[13] != ':' ||
+            datetime_str[16] != ':')
+        {
+            return false;
+        }
+
+        // 检查所有应该是数字的位置
+        for (int i = 0; i < 19; i++)
+        {
+            if (i == 4 || i == 7 || i == 10 || i == 13 || i == 16)
+            {
+                continue; // 跳过分隔符
+            }
+            if (!std::isdigit(datetime_str[i]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 };

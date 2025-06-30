@@ -27,6 +27,7 @@ void RecoveryManager::redo()
     //     // 确保每个表的文件大小足够
     //     pair.second->ensure_file_size();
     // }
+    txn_id_t max_txn_id = -1;
 
     long long offset = 0;
     LogRecord *log_record = nullptr;
@@ -40,8 +41,8 @@ void RecoveryManager::redo()
         switch(log_record->log_type_){
             case BEGIN:{
                 BeginLogRecord* begin_log_record = static_cast<BeginLogRecord*>(log_record); 
-                auto txn = std::make_unique<Transaction> (begin_log_record->log_tid_, txn_manager_);
-                // txn->set_state(TransactionState::DEFAULT);
+                auto txn = std::make_unique<Transaction>(begin_log_record->log_tid_, txn_manager_);
+                max_txn_id = std::max(max_txn_id, begin_log_record->log_tid_);
                 temp_txns_[begin_log_record->log_tid_] = std::move(txn);
                 break;
             }
@@ -100,7 +101,7 @@ void RecoveryManager::redo()
                     }
                     delete write_record;
                 }
-                temp_txns_.erase(abort_log_record->log_tid_);
+                temp_txns_.erase(it);
                 break;
             }
             case UPDATE:{
@@ -186,6 +187,8 @@ void RecoveryManager::redo()
         }
         delete log_record;
     }
+    txn_manager_->init_txn(); // 重新初始化事务管理器
+    txn_manager_->set_txn_id(max_txn_id);
 }
 
 /**
@@ -232,31 +235,30 @@ void RecoveryManager::undo() {
     temp_txns_.clear();
     disk_manager_->clear_log();
 
-    txn_manager_->init_txn(); // 重新初始化事务管理器
     Transaction* start_txn = txn_manager_->get_start_txn();
-    // auto context = new Context(nullptr, nullptr, start_txn);
-    // for (auto &tab : sm_manager_->db_.tabs_)
-    // {
-    //     std::vector<IndexMeta> indexes;
-    //     indexes.reserve(tab.second.indexes.size());
-    //     for (auto &index_ : tab.second.indexes)
-    //     {
-    //         indexes.emplace_back(index_);
-    //     }
-    //     for (auto &index_ : indexes)
-    //     {
-    //         sm_manager_->drop_index(index_.tab_name, index_.cols, nullptr);
-    //         std::vector<std::string> col_names_;
-    //         col_names_.reserve(index_.cols.size());
-    //         for (auto &col : index_.cols)
-    //         {
-    //             col_names_.emplace_back(col.name);
-    //         }
-    //         sm_manager_->create_index(index_.tab_name, col_names_, context);
-    //     }
-    // }
+    auto context = new Context(nullptr, nullptr, start_txn);
+    for (auto &tab : sm_manager_->db_.tabs_)
+    {
+        std::vector<IndexMeta> indexes;
+        indexes.reserve(tab.second.indexes.size());
+        for (auto &index_ : tab.second.indexes)
+        {
+            indexes.emplace_back(index_);
+        }
+        for (auto &index_ : indexes)
+        {
+            sm_manager_->drop_index(index_.tab_name, index_.cols, nullptr);
+            std::vector<std::string> col_names_;
+            col_names_.reserve(index_.cols.size());
+            for (auto &col : index_.cols)
+            {
+                col_names_.emplace_back(col.name);
+            }
+            sm_manager_->create_index(index_.tab_name, col_names_, context);
+        }
+    }
     start_txn->reset(); // 重置起始事务
-    // delete context; // 清理上下文
+    delete context; // 清理上下文
     buffer_pool_manager_->force_flush_all_pages(); // 确保所有脏页都被刷新到磁盘
 }
 

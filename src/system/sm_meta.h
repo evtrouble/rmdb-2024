@@ -230,8 +230,9 @@ class DbMeta {
    private:
     std::string name_;                      // 数据库名称
     std::map<std::string, TabMeta> tabs_;   // 数据库中包含的表
+    txn_id_t start_txn_id_ = 0;
 
-   public:
+public:
     // DbMeta(std::string name) : name_(name) {}
 
     /* 判断数据库中是否存在指定名称的表 */
@@ -251,12 +252,16 @@ class DbMeta {
         return pos->second;
     }
 
+    void set_txn_id(txn_id_t start_txn_id) { start_txn_id_ = start_txn_id; }
+    txn_id_t get_txn_id() { return start_txn_id_; }
+
     // 重载操作符 <<
     friend std::ostream &operator<<(std::ostream &os, const DbMeta &db_meta) {
         os << db_meta.name_ << '\n' << db_meta.tabs_.size() << '\n';
         for (auto &entry : db_meta.tabs_) {
             os << entry.second << '\n';
         }
+        os << db_meta.start_txn_id_ << '\n';
         return os;
     }
 
@@ -268,6 +273,7 @@ class DbMeta {
             is >> tab;
             db_meta.tabs_.emplace(tab.name, std::move(tab));
         }
+        is >> db_meta.start_txn_id_;
         return is;
     }
 };

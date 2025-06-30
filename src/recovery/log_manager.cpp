@@ -11,6 +11,7 @@ See the Mulan PSL v2 for more details. */
 #include <cstring>
 #include <unordered_set>
 #include "log_manager.h"
+#include "transaction/transaction_manager.h"
 
 /**
  * @description: 添加日志记录到日志缓冲区中，并返回日志记录号
@@ -76,7 +77,7 @@ void LogManager::flush_log_to_disk_periodically() {
     }
 }
 
-void LogManager::create_static_check_point()
+void LogManager::create_static_check_point(TransactionManager *txn_mgr)
 {
     std::lock_guard lock(latch_);
     flush_log_to_disk_without_lock();
@@ -114,6 +115,7 @@ void LogManager::create_static_check_point()
     }
     disk_manager_->change_log_file();
     flush_log_to_disk_without_lock();
+    txn_mgr->flush_txn_id();
 }
 
 LogRecord *LogManager::read_log(long long offset) {
