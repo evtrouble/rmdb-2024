@@ -235,12 +235,11 @@ public:
     }
     
     // 获取当前批次所有可见记录的RID
-    std::vector<Rid> rid_batch(size_t batch_size) override {
+    std::vector<Rid> rid_batch(size_t batch_size = BATCH_SIZE) override {
         std::vector<Rid> batch;
         batch.reserve(batch_size);
         while (batch.size() < batch_size && !scan_->is_end())
         {
-            auto rids = scan_->rid_batch();
             auto rid_batch = scan_->rid_batch();
             for (auto &rid : rid_batch) {
                 auto record = fh_->get_record(rid, context_);

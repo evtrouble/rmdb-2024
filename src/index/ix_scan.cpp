@@ -35,7 +35,7 @@ void IxScan::next_batch() {
 }
 
 std::vector<Rid> IxScan::rid_batch() const {
-    if(pos_ >= max_pos_)
+    if(is_end())
         return {};
     std::vector<Rid> batch;
     batch.resize(max_pos_ - pos_);

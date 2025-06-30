@@ -103,8 +103,7 @@ public:
     std::vector<Rid> rid_batch(size_t batch_size = BATCH_SIZE) override {
         std::vector<Rid> batch;
         batch.reserve(batch_size);
-        size_t count = 0;
-        while (count < batch_size && !scan_->is_end())
+        while (batch.size() < batch_size && !scan_->is_end())
         {
             auto scan_batch = scan_->record_batch();
             auto rids = scan_->rid_batch();
@@ -113,7 +112,6 @@ public:
             {
                 if (satisfy_conditions(scan_batch[id].get())) {
                     batch.emplace_back(rids[id]);
-                    ++count;
                 }
             }
             scan_->next_batch();
