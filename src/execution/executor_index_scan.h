@@ -219,16 +219,14 @@ public:
     // 批量获取下一个batch_size个满足条件的元组，最少一页，最多batch_size且为页的整数倍
     std::vector<std::unique_ptr<RmRecord>> next_batch(size_t batch_size) override {
         std::vector<std::unique_ptr<RmRecord>> batch;
-        size_t count = 0;
         batch.reserve(batch_size);
-        while (count < batch_size && !scan_->is_end())
+        while (batch.size() < batch_size && !scan_->is_end())
         {
             auto rid_batch = scan_->rid_batch();
             for (auto &rid : rid_batch) {
                 auto record = fh_->get_record(rid, context_);
                 if (check_cons(fed_conds_, record.get())) {
                     batch.emplace_back(project(record));
-                    ++count;
                 }
             }
             scan_->next_batch();
@@ -240,8 +238,7 @@ public:
     std::vector<Rid> rid_batch(size_t batch_size) override {
         std::vector<Rid> batch;
         batch.reserve(batch_size);
-        size_t count = 0;
-        while (count < batch_size && !scan_->is_end())
+        while (batch.size() < batch_size && !scan_->is_end())
         {
             auto rids = scan_->rid_batch();
             auto rid_batch = scan_->rid_batch();
@@ -249,7 +246,6 @@ public:
                 auto record = fh_->get_record(rid, context_);
                 if (check_cons(fed_conds_, record.get())) {
                     batch.emplace_back(rid);
-                    ++count;
                 }
             }
             scan_->next_batch();

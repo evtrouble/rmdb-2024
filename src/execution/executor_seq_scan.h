@@ -85,15 +85,13 @@ public:
     // 批量获取下一个batch_size个满足条件的元组，最少一页，最多batch_size且为页的整数倍
     std::vector<std::unique_ptr<RmRecord>> next_batch(size_t batch_size = BATCH_SIZE) override {
         std::vector<std::unique_ptr<RmRecord>> batch;
-        size_t count = 0;
         batch.reserve(batch_size);
-        while (count < batch_size && !scan_->is_end())
+        while (batch.size() < batch_size && !scan_->is_end())
         {
             auto scan_batch = scan_->record_batch();
             for (auto &rec : scan_batch) {
                 if (satisfy_conditions(rec.get())) {
                     batch.emplace_back(project(rec));
-                    ++count;
                 }
             }
             scan_->next_batch();
