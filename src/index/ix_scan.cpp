@@ -9,7 +9,7 @@ MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 See the Mulan PSL v2 for more details. */
 
 #include "ix_scan.h"
-
+std::unique_ptr<RmRecord> IxScan::temp = nullptr;
 void IxScan::next() {
     ++pos_;
     if (pos_ >= node_.get_size()) {

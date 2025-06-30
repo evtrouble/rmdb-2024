@@ -239,7 +239,7 @@ public:
         results.reserve(num);
         for (size_t id = 0; id < num; id++) {
             auto &cache = result_cache_[cache_index_ + id];
-            results.emplace_back(cache->data, cache->size, false);
+            results.push_back(std::make_unique<RmRecord>(cache->data, cache->size, false));
         }
         cache_index_ += num;
         return results;

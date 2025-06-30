@@ -30,14 +30,16 @@ private:
     std::unordered_map<std::string, std::vector<Value>> having_rhs_agg_groups_; // HAVING 右分组聚合值
     std::vector<std::vector<ColMeta>::const_iterator> sel_col_metas_;           // 目标列元数据
     std::vector<std::vector<ColMeta>::const_iterator> group_by_col_metas_;      // GROUP BY 列元数据
-    std::vector<TabCol> having_lhs_cols_;                                       //  HAVING 左聚合的目标列
-    std::vector<TabCol> having_rhs_cols_;                                       //  HAVING 右聚合的目标列
+    std::vector<TabCol> having_lhs_cols_;                                       // HAVING 左聚合的目标列
+    std::vector<TabCol> having_rhs_cols_;                                       // HAVING 右聚合的目标列
     std::vector<std::vector<ColMeta>::const_iterator> having_lhs_col_metas_;    // HAVING 左列元数据
     std::vector<std::vector<ColMeta>::const_iterator> having_rhs_col_metas_;    // HAVING 右列元数据
     std::vector<std::string> insert_order_;                                     // 记录分组键的插入顺序
     size_t current_group_index_;                                                // 当前遍历的分组索引
     std::vector<RmRecord> results_;                                             // 储存结果
     std::vector<RmRecord>::iterator result_it_;                                 // 结果迭代器
+    bool initialized_ = false;                                                 // 是否已初始化
+    
     // 用于跟踪 AVG 聚合的中间状态
     struct AvgState
     {
@@ -49,13 +51,16 @@ private:
     std::unordered_map<std::string, std::vector<AvgState>> having_rhs_avg_states_; // HAVING右AVG状态
 
     void avg_calculate(const std::vector<TabCol> &sel_cols, std::vector<AvgState> avg_states, std::vector<Value> &agg_values);
-
     void init(std::vector<Value> &agg_values, const std::vector<TabCol> &sel_cols_, const RmRecord &record);
-    void aggregate_values(std::vector<Value> &agg_values, std::vector<AvgState> &avg_states, const std::vector<TabCol> &sel_cols_, const std::vector<std::vector<ColMeta>::const_iterator> &sel_col_metas_, const RmRecord &record);
-    void aggregate(const RmRecord &record);                                                                                         // 聚合计算
-    std::string get_group_key(const RmRecord &record);                                                                              // 获取分组键
-    bool check_having_conditions(const std::vector<Value> &having_lhs_agg_values, const std::vector<Value> &having_rhs_agg_values); // 判断having
-    bool compare_values(const Value &lhs_value, const Value &rhs_value, CompOp op);                                                 // 比较两个value对象的值是否满足指定的比较操作符
+    void aggregate_values(std::vector<Value> &agg_values, std::vector<AvgState> &avg_states, 
+                         const std::vector<TabCol> &sel_cols_, 
+                         const std::vector<std::vector<ColMeta>::const_iterator> &sel_col_metas_, 
+                         const RmRecord &record);
+    void aggregate_batch(const std::vector<RmRecord> &records);
+    std::string get_group_key(const RmRecord &record);                                                                              
+    bool check_having_conditions(const std::vector<Value> &having_lhs_agg_values, const std::vector<Value> &having_rhs_agg_values);
+    bool compare_values(const Value &lhs_value, const Value &rhs_value, CompOp op);
+    void generate_results_batch(size_t batch_size);
 
 public:
     AggExecutor(std::unique_ptr<AbstractExecutor> child_executor, const std::vector<TabCol> &sel_cols,
@@ -102,7 +107,7 @@ public:
         {
             auto temp = get_col(child_executor_->cols(), col);
             group_by_col_metas_.emplace_back(std::move(temp));
-        }
+        }        
         // 初始化 HAVING 列元数据
         for (const auto &cond : having_conds_)
         {
@@ -146,72 +151,99 @@ public:
                 }
             }
         }
-        // 初始化聚合值
-        agg_groups_.clear();
-        having_lhs_agg_groups_.clear();
-        having_rhs_agg_groups_.clear();
-
-        // 初始化AVG中间值
-        avg_states_.clear();
-        having_lhs_avg_states_.clear();
-        having_rhs_avg_states_.clear();
     }
 
-    size_t tupleLen() const
-    {
-        return TupleLen;
-    }
+    size_t tupleLen() const override { return TupleLen; }
 
-    const std::vector<ColMeta> &cols() const
-    {
-        return output_cols_;
-    }
+    const std::vector<ColMeta> &cols() const override { return output_cols_; }
 
-    void beginTuple()
+    void beginTuple() override
     {
-        child_executor_->beginTuple();
-        agg_groups_.clear();
-        having_lhs_agg_groups_.clear();
-        having_rhs_agg_groups_.clear();
-        avg_states_.clear();
-        having_lhs_avg_states_.clear();
-        having_rhs_avg_states_.clear();
-        while (!child_executor_->is_end())
+        if (!initialized_)
         {
-            auto record = child_executor_->Next();
-            if (record)
-            {
-                aggregate(*record);
-            }
-            child_executor_->nextTuple();
+            initialize();
         }
-        addResult();
         result_it_ = results_.begin();
     }
 
-    void nextTuple()
-    {
-        if (result_it_ != results_.end())
+    std::vector<std::unique_ptr<RmRecord>> next_batch(size_t batch_size = BATCH_SIZE) override {
+        std::vector<std::unique_ptr<RmRecord>> batch_result;
+        
+        if (!initialized_)
         {
+            initialize();
+        }
+        
+        // 如果还有未处理的记录，先处理它们
+        if (result_it_ == results_.end())
+        {
+            // 获取子执行器的一批记录
+            auto input_batch = child_executor_->next_batch(batch_size);
+            
+            if (!input_batch.empty())
+            {
+                // 处理输入批次
+                std::vector<RmRecord> records;
+                for (auto &rec_ptr : input_batch)
+                {
+                    records.push_back(*rec_ptr);
+                }
+                aggregate_batch(records);
+            }
+            
+            // 生成结果批次
+            if (current_group_index_ < insert_order_.size())
+            {
+                generate_results_batch(batch_size);
+            }
+        }
+        
+        // 收集结果批次
+        while (batch_result.size() < batch_size && result_it_ != results_.end())
+        {
+            batch_result.push_back(std::make_unique<RmRecord>(*result_it_));
             ++result_it_;
         }
+        
+        return batch_result;
     }
 
-    bool is_end() const
-    {
-        return result_it_ == results_.end();
-    }
+    ExecutionType type() const override { return ExecutionType::Agg; }
 
-    Rid &rid()
+private:
+    void initialize()
     {
-        return _abstract_rid;
-    }
-
-    void addResult()
-    {
-        // 如果 agg_groups_ 为空，返回初始值
-        if (agg_groups_.empty())
+        agg_groups_.clear();
+        having_lhs_agg_groups_.clear();
+        having_rhs_agg_groups_.clear();
+        avg_states_.clear();
+        having_lhs_avg_states_.clear();
+        having_rhs_avg_states_.clear();
+        insert_order_.clear();
+        results_.clear();
+        current_group_index_ = 0;
+        
+        // 处理初始批次
+        auto input_batch = child_executor_->next_batch(BATCH_SIZE);
+        while (!input_batch.empty())
         {
+            std::vector<RmRecord> records;
+            for (auto &rec_ptr : input_batch)
+            {
+                records.push_back(*rec_ptr);
+            }
+            aggregate_batch(records);
+            input_batch = child_executor_->next_batch(BATCH_SIZE);
+        }
+        
+        // 生成初始结果
+        if (!insert_order_.empty())
+        {
+            generate_results_batch(BATCH_SIZE);
+        }
+        else
+        {
+            // 如果没有分组，添加默认结果
             RmRecord record(TupleLen);
             int offset = 0;
             std::vector<Value> agg_values;
@@ -228,7 +260,9 @@ public:
                     agg_values[i].type = TYPE_STRING;
                     agg_values[i].set_str("0.000000");
                 }
-                else if (ast::AggFuncType::SUM == agg_type || ast::AggFuncType::MAX == agg_type || ast::AggFuncType::MIN == agg_type)
+                else if (ast::AggFuncType::SUM == agg_type 
+                || ast::AggFuncType::MAX == agg_type 
+                || ast::AggFuncType::MIN == agg_type)
                 {
                     auto col = get_col(child_executor_->cols(), {sel_cols_[i].tab_name, sel_cols_[i].col_name});
                     if (ast::AggFuncType::MIN == agg_type)
@@ -257,62 +291,15 @@ public:
                 offset += output_cols_[i].len;
             }
             results_.emplace_back(std::move(record));
-            return;
         }
-        if (current_group_index_ >= insert_order_.size())
-        {
-            return;
-        }
-
-        // 获取当前分组键
-        const std::string &group_key = insert_order_[current_group_index_];
-        auto &agg_values = agg_groups_[group_key];
-        auto &having_lhs_agg_values = having_lhs_agg_groups_[group_key];
-        auto &having_rhs_agg_values = having_rhs_agg_groups_[group_key];
-
-        auto &avg_states = avg_states_[group_key];
-        auto &having_lhs_avg_states = having_lhs_avg_states_[group_key];
-        auto &having_rhs_avg_states = having_rhs_avg_states_[group_key];
-
-        avg_calculate(sel_cols_, avg_states, agg_values);
-        avg_calculate(having_lhs_cols_, having_lhs_avg_states, having_lhs_agg_values);
-        avg_calculate(having_rhs_cols_, having_rhs_avg_states, having_rhs_agg_values);
-
-        // 检查是否满足having条件
-        if (!check_having_conditions(having_lhs_agg_values, having_rhs_agg_values))
-        {
-            ++current_group_index_;
-            return addResult(); // 跳过不满足条件的分组
-        }
-        RmRecord record(TupleLen);
-        int offset = 0;
-
-        // 遍历 sel_cols_，动态写入值
-        for (size_t i = 0; i < sel_cols_.size(); ++i)
-        {
-            agg_values[i].export_val(record.data + offset, output_cols_[i].len);
-            offset += output_cols_[i].len;
-        }
-
-        // 移动到下一个分组
-        ++current_group_index_;
-        results_.emplace_back(std::move(record));
-        return addResult();
+        result_it_ = results_.begin();
+        initialized_ = true;
     }
-
-    std::unique_ptr<RmRecord> Next()
-    {
-        if (result_it_ == results_.end())
-        {
-            return nullptr;
-        }
-        return std::make_unique<RmRecord>(*result_it_);
-    }
-
-    ExecutionType type() const override { return ExecutionType::Agg; }
 };
 
-void AggExecutor::avg_calculate(const std::vector<TabCol> &sel_cols, std::vector<AvgState> avg_states, std::vector<Value> &agg_values)
+// AVG计算实现
+void AggExecutor::avg_calculate(const std::vector<TabCol> &sel_cols, 
+                                std::vector<AvgState> avg_states, std::vector<Value> &agg_values)
 {
     for (size_t i = 0; i < sel_cols.size(); ++i)
     {
@@ -326,13 +313,15 @@ void AggExecutor::avg_calculate(const std::vector<TabCol> &sel_cols, std::vector
                 std::string str = std::to_string(rounded);
                 agg_values[i].type = TYPE_STRING;
                 agg_values[i].set_str(str);
-                // std::cout<<"string"<<str<<std::endl;
             }
         }
     }
 }
 
-void AggExecutor::init(std::vector<Value> &agg_values, const std::vector<TabCol> &sel_cols_, const RmRecord &record)
+// 初始化聚合值
+void AggExecutor::init(std::vector<Value> &agg_values, 
+                        const std::vector<TabCol> &sel_cols_, 
+                        const RmRecord &record)
 {
     for (size_t i = 0; i < sel_cols_.size(); ++i)
     {
@@ -346,7 +335,9 @@ void AggExecutor::init(std::vector<Value> &agg_values, const std::vector<TabCol>
             agg_values[i].type = TYPE_STRING;
             agg_values[i].set_str("0.0");
         }
-        else if (ast::AggFuncType::SUM == agg_type || ast::AggFuncType::MAX == agg_type || ast::AggFuncType::MIN == agg_type)
+        else if (ast::AggFuncType::SUM == agg_type 
+        || ast::AggFuncType::MAX == agg_type 
+        || ast::AggFuncType::MIN == agg_type)
         {
             auto col = get_col(child_executor_->cols(), {sel_cols_[i].tab_name, sel_cols_[i].col_name});
             if (ast::AggFuncType::MIN == agg_type)
@@ -368,7 +359,6 @@ void AggExecutor::init(std::vector<Value> &agg_values, const std::vector<TabCol>
                 }
             }
         }
-        // 如果是 GROUP BY 列，初始化其值
         else if (ast::AggFuncType::NO_TYPE == agg_type)
         {
             auto col_meta = *get_col(child_executor_->cols(), sel_cols_[i]);
@@ -390,17 +380,19 @@ void AggExecutor::init(std::vector<Value> &agg_values, const std::vector<TabCol>
     }
 }
 
-void AggExecutor::aggregate_values(std::vector<Value> &agg_values, std::vector<AvgState> &avg_states, const std::vector<TabCol> &sel_cols_, const std::vector<std::vector<ColMeta>::const_iterator> &sel_col_metas_, const RmRecord &record)
+// 聚合值计算
+void AggExecutor::aggregate_values(std::vector<Value> &agg_values, std::vector<AvgState> &avg_states, 
+                                const std::vector<TabCol> &sel_cols_, 
+                                const std::vector<std::vector<ColMeta>::const_iterator> &sel_col_metas_, 
+                                const RmRecord &record)
 {
     for (size_t i = 0; i < sel_cols_.size(); ++i)
     {
         auto agg_type = sel_cols_[i].aggFuncType;
-        // GROUP BY 列不需要更新
         if (ast::AggFuncType::NO_TYPE == agg_type)
         {
             continue;
         }
-        // COUNT 列直接+1
         if (ast::AggFuncType::COUNT == agg_type)
         {
             ++agg_values[i].int_val;
@@ -460,34 +452,40 @@ void AggExecutor::aggregate_values(std::vector<Value> &agg_values, std::vector<A
     }
 }
 
-void AggExecutor::aggregate(const RmRecord &record)
+// 批量聚合处理
+void AggExecutor::aggregate_batch(const std::vector<RmRecord> &records)
 {
-    std::string group_key = get_group_key(record);
-    auto &agg_values = agg_groups_[group_key];
-    auto &having_lhs_agg_values = having_lhs_agg_groups_[group_key];
-    auto &having_rhs_agg_values = having_rhs_agg_groups_[group_key];
-
-    auto &avg_states = avg_states_[group_key];
-    auto &having_lhs_avg_states = having_lhs_avg_states_[group_key];
-    auto &having_rhs_avg_states = having_rhs_avg_states_[group_key];
-    if (agg_values.empty())
+    for (const auto &record : records)
     {
-        insert_order_.emplace_back(group_key); // 记录分组键的插入顺序
-        agg_values.resize(sel_cols_.size());
-        having_lhs_agg_values.resize(having_lhs_cols_.size());
-        having_rhs_agg_values.resize(having_rhs_cols_.size());
+        std::string group_key = get_group_key(record);
+        auto &agg_values = agg_groups_[group_key];
+        auto &having_lhs_agg_values = having_lhs_agg_groups_[group_key];
+        auto &having_rhs_agg_values = having_rhs_agg_groups_[group_key];
 
-        avg_states.resize(sel_cols_.size());
-        having_lhs_avg_states.resize(having_lhs_cols_.size());
-        having_rhs_avg_states.resize(having_rhs_cols_.size());
+        auto &avg_states = avg_states_[group_key];
+        auto &having_lhs_avg_states = having_lhs_avg_states_[group_key];
+        auto &having_rhs_avg_states = having_rhs_avg_states_[group_key];
+        
+        if (agg_values.empty())
+        {
+            insert_order_.emplace_back(group_key);
+            agg_values.resize(sel_cols_.size());
+            having_lhs_agg_values.resize(having_lhs_cols_.size());
+            having_rhs_agg_values.resize(having_rhs_cols_.size());
 
-        init(agg_values, sel_cols_, record);
-        init(having_lhs_agg_values, having_lhs_cols_, record);
-        init(having_rhs_agg_values, having_rhs_cols_, record);
+            avg_states.resize(sel_cols_.size());
+            having_lhs_avg_states.resize(having_lhs_cols_.size());
+            having_rhs_avg_states.resize(having_rhs_cols_.size());
+
+            init(agg_values, sel_cols_, record);
+            init(having_lhs_agg_values, having_lhs_cols_, record);
+            init(having_rhs_agg_values, having_rhs_cols_, record);
+        }
+        
+        aggregate_values(agg_values, avg_states, sel_cols_, sel_col_metas_, record);
+        aggregate_values(having_lhs_agg_values, having_lhs_avg_states, having_lhs_cols_, having_lhs_col_metas_, record);
+        aggregate_values(having_rhs_agg_values, having_rhs_avg_states, having_rhs_cols_, having_rhs_col_metas_, record);
     }
-    aggregate_values(agg_values, avg_states, sel_cols_, sel_col_metas_, record);
-    aggregate_values(having_lhs_agg_values, having_lhs_avg_states, having_lhs_cols_, having_lhs_col_metas_, record);
-    aggregate_values(having_rhs_agg_values, having_rhs_avg_states, having_rhs_cols_, having_rhs_col_metas_, record);
 }
 
 std::string AggExecutor::get_group_key(const RmRecord &record)
@@ -519,7 +517,8 @@ std::string AggExecutor::get_group_key(const RmRecord &record)
     return key;
 }
 
-bool AggExecutor::check_having_conditions(const std::vector<Value> &having_lhs_agg_values, const std::vector<Value> &having_rhs_agg_values)
+bool AggExecutor::check_having_conditions(const std::vector<Value> &having_lhs_agg_values, 
+                                            const std::vector<Value> &having_rhs_agg_values)
 {
     auto lhs_it = having_lhs_agg_values.begin();
     auto rhs_it = having_rhs_agg_values.begin();
@@ -600,4 +599,41 @@ bool AggExecutor::compare_values(const Value &lhs_value, const Value &rhs_value,
     default:
         throw InternalError("Unexpected comparison operator");
     }
+}
+
+// 批量生成结果
+void AggExecutor::generate_results_batch(size_t batch_size)
+{
+    size_t count = 0;
+    while (current_group_index_ < insert_order_.size() && count < batch_size)
+    {
+        const std::string &group_key = insert_order_[current_group_index_];
+        auto &agg_values = agg_groups_[group_key];
+        auto &having_lhs_agg_values = having_lhs_agg_groups_[group_key];
+        auto &having_rhs_agg_values = having_rhs_agg_groups_[group_key];
+
+        auto &avg_states = avg_states_[group_key];
+        auto &having_lhs_avg_states = having_lhs_avg_states_[group_key];
+        auto &having_rhs_avg_states = having_rhs_avg_states_[group_key];
+
+        avg_calculate(sel_cols_, avg_states, agg_values);
+        avg_calculate(having_lhs_cols_, having_lhs_avg_states, having_lhs_agg_values);
+        avg_calculate(having_rhs_cols_, having_rhs_avg_states, having_rhs_agg_values);
+
+        if (check_having_conditions(having_lhs_agg_values, having_rhs_agg_values))
+        {
+            RmRecord record(TupleLen);
+            int offset = 0;
+
+            for (size_t i = 0; i < sel_cols_.size(); ++i)
+            {
+                agg_values[i].export_val(record.data + offset, output_cols_[i].len);
+                offset += output_cols_[i].len;
+            }
+            results_.push_back(std::move(record));
+            count++;
+        }
+        current_group_index_++;
+    }
+    result_it_ = results_.begin();
 }
