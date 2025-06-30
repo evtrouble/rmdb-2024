@@ -67,7 +67,7 @@ public:
 
 private:
     inline void update_max_pos() {
-        max_pos_ = close_ ? node_.upper_bound(max_key_.c_str()) : node_.lower_bound(max_key_.c_str());
+        max_pos_ = close_ ? node_.upper_bound_adjust(max_key_.c_str()) : node_.lower_bound(max_key_.c_str());
         // max_pos_ = std::min(max_pos_, node_.get_size());
     }
 };

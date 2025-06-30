@@ -56,6 +56,22 @@ int IxNodeHandle::upper_bound(const char *target) const
     return left;
 }
 
+int IxNodeHandle::upper_bound_adjust(const char *target) const
+{
+    // 查找当前节点中第一个大于target的key，并返回key的位置给上层
+    // 提示: 可以采用多种查找方式：顺序遍历、二分查找等；使用ix_compare()函数进行比较
+    int left = 0, right = page_hdr->num_key;
+    while (left < right)
+    {
+        int mid = (right + left) >> 1;
+        if (ix_compare(get_key(mid), target, file_hdr->col_types_, file_hdr->col_lens_) > 0)
+            right = mid;
+        else
+            left = mid + 1;
+    }
+    return left;
+}
+
 /**
  * @brief 用于叶子结点根据key来查找该结点中的键值对
  * 值value作为传出参数，函数返回是否查找成功
@@ -763,11 +779,8 @@ std::pair<IxNodeHandle, int> IxIndexHandle::upper_bound(const char *key)
     root_lacth_.lock_shared();
     auto node = find_leaf_page(key, Operation::FIND, nullptr);
 
-    int key_idx = node.upper_bound(key);
-    if(key_idx == 1 && ix_compare(key, node.get_key(0), file_hdr_->col_types_, file_hdr_->col_lens_) < 0)
-    {
-        key_idx = 0; // 如果是第一个key，upper_bound返回的是1
-    }
+    int key_idx = node.upper_bound_adjust(key);
+
     if (key_idx >= node.page_hdr->num_key && node.get_next_leaf() != IX_LEAF_HEADER_PAGE)
     {
         auto next_node = fetch_node(node.get_next_leaf());
