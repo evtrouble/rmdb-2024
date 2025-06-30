@@ -27,7 +27,7 @@ void RecoveryManager::redo()
     //     // 确保每个表的文件大小足够
     //     pair.second->ensure_file_size();
     // }
-    txn_id_t max_txn_id = 0;
+    txn_id_t max_txn_id = -1;
 
     long long offset = 0;
     LogRecord *log_record = nullptr;

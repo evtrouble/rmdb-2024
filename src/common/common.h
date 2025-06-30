@@ -75,11 +75,17 @@ struct Value
         str_val = std::move(str_val_);
     }
 
-    void set_datetime(const std::string &datetime_val_)
+    // void set_datetime(const std::string &datetime_val_)
+    // {
+    //     type = TYPE_DATETIME;
+    //     str_val = std::move(datetime_val_);
+    // }
+    void set_datetime()
     {
         type = TYPE_DATETIME;
-        str_val = std::move(datetime_val_);
+        // str_val = std::move(datetime_val_);
     }
+
 
     void init_raw(int len)
     {

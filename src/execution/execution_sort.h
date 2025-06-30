@@ -67,6 +67,7 @@ private:
             value.set_float(*reinterpret_cast<const float *>(data));
             break;
         case TYPE_STRING:
+        case TYPE_DATETIME:
             value.set_str(std::string(data, col_meta.len));
             break;
         default:

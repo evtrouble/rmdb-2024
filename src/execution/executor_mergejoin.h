@@ -189,6 +189,7 @@ private:
                 break;
             }
             case TYPE_STRING:
+            case TYPE_DATETIME:
             {
                 cmp = memcmp(lhs_value, rhs_value, strlen(rhs_value));
                 break;
