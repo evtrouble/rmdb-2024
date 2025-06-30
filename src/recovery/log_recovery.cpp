@@ -187,6 +187,7 @@ void RecoveryManager::redo()
         }
         delete log_record;
     }
+    txn_manager_->init_txn(); // 重新初始化事务管理器
     txn_manager_->set_txn_id(max_txn_id);
 }
 
@@ -234,7 +235,6 @@ void RecoveryManager::undo() {
     temp_txns_.clear();
     disk_manager_->clear_log();
 
-    txn_manager_->init_txn(); // 重新初始化事务管理器
     Transaction* start_txn = txn_manager_->get_start_txn();
     auto context = new Context(nullptr, nullptr, start_txn);
     for (auto &tab : sm_manager_->db_.tabs_)

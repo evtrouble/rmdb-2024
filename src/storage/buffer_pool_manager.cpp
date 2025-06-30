@@ -25,21 +25,21 @@ BufferPoolManager::BufferPoolManager(size_t pool_size, DiskManager *disk_manager
         free_list_.emplace_back(i);
     }
     page_table_.reserve(pool_size);
-    // flush_thread_ = std::thread(&BufferPoolManager::background_flush, this);
+    flush_thread_ = std::thread(&BufferPoolManager::background_flush, this);
 }
 
 BufferPoolManager::~BufferPoolManager() {
     terminate_ = true;
-    // flush_cond_.notify_all();
+    flush_cond_.notify_all();
     if (flush_thread_.joinable()) {
         flush_thread_.join();
     }
     delete replacer_;
-    // for(auto& page : pages_) {
-    //     if (page.is_dirty_) {
-    //         disk_manager_->write_page(page.id_.fd, page.id_.page_no, page.data_, PAGE_SIZE);
-    //     }
-    // }
+    for(auto& page : pages_) {
+        if (page.is_dirty_) {
+            disk_manager_->write_page(page.id_.fd, page.id_.page_no, page.data_, PAGE_SIZE);
+        }
+    }
 }
 
 Page* BufferPoolManager::fetch_page(const PageId& page_id) {
@@ -124,9 +124,9 @@ bool BufferPoolManager::unpin_page(const PageId& page_id, bool is_dirty) {
     
     if (is_dirty && !page.is_dirty_.exchange(true)) {
         dirty_page_count_.fetch_add(1);
-        // if (dirty_page_count_.load() > DIRTY_THRESHOLD) {
-        //     flush_cond_.notify_one();
-        // }
+        if (dirty_page_count_.load() > DIRTY_THRESHOLD) {
+            flush_cond_.notify_one();
+        }
     }
     return true;
 }
@@ -229,15 +229,15 @@ void BufferPoolManager::remove_all_pages(int fd, bool flush) {
         it = page_table_.erase(it);
     }
 
-    // for(const auto& frame_id : pages_to_remove) {
-    //     Page& page = pages_[frame_id];
-    //     std::lock_guard page_lock(page.latch_);
-    //     if(page.is_dirty_.exchange(false)) {
-    //         disk_manager_->write_page(page.id_.fd, page.id_.page_no, page.data_, PAGE_SIZE);
-    //         dirty_page_count_.fetch_sub(1);
-    //     }
-    //     page.id_.fd = -1; // 重置页面ID
-    // }
+    for(const auto& frame_id : pages_to_remove) {
+        Page& page = pages_[frame_id];
+        std::lock_guard page_lock(page.latch_);
+        if(page.is_dirty_.exchange(false)) {
+            disk_manager_->write_page(page.id_.fd, page.id_.page_no, page.data_, PAGE_SIZE);
+            dirty_page_count_.fetch_sub(1);
+        }
+        page.id_.fd = -1; // 重置页面ID
+    }
 }
 
 void BufferPoolManager::background_flush() {

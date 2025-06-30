@@ -261,7 +261,7 @@ public:
         for (auto &entry : db_meta.tabs_) {
             os << entry.second << '\n';
         }
-        os << db_meta.start_txn_id_;
+        os << db_meta.start_txn_id_ << '\n';
         return os;
     }
 
