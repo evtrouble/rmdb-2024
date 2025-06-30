@@ -24,7 +24,6 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
     std::unordered_map<std::string, TabCol> alias_to_col;
 
     table_alias_map_.clear();
-
     switch (parse->Nodetype())
     {
     case ast::TreeNodeType::SelectStmt:
@@ -679,6 +678,37 @@ CompOp Analyze::convert_sv_comp_op(ast::SvCompOp op)
     };
     return m.at(op);
 }
+bool is_valid_datetime_format(const std::string &datetime_str)
+{
+    // 简单的格式检查：YYYY-MM-DD HH:MM:SS
+    if (datetime_str.length() != 19)
+    {
+        return false;
+    }
+
+    // 检查基本格式：YYYY-MM-DD HH:MM:SS
+    if (datetime_str[4] != '-' || datetime_str[7] != '-' ||
+        datetime_str[10] != ' ' || datetime_str[13] != ':' ||
+        datetime_str[16] != ':')
+    {
+        return false;
+    }
+
+    // 检查所有应该是数字的位置
+    for (int i = 0; i < 19; i++)
+    {
+        if (i == 4 || i == 7 || i == 10 || i == 13 || i == 16)
+        {
+            continue; // 跳过分隔符
+        }
+        if (!std::isdigit(datetime_str[i]))
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
 // 实现类型转换函数
 Value Analyze::convert_value_type(const Value &value, ColType target_type)
 {
@@ -745,8 +775,15 @@ Value Analyze::convert_value_type(const Value &value, ColType target_type)
                 throw IncompatibleTypeError("STRING", "FLOAT");
             }
         }
-        break;
-    case TYPE_DATETIME:
+        else if (target_type == TYPE_DATETIME)
+        {
+            if (!is_valid_datetime_format(value.str_val))
+            {
+                throw IncompatibleTypeError("STRING", "DATETIME - Invalid format");
+            }
+            // 格式正确，直接将字符串赋值给 datetime
+            result.set_str(value.str_val); // 先设置字符串值
+        }
         // TODO: Implement datetime conversion if needed
         break;
     }
