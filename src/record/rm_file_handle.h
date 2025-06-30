@@ -91,6 +91,8 @@ public:
             rm_manager_->close_file(this);
     }
 
+    int get_approximate_num() { return file_hdr_.num_pages * file_hdr_.num_records_per_page; }
+
     RmFileHdr get_file_hdr() const { return file_hdr_; }
     int GetFd() { return fd_; }
     inline void mark_deleted() { is_deleted_ = true; } // 标记文件为已删除

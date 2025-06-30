@@ -20,7 +20,7 @@ void IxScan::next() {
 
 void IxScan::next_batch() {
     page_id_t next_leaf = node_.get_next_leaf();
-    if (next_leaf == IX_LEAF_HEADER_PAGE || max_pos_ < node_.get_size()) {
+    if (next_leaf == IX_LEAF_HEADER_PAGE || max_pos_ < node_.get_size() || is_end()) {
         ih_->unlock_shared(node_);
         pos_ = max_pos_;
         return;
@@ -35,6 +35,8 @@ void IxScan::next_batch() {
 }
 
 std::vector<Rid> IxScan::rid_batch() const {
+    if(pos_ >= max_pos_)
+        return {};
     std::vector<Rid> batch;
     batch.resize(max_pos_ - pos_);
     memcpy(batch.data(), node_.get_rid(pos_), (max_pos_ - pos_) * sizeof(Rid));
