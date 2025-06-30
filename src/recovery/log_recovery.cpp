@@ -27,6 +27,7 @@ void RecoveryManager::redo()
     //     // 确保每个表的文件大小足够
     //     pair.second->ensure_file_size();
     // }
+    txn_id_t max_txn_id = 0;
 
     long long offset = 0;
     LogRecord *log_record = nullptr;
@@ -40,8 +41,8 @@ void RecoveryManager::redo()
         switch(log_record->log_type_){
             case BEGIN:{
                 BeginLogRecord* begin_log_record = static_cast<BeginLogRecord*>(log_record); 
-                auto txn = std::make_unique<Transaction> (begin_log_record->log_tid_, txn_manager_);
-                // txn->set_state(TransactionState::DEFAULT);
+                auto txn = std::make_unique<Transaction>(begin_log_record->log_tid_, txn_manager_);
+                max_txn_id = std::max(max_txn_id, begin_log_record->log_tid_);
                 temp_txns_[begin_log_record->log_tid_] = std::move(txn);
                 break;
             }
@@ -100,7 +101,7 @@ void RecoveryManager::redo()
                     }
                     delete write_record;
                 }
-                temp_txns_.erase(abort_log_record->log_tid_);
+                temp_txns_.erase(it);
                 break;
             }
             case UPDATE:{
@@ -186,6 +187,7 @@ void RecoveryManager::redo()
         }
         delete log_record;
     }
+    txn_manager_->set_txn_id(max_txn_id);
 }
 
 /**

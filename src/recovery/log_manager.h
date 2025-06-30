@@ -18,6 +18,8 @@ See the Mulan PSL v2 for more details. */
 #include "common/config.h"
 #include "record/rm_defs.h"
 
+class TransactionManager;
+
 /* 日志记录对应操作的类型 */
 enum LogType : int
 {
@@ -494,7 +496,7 @@ public:
 
     LogBuffer *get_log_buffer() { return &log_buffer_; }
 
-    void create_static_check_point();
+    void create_static_check_point(TransactionManager *txn_mgr);
 
 private:
     void flush_log_to_disk_periodically();

@@ -85,8 +85,19 @@ public:
     LockManager *get_lock_manager() { return lock_manager_; }
     inline Transaction *get_start_txn() { return start_txn_; }
     inline void init_txn() {
-        start_txn_id_ = sm_manager_->db_.get_txn_id();
+        start_txn_id_ =  std::max(start_txn_id_, sm_manager_->db_.get_txn_id());
         next_txn_id_ = start_txn_id_;
+    }
+
+    inline void flush_txn_id() {
+        sm_manager_->db_.set_txn_id(next_txn_id_);
+        sm_manager_->flush_meta();
+    }
+
+    inline void set_txn_id(txn_id_t txn_id) {
+        start_txn_id_ = std::max(start_txn_id_, txn_id + 1);
+        next_txn_id_ = start_txn_id_;
+        flush_txn_id();
     }
 
     /**
@@ -128,8 +139,7 @@ public:
     void StartPurgeCleaner();
     inline void StopPurgeCleaner() { 
         terminate_purge_cleaner_ = true;
-        sm_manager_->db_.set_txn_id(next_txn_id_);
-        sm_manager_->flush_meta();
+        flush_txn_id();
     }
 
     void remove_txn(txn_id_t txn_id) {
@@ -145,7 +155,8 @@ public:
         
         std::shared_lock lock(txn_map_mutex_);
         auto iter = txn_map.find(txn_id);
-        assert(iter != TransactionManager::txn_map.end());
+        // assert(iter != TransactionManager::txn_map.end());
+        if(iter == TransactionManager::txn_map.end())return start_txn_;
         return iter->second;
     }
 
