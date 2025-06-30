@@ -31,7 +31,7 @@ private:
     std::unique_ptr<RecScan> scan_;
 
     int max_match_col_count_;  // 最大匹配列数
-    size_t cache_index_;
+    size_t cache_index_ = INF;
     std::vector<std::unique_ptr<RmRecord>> result_cache_;
 
 public:
@@ -54,18 +54,6 @@ public:
         // 加表级意向共享锁
         // context_->lock_mgr_->lock_IS_on_table(context_->txn_, fh_->GetFd());
         setup_scan();
-
-        while (!scan_->is_end())
-        {
-            auto rid_batch = scan_->rid_batch();
-            for (auto &rid : rid_batch) {
-                auto record = fh_->get_record(rid, context_);
-                if (check_cons(fed_conds_, record.get())) {
-                    result_cache_.emplace_back(project(record));
-                }
-            }
-            scan_->next_batch();
-        } 
     }
 
     void setup_scan() {
@@ -125,25 +113,21 @@ public:
                         break;
                     }
                     case OP_LT: {
-                        // 上界设置为条件值减1
                         memcpy(up_key + offset, rhs_val.raw->data, col_len);
                         is_upper_close = false;
                         break;
                     }
                     case OP_LE: {
-                        // 直接使用条件值作为上界
                         memcpy(up_key + offset, rhs_val.raw->data, col_len);
                         is_upper_close = true;
                         break;
                     }
                     case OP_GT: {
-                        // 下界设置为条件值加1
                         memcpy(low_key + offset, rhs_val.raw->data, col_len);
                         is_lower_close = false;
                         break;
                     }
                     case OP_GE: {
-                        // 直接使用条件值作为下界
                         memcpy(low_key + offset, rhs_val.raw->data, col_len);
                         is_lower_close = true;
                         break;
@@ -231,7 +215,7 @@ public:
     }
     
     // 批量获取下一个batch_size个满足条件的元组，最少一页，最多batch_size且为页的整数倍
-    std::vector<std::unique_ptr<RmRecord>> next_batch(size_t batch_size) override {
+    std::vector<std::unique_ptr<RmRecord>> next_batch(size_t batch_size = BATCH_SIZE) override {
         std::vector<std::unique_ptr<RmRecord>> results;
         size_t num = std::min(batch_size, result_cache_.size() - cache_index_);
         if(num == 0)
@@ -247,6 +231,19 @@ public:
 
     void beginTuple() override
     {
+        if(cache_index_ == INF) {
+            while (!scan_->is_end())
+            {
+                auto rid_batch = scan_->rid_batch();
+                for (auto &rid : rid_batch) {
+                    auto record = fh_->get_record(rid, context_);
+                    if (check_cons(fed_conds_, record.get())) {
+                        result_cache_.emplace_back(project(record));
+                    }
+                }
+                scan_->next_batch();
+            } 
+        }
         cache_index_ = 0;
     }
 

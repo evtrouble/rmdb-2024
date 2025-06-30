@@ -111,25 +111,21 @@ public:
                         break;
                     }
                     case OP_LT: {
-                        // 上界设置为条件值减1
                         memcpy(up_key + offset, rhs_val.raw->data, col_len);
                         is_upper_close = false;
                         break;
                     }
                     case OP_LE: {
-                        // 直接使用条件值作为上界
                         memcpy(up_key + offset, rhs_val.raw->data, col_len);
                         is_upper_close = true;
                         break;
                     }
                     case OP_GT: {
-                        // 下界设置为条件值加1
                         memcpy(low_key + offset, rhs_val.raw->data, col_len);
                         is_lower_close = false;
                         break;
                     }
                     case OP_GE: {
-                        // 直接使用条件值作为下界
                         memcpy(low_key + offset, rhs_val.raw->data, col_len);
                         is_lower_close = true;
                         break;
@@ -217,7 +213,7 @@ public:
     }
     
     // 批量获取下一个batch_size个满足条件的元组，最少一页，最多batch_size且为页的整数倍
-    std::vector<std::unique_ptr<RmRecord>> next_batch(size_t batch_size) override {
+    std::vector<std::unique_ptr<RmRecord>> next_batch(size_t batch_size = BATCH_SIZE) override {
         std::vector<std::unique_ptr<RmRecord>> batch;
         batch.reserve(batch_size);
         while (batch.size() < batch_size && !scan_->is_end())

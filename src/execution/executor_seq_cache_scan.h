@@ -32,7 +32,7 @@ private:
 
     SmManager *sm_manager_;
     // 新增：用于存储扫描结果的缓存
-    size_t cache_index_;
+    size_t cache_index_ = INF;
     std::vector<std::unique_ptr<RmRecord>> result_cache_;
 
     // 获取指定列的值
@@ -90,19 +90,21 @@ public:
         // 对条件进行排序，以便后续处理
         std::sort(fed_conds_.begin(), fed_conds_.end());
         scan_ = std::make_unique<RmScan>(fh_, context_);
-        while (!scan_->is_end())
-        {
-            auto scan_batch = scan_->record_batch();
-            for (auto &rec : scan_batch) {
-                if (satisfy_conditions(rec.get())) {
-                    result_cache_.emplace_back(project(rec));
-                }
-            }
-            scan_->next_batch();
-        }
     }
     void beginTuple() override
     {
+        if(cache_index_ == INF) {
+            while (!scan_->is_end())
+            {
+                auto scan_batch = scan_->record_batch();
+                for (auto &rec : scan_batch) {
+                    if (satisfy_conditions(rec.get())) {
+                        result_cache_.emplace_back(project(rec));
+                    }
+                }
+                scan_->next_batch();
+            }
+        }
         cache_index_ = 0;
     }
 

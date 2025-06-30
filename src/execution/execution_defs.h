@@ -30,3 +30,5 @@ enum class ExecutionType
         Explain,
         Filter
 };
+
+constexpr size_t INF = 0x3f3f3f3f;
