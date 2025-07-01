@@ -237,6 +237,8 @@ private:
     std::pair<IndexMeta *, int> get_index_cols(const std::string &tab_name,
                                                const std::vector<Condition> &curr_conds);
 
+    std::pair<IndexMeta *, int> get_index_for_join(const std::string &tab_name, const TabCol &join_col);
+
     // 类型转换
     ColType interp_sv_type(ast::SvType sv_type)
     {

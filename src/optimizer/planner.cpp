@@ -263,22 +263,89 @@ bool should_left_come_first(std::shared_ptr<Plan> left, std::shared_ptr<Plan> ri
         return false;
     }
 }
+std::shared_ptr<ScanPlan> extract_scan_plan(std::shared_ptr<Plan> plan)
+{
+    if (!plan)
+        return nullptr;
+
+    // 如果是ScanPlan，直接返回
+    auto scan_plan = std::dynamic_pointer_cast<ScanPlan>(plan);
+    if (scan_plan)
+    {
+        return scan_plan;
+    }
+
+    // 如果是FilterPlan，递归提取其子计划
+    auto filter_plan = std::dynamic_pointer_cast<FilterPlan>(plan);
+    if (filter_plan && filter_plan->subplan_)
+    {
+        return extract_scan_plan(filter_plan->subplan_);
+    }
+
+    // 如果是ProjectionPlan，递归提取其子计划
+    auto projection_plan = std::dynamic_pointer_cast<ProjectionPlan>(plan);
+    if (projection_plan && projection_plan->subplan_)
+    {
+        return extract_scan_plan(projection_plan->subplan_);
+    }
+
+    return nullptr;
+}
 std::shared_ptr<Plan> create_ordered_join(
     PlanTag join_type,
     std::shared_ptr<Plan> plan1,
     std::shared_ptr<Plan> plan2,
-    const std::vector<Condition> &join_conds)
+    const std::vector<Condition>& join_conds)
 {
-
     // 根据排序规则决定左右子树
-    if (should_left_come_first(plan1, plan2))
+    bool is_plan1_left = should_left_come_first(plan1, plan2);
+    auto left_plan = is_plan1_left ? plan1 : plan2;
+    auto right_plan = is_plan1_left ? plan2 : plan1;
+
+    // 提取左右表的表名
+    auto left_scan = extract_scan_plan(left_plan);
+    auto right_scan = extract_scan_plan(right_plan);
+    const std::string& left_tab = left_scan->tab_name_;
+    const std::string& right_tab = right_scan->tab_name_;
+
+    // 调整连接条件，确保左列属于左表，右列属于右表
+    std::vector<Condition> adjusted_conds;
+    for (const auto& cond : join_conds)
     {
-        return std::make_shared<JoinPlan>(join_type, plan1, plan2, join_conds);
+        Condition new_cond = cond;
+        
+        // 如果条件的左右列与表的左右顺序相反
+        if (cond.lhs_col.tab_name == right_tab && cond.rhs_col.tab_name == left_tab)
+        {
+            // 交换左右列
+            std::swap(new_cond.lhs_col, new_cond.rhs_col);
+            
+            // 反转比较运算符（仅对需要反转的运算符）
+            switch (cond.op)
+            {
+                case CompOp::OP_GT: new_cond.op = CompOp::OP_LT; break; // > 变 <
+                case CompOp::OP_LT: new_cond.op = CompOp::OP_GT; break; // < 变 >
+                case CompOp::OP_GE: new_cond.op = CompOp::OP_LE; break; // >= 变 <=
+                case CompOp::OP_LE: new_cond.op = CompOp::OP_GE; break; // <= 变 >=
+                // = 和 != 不需要反转
+                default: break;
+            }
+        }
+        adjusted_conds.push_back(new_cond);
     }
-    else
+    // 创建 JoinPlan
+    if(join_type == T_SortMerge)
     {
-        return std::make_shared<JoinPlan>(join_type, plan2, plan1, join_conds);
+        if(left_scan->tag != T_IndexScan)
+        {
+            left_plan = std::make_shared<SortPlan>(T_Sort, std::move(left_plan), adjusted_conds[0].lhs_col, false);
+        }
+        if(right_scan->tag != T_IndexScan)
+        {
+            right_plan = std::make_shared<SortPlan>(T_Sort, std::move(right_plan), adjusted_conds[0].rhs_col, false);
+        }
     }
+    return std::make_shared<JoinPlan>(join_type, left_plan, right_plan, adjusted_conds);
 }
 void QueryColumnRequirement::calculate_layered_requirements()
 {
@@ -388,6 +455,31 @@ std::pair<IndexMeta *, int> Planner::get_index_cols(const std::string &tab_name,
         return std::make_pair(&tab.indexes[matched_index_number], max_match_col_count);
     return std::make_pair(nullptr, -1);
 }
+// 目前只支持一个列的索引
+std::pair<IndexMeta*, int> Planner::get_index_for_join(const std::string &tab_name, const TabCol &join_col)
+{
+    // 获取表格对象
+    auto &tab = sm_manager_->db_.get_table(tab_name);
+    
+    // 如果表格没有索引，直接返回
+    if (tab.indexes.empty())
+        return std::make_pair(nullptr, -1);
+
+    // 遍历所有索引寻找匹配
+    for (size_t idx_number = 0; idx_number < tab.indexes.size(); ++idx_number) {
+        const auto &index = tab.indexes[idx_number];
+        
+        // 检查索引的第一列是否匹配连接列
+        if (!index.cols.empty() && index.cols[0].name == join_col.col_name) {
+            // 找到匹配的索引
+            return std::make_pair(&tab.indexes[idx_number], 1);
+        }
+    }
+
+    // 没有找到匹配的索引
+    return std::make_pair(nullptr, -1);
+}
+
 
 /**
  * @brief 表算子条件谓词生成
@@ -573,36 +665,6 @@ std::shared_ptr<Plan> Planner::physical_optimization(std::shared_ptr<Query> quer
 
     return plan;
 }
-
-std::shared_ptr<ScanPlan> extract_scan_plan(std::shared_ptr<Plan> plan)
-{
-    if (!plan)
-        return nullptr;
-
-    // 如果是ScanPlan，直接返回
-    auto scan_plan = std::dynamic_pointer_cast<ScanPlan>(plan);
-    if (scan_plan)
-    {
-        return scan_plan;
-    }
-
-    // 如果是FilterPlan，递归提取其子计划
-    auto filter_plan = std::dynamic_pointer_cast<FilterPlan>(plan);
-    if (filter_plan && filter_plan->subplan_)
-    {
-        return extract_scan_plan(filter_plan->subplan_);
-    }
-
-    // 如果是ProjectionPlan，递归提取其子计划
-    auto projection_plan = std::dynamic_pointer_cast<ProjectionPlan>(plan);
-    if (projection_plan && projection_plan->subplan_)
-    {
-        return extract_scan_plan(projection_plan->subplan_);
-    }
-
-    return nullptr;
-}
-
 // 计算所有表的基数并缓存
 std::unordered_map<std::string, size_t> calculate_table_cardinalities(const std::vector<std::string> &tables, SmManager *sm_manager_)
 {
@@ -651,10 +713,27 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
 
     for (size_t i = 0; i < query->tables.size(); ++i)
     {
+        IndexMeta *index_meta = nullptr;
+        int max_match_col_count = -1;
         const auto &table = query->tables[i];
-        auto [index_meta, max_match_col_count] = get_index_cols(table, query->tab_conds[table]);
+        for(auto &cond : query->join_conds)
+        {
+            if(table == cond.lhs_col.tab_name)
+            {
+                std::tie(index_meta, max_match_col_count) = get_index_for_join(table,cond.lhs_col);
+                break;
+            }
+            else if(table == cond.rhs_col.tab_name)
+            {
+                std::tie(index_meta, max_match_col_count) = get_index_for_join(table,cond.rhs_col);
+                break;
+            }
+        }
+        if(index_meta == nullptr)
+        {
+            std::tie(index_meta, max_match_col_count) = get_index_cols(table, query->tab_conds[table]);
+        }
         std::shared_ptr<Plan> scan_plan;
-
         if (index_meta == nullptr)
         {
             scan_plan = std::make_shared<ScanPlan>(T_SeqScan, sm_manager_, table, std::vector<Condition>());

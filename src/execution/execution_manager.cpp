@@ -187,6 +187,18 @@ void QlManager::run_cmd_utility(std::shared_ptr<Plan> plan, txn_id_t *txn_id, Co
         }
         break;
     }
+    case T_LoadData:
+    {
+        auto x = std::static_pointer_cast<OtherPlan>(plan);
+        sm_manager_->load_csv_data(x->file_name_, x->tab_name_, context);
+        break;
+    }
+    case T_IoEnable:
+    {
+        auto x = std::static_pointer_cast<OtherPlan>(plan);
+        sm_manager_->io_enabled_ = x->io_enable_;
+        break;
+    }
     default:
         throw InternalError("Unexpected field type");
         break;
@@ -239,20 +251,29 @@ void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, 
     rec_printer.print_record(captions, context);
     rec_printer.print_separator(context);
 
-    int fd = ::open("output.txt", O_WRONLY | O_CREAT | O_APPEND, 0644);
-    if (fd == -1)
-        return;
-
-    // 64KB缓冲区
+    // 文件I/O相关变量
+    int fd = -1;
     std::string buffer;
-    buffer.reserve(8096);
 
-    buffer.append("|");
-    for (size_t i = 0; i < captions.size(); ++i)
+    // 只有在启用I/O时才打开文件并初始化缓冲区
+    if (sm_manager_->io_enabled_)
     {
-        buffer.append(" ").append(captions[i]).append(" |");
+        fd = ::open("output.txt", O_WRONLY | O_CREAT | O_APPEND, 0644);
+        if (fd == -1)
+            return;
+
+        // 64KB缓冲区
+        buffer.reserve(8096);
+
+        // 写入表头到缓冲区
+        buffer.append("|");
+        for (size_t i = 0; i < captions.size(); ++i)
+        {
+            buffer.append(" ").append(captions[i]).append(" |");
+        }
+        buffer.append("\n");
     }
-    buffer.append("\n");
+
     // Print records
     size_t num_rec = 0;
     [[maybe_unused]] ssize_t discard;

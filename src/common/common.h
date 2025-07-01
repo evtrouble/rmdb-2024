@@ -16,6 +16,8 @@ See the Mulan PSL v2 for more details. */
 #include <string>
 #include <vector>
 #include <cmath>
+#include <sstream> // 用于 std::ostringstream
+#include <iomanip> // 用于 std::setprecision, std::fixed
 
 #include "defs.h"
 #include "record/rm_defs.h"
@@ -42,6 +44,51 @@ struct TabCol
         return std::make_pair(x.tab_name, x.col_name) < std::make_pair(y.tab_name, y.col_name);
     }
 };
+inline int parse_int(const std::string &str)
+{
+    int result = 0;
+    const char *cstr = str.c_str();
+    bool negative = (*cstr == '-');
+    if (negative)
+        ++cstr;
+    while (*cstr)
+    {
+        result = (result << 3) + (result << 1) + (*cstr - '0');
+        ++cstr;
+    }
+    return negative ? -result : result;
+}
+
+inline float parse_float(const std::string &str)
+{
+    float result = 0.0f;
+    float factor = 1.0f;
+    const char *cstr = str.c_str();
+    bool negative = (*cstr == '-');
+    if (negative)
+        ++cstr;
+    bool decimal_found = false;
+    while (*cstr)
+    {
+        if (*cstr == '.')
+        {
+            decimal_found = true;
+            ++cstr;
+            continue;
+        }
+        if (decimal_found)
+        {
+            factor *= 0.1f;
+            result += (*cstr - '0') * factor;
+        }
+        else
+        {
+            result = result * 10.0f + (*cstr - '0');
+        }
+        ++cstr;
+    }
+    return negative ? -result : result;
+}
 
 struct Value
 {
@@ -85,7 +132,6 @@ struct Value
         type = TYPE_DATETIME;
         // str_val = std::move(datetime_val_);
     }
-
 
     void init_raw(int len)
     {

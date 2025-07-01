@@ -41,9 +41,11 @@ using namespace ast;
 %token SHOW TABLES CREATE TABLE DROP DESC INSERT INTO VALUES DELETE FROM ASC ORDER GROUP BY HAVING LIMIT
 WHERE UPDATE SET SELECT INT CHAR FLOAT DATETIME INDEX AND SEMI JOIN ON IN NOT EXIT HELP DIV EXPLAIN
 TXN_BEGIN TXN_COMMIT TXN_ABORT TXN_ROLLBACK ORDER_BY ENABLE_NESTLOOP ENABLE_SORTMERGE STATIC_CHECKPOINT
-SUM COUNT MAX MIN AVG AS
+SUM COUNT MAX MIN AVG AS LOAD
 // non-keywords
 %token LEQ NEQ GEQ T_EOF
+%token OUTPUT_FILE ON OFF
+
 
 // type-specific tokens
 %token <sv_str> IDENTIFIER VALUE_STRING VALUE_PATH
@@ -52,7 +54,7 @@ SUM COUNT MAX MIN AVG AS
 %token <sv_bool> VALUE_BOOL
 
 // specify types for non-terminal symbol
-%type <sv_node> stmt dbStmt ddl dml txnStmt setStmt
+%type <sv_node> stmt dbStmt ddl dml txnStmt setStmt io_stmt
 %type <sv_field> field
 %type <sv_fields> fieldList
 %type <sv_type_len> type
@@ -60,7 +62,7 @@ SUM COUNT MAX MIN AVG AS
 %type <sv_expr> expr
 %type <sv_val> value
 %type <sv_vals> valueList
-%type <sv_str> tbName colName ALIAS
+%type <sv_str> tbName colName ALIAS fileName
 %type <sv_strs> colNameList
 %type <sv_col> col aggCol
 %type <sv_cols> colList selector opt_groupby_clause
@@ -94,6 +96,11 @@ start:
     |   T_EOF
     {
         parse_tree = nullptr;
+        YYACCEPT;
+    }
+    |  io_stmt
+    {
+        parse_tree = $1;
         YYACCEPT;
     }
     ;
@@ -134,6 +141,10 @@ dbStmt:
     {
         $$ = std::make_shared<ShowTables>();
     }
+    |   LOAD fileName INTO tbName
+    {
+         $$ = std::make_shared<LoadStmt>($2, $4);
+    }
     ;
 
 setStmt:
@@ -142,7 +153,16 @@ setStmt:
         $$ = std::make_shared<SetStmt>($2, $4);
     }
     ;
-
+io_stmt:
+        SET OUTPUT_FILE ON
+    {
+        $$ = std::make_shared<IoEnable>(true);
+    }
+    |   SET OUTPUT_FILE OFF
+    {
+        $$ = std::make_shared<IoEnable>(false);
+    }
+    ;
 ddl:
         CREATE TABLE tbName '(' fieldList ')'
     {
@@ -635,6 +655,7 @@ tbName: IDENTIFIER;
 colName: IDENTIFIER;
 
 ALIAS: IDENTIFIER;
+fileName: VALUE_PATH;
 
 
 

@@ -24,7 +24,6 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
     std::unordered_map<std::string, TabCol> alias_to_col;
 
     table_alias_map_.clear();
-
     switch (parse->Nodetype())
     {
     case ast::TreeNodeType::SelectStmt:
@@ -571,113 +570,16 @@ void Analyze::check_clause(const std::vector<std::string> &tab_names,
             if (cond.is_rhs_val /* && !cond.is_subquery*/)
             {
                 rhs_type = cond.rhs_val.type;
-
-                // 处理类型转换
-                if (lhs_type != rhs_type)
+                // 检查类型是否兼容
+                if (!can_cast_type(lhs_type, rhs_type))
                 {
-                    // 如果左侧是FLOAT，右侧是INT，将INT转换为FLOAT
-                    if (lhs_type == TYPE_FLOAT && rhs_type == TYPE_INT)
-                    {
-                        float float_val = static_cast<float>(cond.rhs_val.int_val);
-                        cond.rhs_val.set_float(float_val);
-                        rhs_type = TYPE_FLOAT;
-                    }
-                    // 如果左侧是INT，右侧是FLOAT，将FLOAT转换为INT
-                    else if (lhs_type == TYPE_INT && rhs_type == TYPE_FLOAT)
-                    {
-                        int int_val = static_cast<int>(cond.rhs_val.float_val);
-                        cond.rhs_val.set_int(int_val);
-                        rhs_type = TYPE_INT;
-                    }
-                    else if(lhs_type == TYPE_DATETIME && rhs_type == TYPE_STRING)
-                    {
-                        cond.rhs_val.set_datetime();
-                        rhs_type = TYPE_DATETIME;
-                    }
+                    throw IncompatibleTypeError(coltype2str(lhs_type), coltype2str(rhs_type));
                 }
+                if (cond.rhs_val.type != lhs_type)
+                    cast_value(cond.rhs_val, lhs_type);
                 cond.rhs_val.raw = nullptr;
                 cond.rhs_val.init_raw(lhs_col->len);
-                // 检查类型是否兼容
-                if (lhs_type != rhs_type)
-                {
-                    // 允许 INT 和 FLOAT 之间的比较，但此处不执行转换
-                    if (!((lhs_type == TYPE_INT && rhs_type == TYPE_FLOAT) ||
-                          (lhs_type == TYPE_FLOAT && rhs_type == TYPE_INT)))
-                    {
-                        throw IncompatibleTypeError(coltype2str(lhs_type), coltype2str(rhs_type));
-                    }
-                }
             }
-            // else if (!cond.is_subquery)
-            // {
-            //     // Get rhs column metadata
-            //     TabMeta &rhs_tab = sm_manager_->db_.get_table(cond.rhs_col.tab_name);
-            //     auto rhs_col = rhs_tab.get_col(cond.rhs_col.col_name);
-            //     rhs_type = rhs_col->type;
-
-            //     // 检查类型是否兼容
-            //     if (lhs_type != rhs_type)
-            //     {
-            //         // 允许 INT 和 FLOAT 之间的比较，但此处不执行转换
-            //         if (!((lhs_type == TYPE_INT && rhs_type == TYPE_FLOAT) ||
-            //               (lhs_type == TYPE_FLOAT && rhs_type == TYPE_INT)))
-            //         {
-            //             throw IncompatibleTypeError(coltype2str(lhs_type), coltype2str(rhs_type));
-            //         }
-            //     }
-            //     // 对于列与列比较，暂不支持自动类型转换
-            // }
-            // else if (cond.is_subquery && cond.subQuery->stmt != nullptr)
-            // {
-            //     // 1、子查询的列数只能为1
-            //     if (cond.subQuery->stmt->cols.size() != 1)
-            //     {
-            //         throw RMDBError("Subquery must return only one column");
-            //     }
-
-            //     // 2、获取子查询的列类型
-            //     TabMeta &sub_tab = sm_manager_->db_.get_table(cond.subQuery->stmt->tabs[0]);
-            //     auto sub_col = sub_tab.get_col(cond.subQuery->stmt->cols[0]->col_name);
-
-            //     // 3、检查子查询的列类型是否与左边的列类型相同
-            //     cond.subQuery->subquery_type = sub_col->type;
-            //     if (!can_cast_type(sub_col->type, lhs_type))
-            //     {
-            //         throw RMDBError("Subquery Type Error");
-            //     }
-
-            //     // 4、分析子查询计划
-            //     cond.subQuery->query = do_analyze(cond.subQuery->stmt);
-            // }
-            // else if (cond.is_subquery)
-            // {
-            //     // 子查询是数组（IN/NOT IN 操作）
-            //     // 创建一个临时集合来存储转换后的值
-            //     std::unordered_set<Value> tempResult;
-
-            //     // 遍历子查询结果
-            //     for (const Value &val : cond.subQuery->result)
-            //     {
-            //         Value newVal = val;
-
-            //         // 检查类型是否一致或可转换
-            //         if (lhs_type != val.type)
-            //         {
-            //             if (!can_cast_type(val.type, lhs_type))
-            //             {
-            //                 throw RMDBError("Subquery Type Error");
-            //             }
-            //             else
-            //             {
-            //                 cast_value(newVal, lhs_type);
-            //             }
-            //         }
-            //         tempResult.insert(newVal); // 将转换后的值插入临时集合
-            //     }
-
-            //     // 用临时集合替换原始集合
-            //     cond.subQuery->result = std::move(tempResult);
-            // }
             else
             {
                 TabMeta &rhs_tab = sm_manager_->db_.get_table(cond.rhs_col.tab_name);
@@ -685,14 +587,9 @@ void Analyze::check_clause(const std::vector<std::string> &tab_names,
                 rhs_type = rhs_col->type;
 
                 // 检查类型是否兼容
-                if (lhs_type != rhs_type)
+                if (!can_cast_type(lhs_type, rhs_type))
                 {
-                    // 允许 INT 和 FLOAT 之间的比较，但此处不执行转换
-                    if (!((lhs_type == TYPE_INT && rhs_type == TYPE_FLOAT) ||
-                          (lhs_type == TYPE_FLOAT && rhs_type == TYPE_INT)))
-                    {
-                        throw IncompatibleTypeError(coltype2str(lhs_type), coltype2str(rhs_type));
-                    }
+                    throw IncompatibleTypeError(coltype2str(lhs_type), coltype2str(rhs_type));
                 }
                 // 对于列与列比较，暂不支持自动类型转换
             }
@@ -708,12 +605,11 @@ bool Analyze::can_cast_type(ColType from, ColType to)
         return true;
     if (from == TYPE_FLOAT && to == TYPE_INT)
         return true;
-    if(from == TYPE_DATETIME && to == TYPE_STRING)
+    if (from == TYPE_DATETIME && to == TYPE_STRING)
         return true;
-    if(from == TYPE_STRING && to == TYPE_DATETIME)
-        return true;   
     return false;
 }
+
 void Analyze::cast_value(Value &val, ColType to)
 {
     // Add logic to cast val to the target type
@@ -725,7 +621,13 @@ void Analyze::cast_value(Value &val, ColType to)
     }
     else if (val.type == TYPE_FLOAT && to == TYPE_INT)
     {
-        // do not things
+        float float_val = val.float_val;
+        val.type = TYPE_INT;
+        val.int_val = static_cast<int>(float_val);
+    }
+    else if (val.type == TYPE_DATETIME && to == TYPE_STRING)
+    {
+        val.set_datetime();
     }
     else
     {
@@ -775,6 +677,37 @@ CompOp Analyze::convert_sv_comp_op(ast::SvCompOp op)
         // {ast::SV_OP_NOT_IN, OP_NOT_IN},
     };
     return m.at(op);
+}
+bool is_valid_datetime_format(const std::string &datetime_str)
+{
+    // 简单的格式检查：YYYY-MM-DD HH:MM:SS
+    if (datetime_str.length() != 19)
+    {
+        return false;
+    }
+
+    // 检查基本格式：YYYY-MM-DD HH:MM:SS
+    if (datetime_str[4] != '-' || datetime_str[7] != '-' ||
+        datetime_str[10] != ' ' || datetime_str[13] != ':' ||
+        datetime_str[16] != ':')
+    {
+        return false;
+    }
+
+    // 检查所有应该是数字的位置
+    for (int i = 0; i < 19; i++)
+    {
+        if (i == 4 || i == 7 || i == 10 || i == 13 || i == 16)
+        {
+            continue; // 跳过分隔符
+        }
+        if (!std::isdigit(datetime_str[i]))
+        {
+            return false;
+        }
+    }
+
+    return true;
 }
 // 实现类型转换函数
 Value Analyze::convert_value_type(const Value &value, ColType target_type)
@@ -842,8 +775,15 @@ Value Analyze::convert_value_type(const Value &value, ColType target_type)
                 throw IncompatibleTypeError("STRING", "FLOAT");
             }
         }
-        break;
-    case TYPE_DATETIME:
+        else if (target_type == TYPE_DATETIME)
+        {
+            if (!is_valid_datetime_format(value.str_val))
+            {
+                throw IncompatibleTypeError("STRING", "DATETIME - Invalid format");
+            }
+            // 格式正确，直接将字符串赋值给 datetime
+            result.set_str(value.str_val); // 先设置字符串值
+        }
         // TODO: Implement datetime conversion if needed
         break;
     }

@@ -32,6 +32,8 @@ public:
     DbMeta db_;                                                           // 当前打开的数据库的元数据
     std::unordered_map<std::string, std::shared_ptr<RmFileHandle>> fhs_;  // file name -> record file handle, 当前数据库中每张表的数据文件
     std::unordered_map<std::string, std::shared_ptr<IxIndexHandle>> ihs_; // file name -> index file handle, 当前数据库中每个索引的文件
+    bool io_enabled_ = true;
+
 private:
     DiskManager *disk_manager_;
     BufferPoolManager *buffer_pool_manager_;
@@ -56,19 +58,23 @@ public:
 
     IxManager *get_ix_manager() { return ix_manager_; }
 
-    inline std::shared_ptr<IxIndexHandle> get_index_handle(const std::string &index_name) {
+    inline std::shared_ptr<IxIndexHandle> get_index_handle(const std::string &index_name)
+    {
         std::shared_lock lock(ihs_latch_);
         auto it = ihs_.find(index_name);
-        if (it != ihs_.end()) {
+        if (it != ihs_.end())
+        {
             return it->second;
-        } 
+        }
         return nullptr; // 如果没有找到对应的索引句柄，返回nullptr
     }
 
-    inline std::shared_ptr<RmFileHandle> get_table_handle(const std::string &table_name) {
+    inline std::shared_ptr<RmFileHandle> get_table_handle(const std::string &table_name)
+    {
         std::shared_lock lock(fhs_latch_);
         auto it = fhs_.find(table_name);
-        if (it != fhs_.end()) {
+        if (it != fhs_.end())
+        {
             return it->second;
         }
         return nullptr; // 如果没有找到对应的表文件句柄，返回nullptr
@@ -101,11 +107,15 @@ public:
     void drop_index(const std::string &tab_name, const std::vector<ColMeta> &col_names, Context *context);
     void show_index(const std::string &tab_name, Context *context);
 
-    std::vector<std::shared_ptr<RmFileHandle>> get_all_table_handle() {
+    void load_csv_data(std::string &file_name, std::string &tab_name, Context *context);
+
+    std::vector<std::shared_ptr<RmFileHandle>> get_all_table_handle()
+    {
         std::shared_lock lock(fhs_latch_);
         std::vector<std::shared_ptr<RmFileHandle>> handles;
         handles.reserve(fhs_.size());
-        for (const auto &pair : fhs_) {
+        for (const auto &pair : fhs_)
+        {
             handles.push_back(pair.second);
         }
         return handles;
