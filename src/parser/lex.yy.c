@@ -1,6 +1,5 @@
-#line 2 "lex.yy.cpp"
 
-#line 4 "lex.yy.cpp"
+#line 3 "lex.yy.c"
 
 #define  YY_INT_ALIGNED short int
 
@@ -718,9 +717,9 @@ char *yytext;
 const int FLOAT_PRECISION = 6;
 const float FLOAT_PRECISION_MULTIPLIER = std::pow(10, FLOAT_PRECISION);
 
-#line 722 "lex.yy.cpp"
+#line 721 "lex.yy.c"
 
-#line 724 "lex.yy.cpp"
+#line 723 "lex.yy.c"
 
 #define INITIAL 0
 #define STATE_COMMENT 1
@@ -958,7 +957,7 @@ YY_DECL
 
 #line 56 "lex.l"
     /* block comment */
-#line 962 "lex.yy.cpp"
+#line 961 "lex.yy.c"
 
 	while ( /*CONSTCOND*/1 )		/* loops until end-of-file is reached */
 		{
@@ -1421,7 +1420,7 @@ YY_RULE_SETUP
 #line 163 "lex.l"
 ECHO;
 	YY_BREAK
-#line 1425 "lex.yy.cpp"
+#line 1424 "lex.yy.c"
 
 	case YY_END_OF_BUFFER:
 		{

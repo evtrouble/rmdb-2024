@@ -104,16 +104,19 @@ extern int yydebug;
     MIN = 305,                     /* MIN  */
     AVG = 306,                     /* AVG  */
     AS = 307,                      /* AS  */
-    LEQ = 308,                     /* LEQ  */
-    NEQ = 309,                     /* NEQ  */
-    GEQ = 310,                     /* GEQ  */
-    T_EOF = 311,                   /* T_EOF  */
-    IDENTIFIER = 312,              /* IDENTIFIER  */
-    VALUE_STRING = 313,            /* VALUE_STRING  */
-    VALUE_PATH = 314,              /* VALUE_PATH  */
-    VALUE_INT = 315,               /* VALUE_INT  */
-    VALUE_FLOAT = 316,             /* VALUE_FLOAT  */
-    VALUE_BOOL = 317               /* VALUE_BOOL  */
+    LOAD = 308,                    /* LOAD  */
+    LEQ = 309,                     /* LEQ  */
+    NEQ = 310,                     /* NEQ  */
+    GEQ = 311,                     /* GEQ  */
+    T_EOF = 312,                   /* T_EOF  */
+    OUTPUT_FILE = 313,             /* OUTPUT_FILE  */
+    OFF = 314,                     /* OFF  */
+    IDENTIFIER = 315,              /* IDENTIFIER  */
+    VALUE_STRING = 316,            /* VALUE_STRING  */
+    VALUE_PATH = 317,              /* VALUE_PATH  */
+    VALUE_INT = 318,               /* VALUE_INT  */
+    VALUE_FLOAT = 319,             /* VALUE_FLOAT  */
+    VALUE_BOOL = 320               /* VALUE_BOOL  */
   };
   typedef enum yytokentype yytoken_kind_t;
 #endif
