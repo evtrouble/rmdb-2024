@@ -573,7 +573,7 @@ void SmManager::load_csv_data(std::string &file_name, std::string &tab_name, Con
         int hidden_column_count = txn_mgr->get_hidden_column_count();
 
         // 解析CSV数据并填充记录
-        for (int i = hidden_column_count; i < tab_.cols.size(); ++i)
+        for (size_t i = hidden_column_count; i < tab_.cols.size(); ++i)
         {
             const auto &col = tab_.cols[i];
             std::getline(line_stream, cell, ',');
@@ -606,12 +606,12 @@ void SmManager::load_csv_data(std::string &file_name, std::string &tab_name, Con
         }
 
         // 获取排他锁 (参考Next方法)
-        if (!context->lock_mgr_->lock_exclusive_on_key(context->txn_, fh_->GetFd(),
-                                                       rec.data + txn_mgr->get_start_offset()))
-        {
-            throw TransactionAbortException(context->txn_->get_transaction_id(),
-                                            AbortReason::UPGRADE_CONFLICT);
-        }
+        // if (!context->lock_mgr_->lock_exclusive_on_key(context->txn_, fh_->GetFd(),
+        //                                                rec.data + txn_mgr->get_start_offset()))
+        // {
+        //     throw TransactionAbortException(context->txn_->get_transaction_id(),
+        //                                     AbortReason::UPGRADE_CONFLICT);
+        // }
 
         // 设置事务ID (参考Next方法)
         txn_mgr->set_record_txn_id(rec.data, context->txn_, false);
@@ -620,8 +620,8 @@ void SmManager::load_csv_data(std::string &file_name, std::string &tab_name, Con
         Rid rid = fh_->insert_record(rec.data, context);
 
         // 添加写记录到事务日志 (参考Next方法)
-        context->txn_->append_write_record(new WriteRecord(WType::INSERT_TUPLE,
-                                                           tab_name, rid));
+        // context->txn_->append_write_record(new WriteRecord(WType::INSERT_TUPLE,
+                                                        //    tab_name, rid));
 
         // 更新索引 (参考Next方法的索引更新逻辑)
         for (size_t id = 0; id < tab_.indexes.size(); id++)
@@ -635,7 +635,7 @@ void SmManager::load_csv_data(std::string &file_name, std::string &tab_name, Con
             {
                 // 找到索引列在表中的位置，然后获取其在记录中的偏移量
                 int col_index = -1;
-                for (int j = 0; j < tab_.cols.size(); ++j)
+                for (size_t j = 0; j < tab_.cols.size(); ++j)
                 {
                     if (tab_.cols[j].name == index.cols[i].name)
                     {
@@ -651,13 +651,20 @@ void SmManager::load_csv_data(std::string &file_name, std::string &tab_name, Con
                 offset += index.cols[i].len;
             }
 
-            // 插入索引条目
-            ihs_[ix_manager_->get_index_name(tab_name, index.cols)]->insert_entry(key.get(), rid, context->txn_);
+            try{
+                // 插入索引条目
+                auto ih = get_index_handle(ix_manager_->get_index_name(tab_name, index.cols));
+                ih->insert_entry(key.get(), rid, context->txn_, true);
+            }
+            catch (IndexEntryAlreadyExistError &)
+            {
+            }
+            
         }
 
         // 记录日志 (参考Next方法)
-        InsertLogRecord log_record(context->txn_->get_transaction_id(), rec, rid, tab_name);
-        context->log_mgr_->add_log_to_buffer(&log_record);
+        // InsertLogRecord log_record(context->txn_->get_transaction_id(), rec, rid, tab_name);
+        // context->log_mgr_->add_log_to_buffer(&log_record);
     }
 
     file.close();
