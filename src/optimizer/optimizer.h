@@ -88,6 +88,11 @@ public:
             auto x = std::static_pointer_cast<ast::LoadStmt>(query->parse);
             return std::make_shared<OtherPlan>(T_LoadData, x->tab_name, x->file_name);
         }
+        case ast::TreeNodeType::IoEnable:
+        {
+            auto x = std::static_pointer_cast<ast::IoEnable>(query->parse);
+            return std::make_shared<OtherPlan>(T_IoEnable, x->set_io_enable);
+        }
         default:
             return planner_->do_planner(query, context);
         }

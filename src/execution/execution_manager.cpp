@@ -194,6 +194,12 @@ void QlManager::run_cmd_utility(std::shared_ptr<Plan> plan, txn_id_t *txn_id, Co
         sm_manager_->load_csv_data(x->file_name_, x->tab_name_, context);
         break;
     }
+    case T_IoEnable:
+    {
+        auto x = std::static_pointer_cast<OtherPlan>(plan);
+        sm_manager_->io_enabled_ = x->io_enable_;
+        break;
+    }
     default:
         throw InternalError("Unexpected field type");
         break;
@@ -246,20 +252,29 @@ void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, 
     rec_printer.print_record(captions, context);
     rec_printer.print_separator(context);
 
-    int fd = ::open("output.txt", O_WRONLY | O_CREAT | O_APPEND, 0644);
-    if (fd == -1)
-        return;
-
-    // 64KB缓冲区
+    // 文件I/O相关变量
+    int fd = -1;
     std::string buffer;
-    buffer.reserve(8096);
 
-    buffer.append("|");
-    for (size_t i = 0; i < captions.size(); ++i)
+    // 只有在启用I/O时才打开文件并初始化缓冲区
+    if (sm_manager_->io_enabled_)
     {
-        buffer.append(" ").append(captions[i]).append(" |");
+        fd = ::open("output.txt", O_WRONLY | O_CREAT | O_APPEND, 0644);
+        if (fd == -1)
+            return;
+
+        // 64KB缓冲区
+        buffer.reserve(8096);
+
+        // 写入表头到缓冲区
+        buffer.append("|");
+        for (size_t i = 0; i < captions.size(); ++i)
+        {
+            buffer.append(" ").append(captions[i]).append(" |");
+        }
+        buffer.append("\n");
     }
-    buffer.append("\n");
+
     // Print records
     size_t num_rec = 0;
     [[maybe_unused]] ssize_t discard;
@@ -312,29 +327,43 @@ void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, 
             }
             columns.emplace_back(std::move(col_str));
         }
-        // print record into buffer
+
+        // print record into buffer (总是执行，用于控制台输出)
         rec_printer.print_record(columns, context);
-        // print record into file
-        buffer.append("|");
-        for (size_t i = 0; i < columns.size(); ++i)
+
+        // 只有在启用I/O时才写入文件
+        if (sm_manager_->io_enabled_ && fd != -1)
         {
-            buffer.append(" ").append(columns[i]).append(" |");
+            // print record into file
+            buffer.append("|");
+            for (size_t i = 0; i < columns.size(); ++i)
+            {
+                buffer.append(" ").append(columns[i]).append(" |");
+            }
+            buffer.append("\n");
+
+            // 缓冲区满时写入
+            if (buffer.size() >= 8096)
+            {
+                discard = ::write(fd, buffer.data(), buffer.size());
+                buffer.clear();
+            }
         }
-        buffer.append("\n");
+
         num_rec++;
-        // 缓冲区满时写入
-        if (buffer.size() >= 8096)
+    }
+
+    // 只有在启用I/O时才执行文件写入和关闭操作
+    if (sm_manager_->io_enabled_ && fd != -1)
+    {
+        // 写入剩余数据
+        if (buffer.size())
         {
             discard = ::write(fd, buffer.data(), buffer.size());
-            buffer.clear();
         }
+        close(fd);
     }
-    // 写入剩余数据
-    if (buffer.size())
-    {
-        discard = ::write(fd, buffer.data(), buffer.size());
-    }
-    close(fd);
+
     // Print footer into buffer
     rec_printer.print_separator(context);
     // Print record count into buffer

@@ -160,10 +160,17 @@ void *client_handler(void *sock_fd)
                     txn_manager->abort(context.get(), log_manager.get());
                     std::cout << e.GetInfo() << std::endl;
 
-                    std::fstream outfile;
-                    outfile.open("output.txt", std::ios::out | std::ios::app);
-                    outfile << str;
-                    outfile.close();
+                    // 只有当io_enabled_为true时才写入文件
+                    if (sm_manager->io_enabled_)
+                    {
+                        std::fstream outfile;
+                        outfile.open("output.txt", std::ios::out | std::ios::app);
+                        if (outfile.is_open())
+                        {
+                            outfile << str;
+                            outfile.close();
+                        }
+                    }
                 }
                 catch (RMDBError &e)
                 {
@@ -175,13 +182,19 @@ void *client_handler(void *sock_fd)
                     data_send[e.get_msg_len() + 1] = '\0';
                     offset = e.get_msg_len() + 1;
 
-                    // 将报错信息写入output.txt
-                    std::fstream outfile;
-                    outfile.open("output.txt", std::ios::out | std::ios::app);
-                    outfile << "failure\n";
-                    outfile.close();
+                    // 只有当io_enabled_为true时才写入文件
+                    if (sm_manager->io_enabled_)
+                    {
+                        std::fstream outfile;
+                        outfile.open("output.txt", std::ios::out | std::ios::app);
+                        if (outfile.is_open())
+                        {
+                            outfile << "failure\n";
+                            outfile.close();
+                        }
+                    }
 
-                    // // 回滚事务
+                    // 回滚事务
                     txn_manager->abort(context.get(), log_manager.get());
                 }
             }
@@ -194,11 +207,17 @@ void *client_handler(void *sock_fd)
             data_send[ParseError.length() + 1] = '\0';
             offset = ParseError.length() + 1;
 
-            // 将报错信息写入output.txt
-            std::fstream outfile;
-            outfile.open("output.txt", std::ios::out | std::ios::app);
-            outfile << "failure\n";
-            outfile.close();
+            // 只有当io_enabled_为true时才写入文件
+            if (sm_manager->io_enabled_)
+            {
+                std::fstream outfile;
+                outfile.open("output.txt", std::ios::out | std::ios::app);
+                if (outfile.is_open())
+                {
+                    outfile << "failure\n";
+                    outfile.close();
+                }
+            }
         }
         if (!finish_analyze)
         {

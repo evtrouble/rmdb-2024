@@ -44,6 +44,8 @@ TXN_BEGIN TXN_COMMIT TXN_ABORT TXN_ROLLBACK ORDER_BY ENABLE_NESTLOOP ENABLE_SORT
 SUM COUNT MAX MIN AVG AS LOAD
 // non-keywords
 %token LEQ NEQ GEQ T_EOF
+%token OUTPUT_FILE ON OFF
+
 
 // type-specific tokens
 %token <sv_str> IDENTIFIER VALUE_STRING VALUE_PATH
@@ -52,7 +54,7 @@ SUM COUNT MAX MIN AVG AS LOAD
 %token <sv_bool> VALUE_BOOL
 
 // specify types for non-terminal symbol
-%type <sv_node> stmt dbStmt ddl dml txnStmt setStmt
+%type <sv_node> stmt dbStmt ddl dml txnStmt setStmt io_stmt
 %type <sv_field> field
 %type <sv_fields> fieldList
 %type <sv_type_len> type
@@ -94,6 +96,11 @@ start:
     |   T_EOF
     {
         parse_tree = nullptr;
+        YYACCEPT;
+    }
+    |  io_stmt
+    {
+        parse_tree = $1;
         YYACCEPT;
     }
     ;
@@ -146,7 +153,16 @@ setStmt:
         $$ = std::make_shared<SetStmt>($2, $4);
     }
     ;
-
+io_stmt:
+        SET OUTPUT_FILE ON
+    {
+        $$ = std::make_shared<IoEnable>(true);
+    }
+    |   SET OUTPUT_FILE OFF
+    {
+        $$ = std::make_shared<IoEnable>(false);
+    }
+    ;
 ddl:
         CREATE TABLE tbName '(' fieldList ')'
     {

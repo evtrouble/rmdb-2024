@@ -112,7 +112,8 @@ namespace ast
         InExpr,
         CreateStaticCheckpoint,
         ExplainStmt,
-        LoadStmt
+        LoadStmt,
+        IoEnable
     };
     // Base class for tree nodes
     struct TreeNode
@@ -362,6 +363,12 @@ namespace ast
 
         DeleteStmt(const std::string &tab_name_, const std::vector<std::shared_ptr<BinaryExpr>> &conds_) : tab_name(std::move(tab_name_)), conds(std::move(conds_)) {}
         TreeNodeType Nodetype() const override { return TreeNodeType::DeleteStmt; }
+    };
+    struct IoEnable : public TreeNode
+    {
+        bool set_io_enable;
+        explicit IoEnable(bool set_io_enable_) : set_io_enable(set_io_enable_) {}
+        TreeNodeType Nodetype() const override { return TreeNodeType::IoEnable; }
     };
 
     struct UpdateStmt : public TreeNode

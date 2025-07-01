@@ -171,20 +171,46 @@ void SmManager::close_db()
 void SmManager::show_tables(Context *context)
 {
     std::fstream outfile;
-    outfile.open("output.txt", std::ios::out | std::ios::app);
-    outfile << "| Tables |\n";
+    bool file_opened = false;
+
+    // 只有当io_enabled_为true时才打开文件
+    if (io_enabled_)
+    {
+        outfile.open("output.txt", std::ios::out | std::ios::app);
+        if (outfile.is_open())
+        {
+            file_opened = true;
+            outfile << "| Tables |\n";
+        }
+        // 如果文件打开失败，file_opened保持false，但不影响程序继续执行
+    }
+
     RecordPrinter printer(1);
     printer.print_separator(context);
     printer.print_record({"Tables"}, context);
     printer.print_separator(context);
+
     for (auto &entry : db_.tabs_)
     {
         auto &tab = entry.second;
+
+        // RecordPrinter 输出始终执行（显示到控制台/上下文）
         printer.print_record({tab.name}, context);
-        outfile << "| " << tab.name << " |\n";
+
+        // 只有当io_enabled_为true且文件成功打开时才写入文件
+        if (file_opened)
+        {
+            outfile << "| " << tab.name << " |\n";
+        }
     }
+
     printer.print_separator(context);
-    outfile.close();
+
+    // 关闭文件（如果已打开）
+    if (file_opened)
+    {
+        outfile.close();
+    }
 }
 
 /**
@@ -452,44 +478,68 @@ void SmManager::drop_index(const std::string &tab_name, const std::vector<ColMet
 void SmManager::show_index(const std::string &tab_name, Context *context)
 {
     TabMeta &tab = db_.get_table(tab_name);
-    int fd = open("output.txt", O_WRONLY | O_CREAT | O_APPEND, 0644);
-    if (fd == -1)
-        return;
 
-    // 64KB缓冲区
+    int fd = -1;
     std::string buffer;
-    buffer.reserve(8096);
     [[maybe_unused]] ssize_t discard;
+
+    // 只有当io_enabled_为true时才打开文件和准备缓冲区
+    if (io_enabled_)
+    {
+        fd = open("output.txt", O_WRONLY | O_CREAT | O_APPEND, 0644);
+        if (fd == -1)
+        {
+            // 如果文件打开失败，继续执行但不写入文件
+            io_enabled_ = false; // 临时禁用文件输出
+        }
+        else
+        {
+            // 64KB缓冲区
+            buffer.reserve(8096);
+        }
+    }
 
     RecordPrinter printer(1);
     printer.print_separator(context);
     printer.print_record({"index"}, context);
     printer.print_separator(context);
+
     for (auto &index : tab.indexes)
     {
-        buffer.append("| ").append(tab_name).append(" | unique | (").append(index.cols[0].name);
-        for (size_t i = 1; i < index.cols.size(); ++i)
+        // 只有当io_enabled_为true且文件打开成功时才写入缓冲区
+        if (io_enabled_ && fd != -1)
         {
-            buffer.append(",").append(index.cols[i].name);
+            buffer.append("| ").append(tab_name).append(" | unique | (").append(index.cols[0].name);
+            for (size_t i = 1; i < index.cols.size(); ++i)
+            {
+                buffer.append(",").append(index.cols[i].name);
+            }
+            buffer.append(") |\n");
+
+            // 缓冲区满时写入
+            if (buffer.size() >= 8096)
+            {
+                discard = ::write(fd, buffer.data(), buffer.size());
+                buffer.clear();
+            }
         }
-        buffer.append(") |\n");
-        // 缓冲区满时写入
-        if (buffer.size() >= 8096)
-        {
-            discard = ::write(fd, buffer.data(), buffer.size());
-            buffer.clear();
-        }
+
+        // RecordPrinter 输出始终执行（显示到控制台/上下文）
         printer.print_record({ix_manager_->get_index_name(tab_name, index.cols)}, context);
     }
-    printer.print_separator(context);
-    // 写入剩余数据
-    if (buffer.size())
-    {
-        discard = ::write(fd, buffer.data(), buffer.size());
-    }
-    ::close(fd);
-}
 
+    printer.print_separator(context);
+
+    // 写入剩余数据并关闭文件
+    if (io_enabled_ && fd != -1)
+    {
+        if (buffer.size())
+        {
+            discard = ::write(fd, buffer.data(), buffer.size());
+        }
+        ::close(fd);
+    }
+}
 void SmManager::load_csv_data(std::string &file_name, std::string &tab_name, Context *context)
 {
     std::ifstream file(file_name);
