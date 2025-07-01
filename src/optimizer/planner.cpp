@@ -1033,7 +1033,7 @@ std::shared_ptr<Plan> Planner::generate_sort_plan(std::shared_ptr<Query> query, 
     int limit = -1;
     auto x = std::static_pointer_cast<ast::SelectStmt>(query->parse);
     std::vector<std::string> &tables = query->tables;
-    if (!x->has_sort || tables.size() > 1)
+    if (!x->has_sort)
     {
         return plan;
     }
