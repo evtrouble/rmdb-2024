@@ -314,16 +314,37 @@ std::shared_ptr<Plan> create_ordered_join(
     {
         Condition new_cond = cond;
         
-        // 条件的左右列与表的左右顺序相反
+        // 如果条件的左右列与表的左右顺序相反
         if (cond.lhs_col.tab_name == right_tab && cond.rhs_col.tab_name == left_tab)
         {
-            std::swap(new_cond.lhs_col, new_cond.rhs_col); // 交换左右列
+            // 交换左右列
+            std::swap(new_cond.lhs_col, new_cond.rhs_col);
+            
+            // 反转比较运算符（仅对需要反转的运算符）
+            switch (cond.op)
+            {
+                case CompOp::OP_GT: new_cond.op = CompOp::OP_LT; break; // > 变 <
+                case CompOp::OP_LT: new_cond.op = CompOp::OP_GT; break; // < 变 >
+                case CompOp::OP_GE: new_cond.op = CompOp::OP_LE; break; // >= 变 <=
+                case CompOp::OP_LE: new_cond.op = CompOp::OP_GE; break; // <= 变 >=
+                // = 和 != 不需要反转
+                default: break;
+            }
         }
-        // 其他情况直接保留
         adjusted_conds.push_back(new_cond);
     }
-
-    // 4. 创建 JoinPlan
+    // 创建 JoinPlan
+    if(join_type == T_SortMerge)
+    {
+        if(left_scan->tag != T_IndexScan)
+        {
+            left_plan = std::make_shared<SortPlan>(T_Sort, std::move(left_plan), adjusted_conds[0].lhs_col, false);
+        }
+        if(right_scan->tag != T_IndexScan)
+        {
+            right_plan = std::make_shared<SortPlan>(T_Sort, std::move(right_plan), adjusted_conds[0].rhs_col, false);
+        }
+    }
     return std::make_shared<JoinPlan>(join_type, left_plan, right_plan, adjusted_conds);
 }
 void QueryColumnRequirement::calculate_layered_requirements()
