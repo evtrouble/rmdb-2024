@@ -111,6 +111,7 @@ value_path [\.|\/][^ \t]+\.csv
 "STATIC_CHECKPOINT" { return STATIC_CHECKPOINT; }
 "ENABLE_NESTLOOP" { return ENABLE_NESTLOOP; }
 "ENABLE_SORTMERGE" { return ENABLE_SORTMERGE; }
+"LOAD" { return LOAD; }
 "TRUE" {
     yylval->sv_bool = true;
     return VALUE_BOOL;

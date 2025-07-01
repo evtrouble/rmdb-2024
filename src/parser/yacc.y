@@ -41,7 +41,7 @@ using namespace ast;
 %token SHOW TABLES CREATE TABLE DROP DESC INSERT INTO VALUES DELETE FROM ASC ORDER GROUP BY HAVING LIMIT
 WHERE UPDATE SET SELECT INT CHAR FLOAT DATETIME INDEX AND SEMI JOIN ON IN NOT EXIT HELP DIV EXPLAIN
 TXN_BEGIN TXN_COMMIT TXN_ABORT TXN_ROLLBACK ORDER_BY ENABLE_NESTLOOP ENABLE_SORTMERGE STATIC_CHECKPOINT
-SUM COUNT MAX MIN AVG AS
+SUM COUNT MAX MIN AVG AS LOAD
 // non-keywords
 %token LEQ NEQ GEQ T_EOF
 
@@ -60,7 +60,7 @@ SUM COUNT MAX MIN AVG AS
 %type <sv_expr> expr
 %type <sv_val> value
 %type <sv_vals> valueList
-%type <sv_str> tbName colName ALIAS
+%type <sv_str> tbName colName ALIAS fileName
 %type <sv_strs> colNameList
 %type <sv_col> col aggCol
 %type <sv_cols> colList selector opt_groupby_clause
@@ -133,6 +133,10 @@ dbStmt:
         SHOW TABLES
     {
         $$ = std::make_shared<ShowTables>();
+    }
+    |   LOAD fileName INTO tbName
+    {
+         $$ = std::make_shared<LoadStmt>($2, $4);
     }
     ;
 
@@ -635,6 +639,7 @@ tbName: IDENTIFIER;
 colName: IDENTIFIER;
 
 ALIAS: IDENTIFIER;
+fileName: VALUE_PATH;
 
 
 

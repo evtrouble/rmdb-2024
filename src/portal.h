@@ -125,6 +125,8 @@ public:
 
             return std::make_shared<PortalStmt>(PORTAL_DML_WITHOUT_SELECT, std::move(root), plan);
         }
+        case T_LoadData:
+            return std::make_shared<PortalStmt>(PORTAL_CMD_UTILITY, std::vector<TabCol>(), std::unique_ptr<AbstractExecutor>(), plan);
         default:
             throw InternalError("Unexpected field type");
             break;

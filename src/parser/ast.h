@@ -111,7 +111,8 @@ namespace ast
         SetStmt,
         InExpr,
         CreateStaticCheckpoint,
-        ExplainStmt
+        ExplainStmt,
+        LoadStmt
     };
     // Base class for tree nodes
     struct TreeNode
@@ -343,7 +344,17 @@ namespace ast
         InsertStmt(const std::string &tab_name_, const std::vector<std::shared_ptr<Value>> &vals_) : tab_name(std::move(tab_name_)), vals(std::move(vals_)) {}
         TreeNodeType Nodetype() const override { return TreeNodeType::InsertStmt; }
     };
+    struct LoadStmt : public TreeNode
+    {
+        std::string file_name;
+        std::string tab_name;
 
+        LoadStmt(std::string file_name_, std::string table_name_) : file_name(std::move(file_name_)), tab_name(std::move(table_name_)) {}
+        TreeNodeType Nodetype() const override
+        {
+            return TreeNodeType::LoadStmt; // 或者对应的枚举值
+        }
+    };
     struct DeleteStmt : public TreeNode
     {
         std::string tab_name;

@@ -49,7 +49,8 @@ typedef enum PlanTag
     T_Agg,
     T_Projection,
     T_Explain,
-    T_Filter
+    T_Filter,
+    T_LoadData
     // T_Subquery // 子查询
 } PlanTag;
 
@@ -198,8 +199,15 @@ public:
         : Plan(tag), tab_name_(std::move(tab_name)) {}
     OtherPlan(PlanTag tag)
         : Plan(tag) {}
+    OtherPlan(PlanTag tag, std::string tab_name, std::string file_name) : Plan(tag)
+    {
+        Plan::tag = tag;
+        tab_name_ = std::move(tab_name);
+        file_name_ = std::move(file_name);
+    }
     ~OtherPlan() {}
     std::string tab_name_;
+    std::string file_name_;
 };
 
 // EXPLAIN语句对应的plan

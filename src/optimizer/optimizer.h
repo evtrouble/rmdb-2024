@@ -83,6 +83,11 @@ public:
             auto subplan = plan_query(query->sub_query, context);
             return std::make_shared<ExplainPlan>(T_Explain, subplan);
         }
+        case ast::TreeNodeType::LoadStmt:
+        {
+            auto x = std::static_pointer_cast<ast::LoadStmt>(query->parse);
+            return std::make_shared<OtherPlan>(T_LoadData, x->tab_name, x->file_name);
+        }
         default:
             return planner_->do_planner(query, context);
         }

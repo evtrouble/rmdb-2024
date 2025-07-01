@@ -188,6 +188,12 @@ void QlManager::run_cmd_utility(std::shared_ptr<Plan> plan, txn_id_t *txn_id, Co
         }
         break;
     }
+    case T_LoadData:
+    {
+        auto x = std::static_pointer_cast<OtherPlan>(plan);
+        sm_manager_->load_csv_data(x->file_name_, x->tab_name_, context);
+        break;
+    }
     default:
         throw InternalError("Unexpected field type");
         break;
