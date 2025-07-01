@@ -263,22 +263,68 @@ bool should_left_come_first(std::shared_ptr<Plan> left, std::shared_ptr<Plan> ri
         return false;
     }
 }
+std::shared_ptr<ScanPlan> extract_scan_plan(std::shared_ptr<Plan> plan)
+{
+    if (!plan)
+        return nullptr;
+
+    // 如果是ScanPlan，直接返回
+    auto scan_plan = std::dynamic_pointer_cast<ScanPlan>(plan);
+    if (scan_plan)
+    {
+        return scan_plan;
+    }
+
+    // 如果是FilterPlan，递归提取其子计划
+    auto filter_plan = std::dynamic_pointer_cast<FilterPlan>(plan);
+    if (filter_plan && filter_plan->subplan_)
+    {
+        return extract_scan_plan(filter_plan->subplan_);
+    }
+
+    // 如果是ProjectionPlan，递归提取其子计划
+    auto projection_plan = std::dynamic_pointer_cast<ProjectionPlan>(plan);
+    if (projection_plan && projection_plan->subplan_)
+    {
+        return extract_scan_plan(projection_plan->subplan_);
+    }
+
+    return nullptr;
+}
 std::shared_ptr<Plan> create_ordered_join(
     PlanTag join_type,
     std::shared_ptr<Plan> plan1,
     std::shared_ptr<Plan> plan2,
-    const std::vector<Condition> &join_conds)
+    const std::vector<Condition>& join_conds)
 {
-
     // 根据排序规则决定左右子树
-    if (should_left_come_first(plan1, plan2))
+    bool is_plan1_left = should_left_come_first(plan1, plan2);
+    auto left_plan = is_plan1_left ? plan1 : plan2;
+    auto right_plan = is_plan1_left ? plan2 : plan1;
+
+    // 提取左右表的表名
+    auto left_scan = extract_scan_plan(left_plan);
+    auto right_scan = extract_scan_plan(right_plan);
+    const std::string& left_tab = left_scan->tab_name_;
+    const std::string& right_tab = right_scan->tab_name_;
+
+    // 调整连接条件，确保左列属于左表，右列属于右表
+    std::vector<Condition> adjusted_conds;
+    for (const auto& cond : join_conds)
     {
-        return std::make_shared<JoinPlan>(join_type, plan1, plan2, join_conds);
+        Condition new_cond = cond;
+        
+        // 条件的左右列与表的左右顺序相反
+        if (cond.lhs_col.tab_name == right_tab && cond.rhs_col.tab_name == left_tab)
+        {
+            std::swap(new_cond.lhs_col, new_cond.rhs_col); // 交换左右列
+        }
+        // 其他情况直接保留
+        adjusted_conds.push_back(new_cond);
     }
-    else
-    {
-        return std::make_shared<JoinPlan>(join_type, plan2, plan1, join_conds);
-    }
+
+    // 4. 创建 JoinPlan
+    return std::make_shared<JoinPlan>(join_type, left_plan, right_plan, adjusted_conds);
 }
 void QueryColumnRequirement::calculate_layered_requirements()
 {
@@ -598,36 +644,6 @@ std::shared_ptr<Plan> Planner::physical_optimization(std::shared_ptr<Query> quer
 
     return plan;
 }
-
-std::shared_ptr<ScanPlan> extract_scan_plan(std::shared_ptr<Plan> plan)
-{
-    if (!plan)
-        return nullptr;
-
-    // 如果是ScanPlan，直接返回
-    auto scan_plan = std::dynamic_pointer_cast<ScanPlan>(plan);
-    if (scan_plan)
-    {
-        return scan_plan;
-    }
-
-    // 如果是FilterPlan，递归提取其子计划
-    auto filter_plan = std::dynamic_pointer_cast<FilterPlan>(plan);
-    if (filter_plan && filter_plan->subplan_)
-    {
-        return extract_scan_plan(filter_plan->subplan_);
-    }
-
-    // 如果是ProjectionPlan，递归提取其子计划
-    auto projection_plan = std::dynamic_pointer_cast<ProjectionPlan>(plan);
-    if (projection_plan && projection_plan->subplan_)
-    {
-        return extract_scan_plan(projection_plan->subplan_);
-    }
-
-    return nullptr;
-}
-
 // 计算所有表的基数并缓存
 std::unordered_map<std::string, size_t> calculate_table_cardinalities(const std::vector<std::string> &tables, SmManager *sm_manager_)
 {
