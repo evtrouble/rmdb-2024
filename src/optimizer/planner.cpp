@@ -388,6 +388,31 @@ std::pair<IndexMeta *, int> Planner::get_index_cols(const std::string &tab_name,
         return std::make_pair(&tab.indexes[matched_index_number], max_match_col_count);
     return std::make_pair(nullptr, -1);
 }
+// 目前只支持一个列的索引
+std::pair<IndexMeta*, int> Planner::get_index_for_join(const std::string &tab_name, const TabCol &join_col)
+{
+    // 获取表格对象
+    auto &tab = sm_manager_->db_.get_table(tab_name);
+    
+    // 如果表格没有索引，直接返回
+    if (tab.indexes.empty())
+        return std::make_pair(nullptr, -1);
+
+    // 遍历所有索引寻找匹配
+    for (size_t idx_number = 0; idx_number < tab.indexes.size(); ++idx_number) {
+        const auto &index = tab.indexes[idx_number];
+        
+        // 检查索引的第一列是否匹配连接列
+        if (!index.cols.empty() && index.cols[0].name == join_col.col_name) {
+            // 找到匹配的索引
+            return std::make_pair(&tab.indexes[idx_number], 1);
+        }
+    }
+
+    // 没有找到匹配的索引
+    return std::make_pair(nullptr, -1);
+}
+
 
 /**
  * @brief 表算子条件谓词生成
@@ -662,10 +687,27 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
 
     for (size_t i = 0; i < query->tables.size(); ++i)
     {
+        IndexMeta *index_meta = nullptr;
+        int max_match_col_count = -1;
         const auto &table = query->tables[i];
-        auto [index_meta, max_match_col_count] = get_index_cols(table, query->tab_conds[table]);
+        for(auto &cond : query->join_conds)
+        {
+            if(table == cond.lhs_col.tab_name)
+            {
+                std::tie(index_meta, max_match_col_count) = get_index_for_join(table,cond.lhs_col);
+                break;
+            }
+            else if(table == cond.rhs_col.tab_name)
+            {
+                std::tie(index_meta, max_match_col_count) = get_index_for_join(table,cond.rhs_col);
+                break;
+            }
+        }
+        if(index_meta == nullptr)
+        {
+            std::tie(index_meta, max_match_col_count) = get_index_cols(table, query->tab_conds[table]);
+        }
         std::shared_ptr<Plan> scan_plan;
-
         if (index_meta == nullptr)
         {
             scan_plan = std::make_shared<ScanPlan>(T_SeqScan, sm_manager_, table, std::vector<Condition>());
