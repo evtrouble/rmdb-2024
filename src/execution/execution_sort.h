@@ -72,14 +72,7 @@ private:
     }
 
     // 外部排序：初始数据处理
-    void sortExternallyWithInitialData()
-    {
-        // 处理已读入内存的数据
-        if (!sorted_tuples_.empty()) {
-            sortAndWriteBlock(sorted_tuples_);
-            sorted_tuples_.clear();
-        }
-
+    void sortExternallyWithInitialData() {
         // 处理剩余数据
         std::vector<std::unique_ptr<RmRecord>> block;
         size_t current_block_size = 0;
@@ -87,11 +80,16 @@ private:
         auto batch = prev_->next_batch();
         while (!batch.empty()) {
             for (auto &record : batch) {
+                // 检查单条记录是否超过内存限制
+                if (record_size > block_size_) {
+                    throw RMDBError("单条记录大小超过内存限制");
+                }
+                
                 current_block_size += record_size;
                 if (current_block_size > block_size_) {
                     sortAndWriteBlock(block);
                     block.clear();
-                    current_block_size = 0;
+                    current_block_size = record_size; // 重置为当前记录大小
                 }
                 block.emplace_back(std::move(record));
             }
@@ -185,7 +183,7 @@ public:
                 const std::vector<TabCol> &sel_cols,
                 const std::vector<bool> &is_desc_orders, 
                 int limit, Context *context, 
-                size_t block_size = 8192)
+                size_t block_size = 2*1024*1024)
         : AbstractExecutor(context), 
           prev_(std::move(prev)), 
           is_desc_orders_(is_desc_orders), 
@@ -245,15 +243,21 @@ public:
         auto batch = prev_->next_batch();
         while (!batch.empty()) {
             for (auto &record : batch) {
+                // 检查单条记录是否超过内存限制
+                if (record_size > block_size_) {
+                    throw RMDBError("单条记录大小超过内存限制");
+                }
+                
                 current_size += record_size;
                 if (current_size > block_size_) {
+                    // 立即处理当前已积累的记录
+                    sortAndWriteBlock(sorted_tuples_);
+                    sorted_tuples_.clear();
+                    current_size = record_size; // 重置为当前记录大小
                     use_memory_sort = false;
-                    break;
                 }
                 sorted_tuples_.emplace_back(std::move(record));
             }
-            
-            if (!use_memory_sort) break;
             batch = prev_->next_batch();
         }
 
@@ -266,12 +270,17 @@ public:
             
             if (limit_ != -1 && sorted_tuples_.size() > static_cast<size_t>(limit_)) {
                 sorted_tuples_.resize(limit_);
-            }
-        } else {
-            // 外部排序
-            sortExternallyWithInitialData();
         }
+    } else {
+        // 处理最后一批记录
+        if (!sorted_tuples_.empty()) {
+            sortAndWriteBlock(sorted_tuples_);
+            sorted_tuples_.clear();
+        }
+        // 外部排序
+        mergeSortedBlocks();
     }
+}
 
     size_t tupleLen() const override { return record_size; }
 
