@@ -33,7 +33,8 @@ private:
     std::vector<RmRecord> result_batch_;       // 结果批次
     size_t result_pos_;                        // 结果批次当前位置
     
-    bool is_end_;                              // 是否结束
+    bool is_end_ = false;                              // 是否结束
+    bool is_initialized_ = false;
     
     // 检查条件是否满足
     bool check_cond(const Condition &cond, const RmRecord &left_rec, const RmRecord &right_rec)
@@ -148,21 +149,25 @@ public:
         cols_ = left_->cols();
     }
 
-    void beginTuple() override {
-        left_->beginTuple();
-        right_->beginTuple();
-        is_end_ = false;
-        left_batch_pos_ = 0;
-        right_batch_pos_ = 0;
-        result_pos_ = 0;
-        result_batch_.clear();
-        load_left_batch();
-        load_right_batch();
+    void initialize() {
+        if (!is_initialized_)
+        {
+            left_->beginTuple();
+            right_->beginTuple();
+            is_end_ = false;
+            left_batch_pos_ = 0;
+            right_batch_pos_ = 0;
+            result_pos_ = 0;
+            result_batch_.clear();
+            load_left_batch();
+            load_right_batch();
+            is_initialized_ = true;
+        }
     }
 
     std::vector<std::unique_ptr<RmRecord>> next_batch(size_t batch_size = BATCH_SIZE) override {
         std::vector<std::unique_ptr<RmRecord>> batch;
-        
+        initialize();
         // 如果结果批次已用完，处理下一批
         if (result_pos_ >= result_batch_.size()) {
             process_batch(batch_size);
