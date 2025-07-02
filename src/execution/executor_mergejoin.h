@@ -75,22 +75,6 @@ private:
             }
         }
         
-        // 对左右表按连接键排序
-        auto cmp_left = [this](const auto& a, const auto& b) {
-            auto key_a = get_left_key(&a - &left_cache_[0]);
-            auto key_b = get_left_key(&b - &left_cache_[0]);
-            return compare_keys(key_a, key_b) < 0;
-        };
-        
-        auto cmp_right = [this](const auto& a, const auto& b) {
-            auto key_a = get_right_key(&a - &right_cache_[0]);
-            auto key_b = get_right_key(&b - &right_cache_[0]);
-            return compare_keys(key_a, key_b) < 0;
-        };
-        
-        std::sort(left_cache_.begin(), left_cache_.end(), cmp_left);
-        std::sort(right_cache_.begin(), right_cache_.end(), cmp_right);
-        
         // 重置索引
         left_idx_ = 0;
         right_idx_ = 0;

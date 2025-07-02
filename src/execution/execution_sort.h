@@ -207,6 +207,7 @@ public:
         if (mkdir(temp_dir_.c_str(), 0700) != 0 && errno != EEXIST) {
             throw RMDBError("无法创建临时排序目录: " + temp_dir_);
         }
+        prev_->beginTuple();
     }
 
     // 获取下一批记录
