@@ -108,6 +108,20 @@ public:
     void show_index(const std::string &tab_name, Context *context);
 
     void load_csv_data(std::string &file_name, std::string &tab_name, Context *context);
+    void load_csv_data_double_buffer(std::string &file_name, std::string &tab_name, Context *context);
+    size_t process_buffer_chunk(char *buffer, size_t buffer_size,
+                                std::string &leftover, const TabMeta &tab,
+                                int hidden_column_count, Context *context,
+                                bool skip_header);
+    void process_csv_line(const std::string &line, const TabMeta &tab,
+                          int hidden_column_count, Context *context);
+    void parse_csv_fields(const std::string &line, std::vector<std::string> &fields);
+    void process_final_line(const std::string &leftover, const TabMeta &tab,
+                            int hidden_column_count, Context *context);
+    int parse_int_safe(const std::string &str);
+    float parse_float_safe(const std::string &str);
+    void update_indexes_for_record(const RmRecord &rec, const Rid &rid,
+                                   const TabMeta &tab, Context *context);
 
     std::vector<std::shared_ptr<RmFileHandle>> get_all_table_handle()
     {
