@@ -449,11 +449,9 @@ void TransactionManager::PurgeCleaning()
         if (all_tables_done) {
             // 如果所有表都清理完成,增加休眠时间
             current_sleep_ms = std::min(current_sleep_ms * 2, max_sleep_ms);
-        } else {
-            if (tables_with_work > tables.size() / 2) {
-                // 如果超过一半的表都有工作要做,减少休眠时间
-                current_sleep_ms = std::max(current_sleep_ms / 2, min_sleep_ms);
-            }
+        } else if (tables_with_work > tables.size() / 2) {
+            // 如果超过一半的表都有工作要做,减少休眠时间
+            current_sleep_ms = std::max(current_sleep_ms / 2, min_sleep_ms);
         }
 
         if(terminate_purge_cleaner_) 

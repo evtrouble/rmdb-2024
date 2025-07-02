@@ -36,8 +36,8 @@ static constexpr int64_t TXN_ID_MASK = TXN_DELETE_TAG - 1;
 static constexpr int64_t INVALID_TS = -1;          // invalid log sequence number
 static constexpr int HEADER_PAGE_ID = 0;           // the header page id
 static constexpr int PAGE_SIZE = 4096;             // size of a data page in byte  4KB
-static constexpr int BUFFER_POOL_SIZE = 65536;     // size of buffer pool 256MB
-// static constexpr int BUFFER_POOL_SIZE = 262144;                                // size of buffer pool 1GB
+// static constexpr int BUFFER_POOL_SIZE = 65536;     // size of buffer pool 256MB
+static constexpr int BUFFER_POOL_SIZE = 262144;    // size of buffer pool 1GB
 static constexpr int LOG_BUFFER_SIZE = (1024 * PAGE_SIZE); // size of a log buffer in byte
 static constexpr int BUCKET_SIZE = 50;                     // size of extendible hash bucket
 
@@ -58,3 +58,4 @@ static const std::string LOG_BAK_FILE_NAME = "db.log.bak";
 static const std::string DB_META_NAME = "db.meta";
 constexpr double multiplier = 1000000.0;
 constexpr size_t BATCH_SIZE = 256;
+constexpr int BASELINE = 256;

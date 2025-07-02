@@ -1149,17 +1149,22 @@ std::shared_ptr<Plan> Planner::do_planner(std::shared_ptr<Query> query, Context 
         std::shared_ptr<Plan> table_scan_executors;
         // 只有一张表，不需要进行物理优化了
         // int index_no = get_indexNo(x->tab_name, query->conds);
-        auto [index_meta, max_match_col_count] = get_index_cols(x->tab_name, query->conds);
-
-        if (index_meta == nullptr)
-        { // 该表没有索引
+        if(sm_manager_->get_table_handle(x->tab_name)->get_approximate_num() < BASELINE) {
             table_scan_executors =
                 std::make_shared<ScanPlan>(T_SeqScan, sm_manager_, x->tab_name, query->conds);
-        }
-        else
-        { // 存在索引
-            table_scan_executors =
-                std::make_shared<ScanPlan>(T_IndexScan, sm_manager_, x->tab_name, query->conds, *index_meta, max_match_col_count);
+        } else {
+            auto [index_meta, max_match_col_count] = get_index_cols(x->tab_name, query->conds);
+
+            if (index_meta == nullptr)
+            { // 该表没有索引
+                table_scan_executors =
+                    std::make_shared<ScanPlan>(T_SeqScan, sm_manager_, x->tab_name, query->conds);
+            }
+            else
+            { // 存在索引
+                table_scan_executors =
+                    std::make_shared<ScanPlan>(T_IndexScan, sm_manager_, x->tab_name, query->conds, *index_meta, max_match_col_count);
+            }
         }
 
         return std::make_shared<DMLPlan>(T_Delete, table_scan_executors, x->tab_name,
@@ -1172,17 +1177,22 @@ std::shared_ptr<Plan> Planner::do_planner(std::shared_ptr<Query> query, Context 
         std::shared_ptr<Plan> table_scan_executors;
         // 只有一张表，不需要进行物理优化了
         // int index_no = get_indexNo(x->tab_name, query->conds);
-        auto [index_meta, max_match_col_count] = get_index_cols(x->tab_name, query->conds);
-
-        if (index_meta == nullptr)
-        { // 该表没有索引
+        if(sm_manager_->get_table_handle(x->tab_name)->get_approximate_num() < BASELINE) {
             table_scan_executors =
                 std::make_shared<ScanPlan>(T_SeqScan, sm_manager_, x->tab_name, query->conds);
-        }
-        else
-        { // 存在索引
-            table_scan_executors =
-                std::make_shared<ScanPlan>(T_IndexScan, sm_manager_, x->tab_name, query->conds, *index_meta, max_match_col_count);
+        } else {
+            auto [index_meta, max_match_col_count] = get_index_cols(x->tab_name, query->conds);
+
+            if (index_meta == nullptr)
+            { // 该表没有索引
+                table_scan_executors =
+                    std::make_shared<ScanPlan>(T_SeqScan, sm_manager_, x->tab_name, query->conds);
+            }
+            else
+            { // 存在索引
+                table_scan_executors =
+                    std::make_shared<ScanPlan>(T_IndexScan, sm_manager_, x->tab_name, query->conds, *index_meta, max_match_col_count);
+            }
         }
         return std::make_shared<DMLPlan>(T_Update, table_scan_executors, x->tab_name,
                                          std::vector<Value>(), query->conds,
