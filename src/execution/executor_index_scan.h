@@ -60,24 +60,21 @@ public:
         low_key.resize(index_meta_.col_tot_len);
         up_key.resize(index_meta_.col_tot_len);
 
-        auto [is_lower_close, is_upper_close] = generate_index_key(low_key.data(), up_key.data());
+        generate_index_key(low_key.data(), up_key.data());
 
         // 获取索引处理器
         auto index_handle = sm_manager_->get_index_handle(
             sm_manager_->get_ix_manager()->get_index_name(tab_name_, index_meta_.cols));
         // 范围扫描设置边界
-        auto lower = (is_lower_close ? index_handle->lower_bound(low_key.c_str()) 
-            : index_handle->upper_bound(low_key.c_str()));
+        auto lower = index_handle->lower_bound(low_key.c_str());
 
         scan_ = std::make_unique<IxScan>(index_handle, lower.first, 
-                lower.second, up_key, is_upper_close, sm_manager_->get_bpm());
+                lower.second, up_key, sm_manager_->get_bpm());
     }
 
-    std::pair<bool, bool> generate_index_key(char* low_key, char* up_key) {
+    void generate_index_key(char* low_key, char* up_key) {
         std::unordered_map<std::string, int> index_names_map;
         std::vector<int> index_offsets;
-        bool is_lower_close = true;
-        bool is_upper_close = true;
         index_offsets.reserve(max_match_col_count_);
         int offset = 0;
         for (int id = 0; id < max_match_col_count_; ++id) {
@@ -100,34 +97,35 @@ public:
                 int offset = index_offsets[iter->second];
                 int col_len = index_meta_.cols[iter->second].len;
                 auto& rhs_val = cond.rhs_val;
+                ColType col_type = index_meta_.cols[iter->second].type;
 
                 switch (cond.op) {
                     case OP_EQ: {
                         // 等值条件设置精确边界
                         memcpy(low_key + offset, rhs_val.raw->data, col_len);
                         memcpy(up_key + offset, rhs_val.raw->data, col_len);
-                        is_lower_close = true;
-                        is_upper_close = true;
                         break;
                     }
                     case OP_LT: {
+                        // 上界设置为条件值减1
                         memcpy(up_key + offset, rhs_val.raw->data, col_len);
-                        is_upper_close = false;
+                        decrement_key(up_key + offset, col_type, col_len);
                         break;
                     }
                     case OP_LE: {
+                        // 直接使用条件值作为上界
                         memcpy(up_key + offset, rhs_val.raw->data, col_len);
-                        is_upper_close = true;
                         break;
                     }
                     case OP_GT: {
+                        // 下界设置为条件值加1
                         memcpy(low_key + offset, rhs_val.raw->data, col_len);
-                        is_lower_close = false;
+                        increment_key(low_key + offset, col_type, col_len);
                         break;
                     }
                     case OP_GE: {
+                        // 直接使用条件值作为下界
                         memcpy(low_key + offset, rhs_val.raw->data, col_len);
-                        is_lower_close = true;
                         break;
                     }
                     default:
@@ -153,7 +151,60 @@ public:
             ++left;
         }
         fed_conds_.erase(left, fed_conds_.end());
-        return std::make_pair(is_lower_close, is_upper_close);
+    }
+
+    void increment_key(char* key, ColType type, int len) {
+        switch (type) {
+            case TYPE_INT: {
+                int& val = *reinterpret_cast<int*>(key);
+                val = (val == std::numeric_limits<int>::max()) ? val : val + 1;
+                break;
+            }
+            case TYPE_FLOAT: {
+                float& val = *reinterpret_cast<float*>(key);
+                val = std::nextafter(val, std::numeric_limits<float>::infinity());
+                break;
+            }
+            case TYPE_STRING: {
+                for (int i = len-1; i >= 0; --i) {
+                    if (key[i] < 0xFF) {
+                        ++key[i];
+                        break;
+                    }
+                }
+                break;
+            }
+            case TYPE_DATETIME:
+                // 日期类型不支持自增，保持原值
+                break;
+        }
+    }
+
+    void decrement_key(char* key, ColType type, int len) {
+        switch (type) {
+            case TYPE_INT: {
+                int& val = *reinterpret_cast<int*>(key);
+                val = (val == std::numeric_limits<int>::min()) ? val : val - 1;
+                break;
+            }
+            case TYPE_FLOAT: {
+                float& val = *reinterpret_cast<float*>(key);
+                val = std::nextafter(val, -std::numeric_limits<float>::infinity());
+                break;
+            }
+            case TYPE_STRING: {
+                for (int i = len-1; i >= 0; --i) {
+                    if (key[i] > 0) {
+                        --key[i];
+                        break;
+                    }
+                }
+                break;
+            }
+            case TYPE_DATETIME:
+                // 日期类型不支持自减，保持原值
+                break;
+        }
     }
 
     // bool check_point_query(const char* low_key, const char* up_key) const {

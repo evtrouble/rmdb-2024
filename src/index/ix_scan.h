@@ -31,9 +31,8 @@ class IxScan : public RecScan
 
 public:
     // node已加读锁，max_key生命周期由调用者保证
-    IxScan(const std::shared_ptr<IxIndexHandle>& ih, IxNodeHandle node, int start_pos, const std::string& max_key, bool close, BufferPoolManager *bpm)
-        : ih_(ih), node_(std::move(node)), pos_(start_pos), max_key_(std::move(max_key)), 
-            close_(close), bpm_(bpm) {
+    IxScan(const std::shared_ptr<IxIndexHandle>& ih, IxNodeHandle node, int start_pos, const std::string& max_key, BufferPoolManager *bpm)
+        : ih_(ih), node_(std::move(node)), pos_(start_pos), max_key_(std::move(max_key)), bpm_(bpm) {
         update_max_pos();
         if(is_end()) {
             ih_->unlock_shared(node_);
@@ -67,7 +66,7 @@ public:
 
 private:
     inline void update_max_pos() {
-        max_pos_ = close_ ? node_.upper_bound_adjust(max_key_.c_str()) : node_.lower_bound(max_key_.c_str());
+        max_pos_ = node_.upper_bound_adjust(max_key_.c_str());
         // max_pos_ = std::min(max_pos_, node_.get_size());
     }
 };
