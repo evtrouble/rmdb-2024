@@ -343,11 +343,12 @@ enum CompOp
 
 struct Condition
 {
-    TabCol lhs_col;  // left-hand side column
-    CompOp op;       // comparison operator
-    bool is_rhs_val; // true if right-hand side is a value (not a column)
-    TabCol rhs_col;  // right-hand side column
-    Value rhs_val;   // right-hand side value
+    TabCol lhs_col;        // left-hand side column
+    CompOp op;             // comparison operator
+    bool is_rhs_val;       // true if right-hand side is a value (not a column)
+    TabCol rhs_col;        // right-hand side column
+    Value rhs_val;         // right-hand side value
+    bool needSwap = false; // explain输出时使用
     // subquery
     // bool is_subquery = false;
     // std::shared_ptr<SubQuery> subQuery;

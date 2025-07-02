@@ -99,20 +99,57 @@ private:
     {
         std::string result;
 
-        // 左侧列名（必须包含表名前缀）
-        result += formatColumnName(cond.lhs_col, stmt, use_alias, use_raw);
+        // 如果需要交换，创建一个临时的条件对象
+        Condition working_cond = cond;
+
+        if (cond.needSwap)
+        {
+            // needSwap只有在两边都是列时才为true
+            // 如果右侧是值，按照设计不应该发生交换，保持原样
+            if (!cond.is_rhs_val)
+            {
+                // 两边都是列的情况：直接交换左右列
+                working_cond.lhs_col = cond.rhs_col;
+                working_cond.rhs_col = cond.lhs_col;
+
+                // 调整运算符
+                switch (cond.op)
+                {
+                case CompOp::OP_GT:
+                    working_cond.op = CompOp::OP_LT;
+                    break; // > 变 <
+                case CompOp::OP_LT:
+                    working_cond.op = CompOp::OP_GT;
+                    break; // < 变 >
+                case CompOp::OP_GE:
+                    working_cond.op = CompOp::OP_LE;
+                    break; // >= 变 <=
+                case CompOp::OP_LE:
+                    working_cond.op = CompOp::OP_GE;
+                    break; // <= 变 >=
+                // = 和 != 不需要反转
+                default:
+                    working_cond.op = cond.op;
+                    break;
+                }
+            }
+            // 如果右侧是值且needSwap为true，这种情况按设计不应该发生，保持原始条件
+        }
+
+        // 左侧列名（总是列，不会是值）
+        result += formatColumnName(working_cond.lhs_col, stmt, use_alias, use_raw);
 
         // 操作符
-        result += getOpString(cond.op);
+        result += getOpString(working_cond.op);
 
         // 右侧值或列名
-        if (cond.is_rhs_val)
+        if (working_cond.is_rhs_val)
         {
-            result += getValueString(cond.rhs_val, true);
+            result += getValueString(working_cond.rhs_val, true);
         }
         else
         {
-            result += formatColumnName(cond.rhs_col, stmt, use_alias, use_raw);
+            result += formatColumnName(working_cond.rhs_col, stmt, use_alias, use_raw);
         }
 
         return result;

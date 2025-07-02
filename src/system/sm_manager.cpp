@@ -583,13 +583,13 @@ void SmManager::load_csv_data(std::string &file_name, std::string &tab_name, Con
             case ColType::TYPE_INT:
             {
                 int value = parse_int(cell);
-                std::memcpy(rec.data + col.offset, &value, col.len);
+                *(reinterpret_cast<int *>(rec.data + col.offset)) = value;
                 break;
             }
             case ColType::TYPE_FLOAT:
             {
                 float value = parse_float(cell);
-                std::memcpy(rec.data + col.offset, &value, col.len);
+                *(reinterpret_cast<float *>(rec.data + col.offset)) = value;
                 break;
             }
             case ColType::TYPE_STRING:
@@ -621,7 +621,7 @@ void SmManager::load_csv_data(std::string &file_name, std::string &tab_name, Con
 
         // 添加写记录到事务日志 (参考Next方法)
         // context->txn_->append_write_record(new WriteRecord(WType::INSERT_TUPLE,
-                                                        //    tab_name, rid));
+        //    tab_name, rid));
 
         // 更新索引 (参考Next方法的索引更新逻辑)
         for (size_t id = 0; id < tab_.indexes.size(); id++)
@@ -651,7 +651,8 @@ void SmManager::load_csv_data(std::string &file_name, std::string &tab_name, Con
                 offset += index.cols[i].len;
             }
 
-            try{
+            try
+            {
                 // 插入索引条目
                 auto ih = get_index_handle(ix_manager_->get_index_name(tab_name, index.cols));
                 ih->insert_entry(key.get(), rid, context->txn_, true);
@@ -659,7 +660,6 @@ void SmManager::load_csv_data(std::string &file_name, std::string &tab_name, Con
             catch (IndexEntryAlreadyExistError &)
             {
             }
-            
         }
 
         // 记录日志 (参考Next方法)
@@ -668,4 +668,450 @@ void SmManager::load_csv_data(std::string &file_name, std::string &tab_name, Con
     }
 
     file.close();
+}
+// 完整的双缓冲CSV加载实现
+#include <vector>
+#include <string>
+#include <cstring>
+#include <algorithm>
+
+// 双缓冲方案主函数
+void SmManager::load_csv_data_double_buffer(std::string &file_name, std::string &tab_name, Context *context)
+{
+    const size_t BUFFER_SIZE = 1024 * 1024; // 1MB缓冲区
+
+    int fd = open(file_name.c_str(), O_RDONLY);
+    if (fd == -1)
+    {
+        throw RMDBError("Failed to open file: " + file_name);
+    }
+
+    // 双缓冲区
+    std::unique_ptr<char[]> buffer1(new char[BUFFER_SIZE + 1]); // +1 for null terminator
+    std::unique_ptr<char[]> buffer2(new char[BUFFER_SIZE + 1]);
+
+    char *read_buffer = buffer1.get();
+    char *process_buffer = buffer2.get();
+
+    auto tab_ = db_.get_table(tab_name);
+    auto fh_ = fhs_[tab_name].get();
+    TransactionManager *txn_mgr = context->txn_->get_txn_manager();
+
+    RmRecord rec(fh_->get_file_hdr().record_size);
+    int hidden_column_count = txn_mgr->get_hidden_column_count();
+
+    ssize_t bytes_read;
+    std::string leftover; // 处理跨缓冲区的行
+    bool first_chunk = true;
+    size_t total_records = 0;
+
+    // 预分配批处理容器以提高性能
+    std::vector<RmRecord> batch_records;
+    std::vector<Rid> batch_rids;
+    const size_t BATCH_SIZE = 500;
+    batch_records.reserve(BATCH_SIZE);
+    batch_rids.reserve(BATCH_SIZE);
+
+    std::cout << "开始加载CSV文件: " << file_name << std::endl;
+    auto start_time = std::chrono::high_resolution_clock::now();
+
+    while ((bytes_read = read(fd, read_buffer, BUFFER_SIZE)) > 0)
+    {
+        // 添加null终止符
+        read_buffer[bytes_read] = '\0';
+
+        // 交换缓冲区（这里是关键：一个读，一个处理）
+        std::swap(read_buffer, process_buffer);
+
+        // 处理当前缓冲区中的数据
+        size_t processed_records = process_buffer_chunk(
+            process_buffer, bytes_read, leftover, tab_,
+            hidden_column_count, context, first_chunk);
+
+        total_records += processed_records;
+        first_chunk = false;
+
+        // 每处理一定数量记录输出进度
+        if (total_records % 10000 == 0)
+        {
+            std::cout << "已处理记录数: " << total_records << std::endl;
+        }
+    }
+
+    // 处理剩余数据
+    if (!leftover.empty())
+    {
+        process_final_line(leftover, tab_, hidden_column_count, context);
+        total_records++;
+    }
+
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+
+    std::cout << "CSV加载完成！" << std::endl;
+    std::cout << "总记录数: " << total_records << std::endl;
+    std::cout << "耗时: " << duration.count() << " ms" << std::endl;
+    std::cout << "平均速度: " << (total_records * 1000.0 / duration.count()) << " 记录/秒" << std::endl;
+
+    close(fd);
+}
+
+// 处理缓冲区数据块
+size_t SmManager::process_buffer_chunk(char *buffer, size_t buffer_size,
+                                       std::string &leftover, const TabMeta &tab,
+                                       int hidden_column_count, Context *context,
+                                       bool skip_header)
+{
+    char *ptr = buffer;
+    char *end = buffer + buffer_size;
+    size_t processed_count = 0;
+
+    // 第一行如果是表头则跳过
+    bool header_skipped = !skip_header;
+
+    while (ptr < end)
+    {
+        // 找到一行的开始和结束
+        char *line_start = ptr;
+        char *line_end = ptr;
+
+        // 寻找行结束符
+        while (line_end < end && *line_end != '\n' && *line_end != '\r')
+        {
+            line_end++;
+        }
+
+        // 如果到达缓冲区末尾但没找到换行符，说明行被截断了
+        if (line_end >= end)
+        {
+            // 将剩余部分保存到leftover中，等待下次处理
+            size_t remaining_len = end - line_start;
+            if (leftover.empty())
+            {
+                leftover.assign(line_start, remaining_len);
+            }
+            else
+            {
+                leftover.append(line_start, remaining_len);
+            }
+            break;
+        }
+
+        // 构造完整的行（包括之前的leftover）
+        std::string complete_line;
+        if (!leftover.empty())
+        {
+            complete_line = leftover + std::string(line_start, line_end - line_start);
+            leftover.clear();
+        }
+        else
+        {
+            complete_line.assign(line_start, line_end - line_start);
+        }
+
+        // 跳过空行
+        if (complete_line.empty())
+        {
+            ptr = line_end + 1;
+            continue;
+        }
+
+        // 跳过表头
+        if (!header_skipped)
+        {
+            header_skipped = true;
+            ptr = line_end + 1;
+            continue;
+        }
+
+        // 处理这一行数据
+        try
+        {
+            process_csv_line(complete_line, tab, hidden_column_count, context);
+            processed_count++;
+        }
+        catch (const std::exception &e)
+        {
+            std::cerr << "处理CSV行时出错: " << e.what() << std::endl;
+            std::cerr << "问题行内容: " << complete_line << std::endl;
+            // 继续处理下一行，不中断整个加载过程
+        }
+
+        // 移动到下一行
+        ptr = line_end + 1;
+        // 跳过可能的 \r\n 中的 \n
+        if (ptr < end && *(ptr - 1) == '\r' && *ptr == '\n')
+        {
+            ptr++;
+        }
+    }
+
+    return processed_count;
+}
+
+// 处理单行CSV数据
+void SmManager::process_csv_line(const std::string &line, const TabMeta &tab,
+                                 int hidden_column_count, Context *context)
+{
+    auto fh_ = fhs_[tab.name].get();
+    TransactionManager *txn_mgr = context->txn_->get_txn_manager();
+
+    // 创建记录缓冲区
+    RmRecord rec(fh_->get_file_hdr().record_size);
+
+    // 解析CSV字段
+    std::vector<std::string> fields;
+    parse_csv_fields(line, fields);
+
+    // 检查字段数量是否匹配
+    size_t expected_fields = tab.cols.size() - hidden_column_count;
+    if (fields.size() != expected_fields)
+    {
+        throw RMDBError("CSV字段数量不匹配，期望: " + std::to_string(expected_fields) +
+                        ", 实际: " + std::to_string(fields.size()));
+    }
+
+    // 填充记录数据
+    for (size_t i = 0; i < fields.size(); ++i)
+    {
+        const auto &col = tab.cols[i + hidden_column_count];
+        const std::string &field_value = fields[i];
+
+        try
+        {
+            switch (col.type)
+            {
+            case ColType::TYPE_INT:
+            {
+                int value = parse_int_safe(field_value);
+                *(reinterpret_cast<int *>(rec.data + col.offset)) = value;
+                break;
+            }
+            case ColType::TYPE_FLOAT:
+            {
+                float value = parse_float_safe(field_value);
+                *(reinterpret_cast<float *>(rec.data + col.offset)) = value;
+                break;
+            }
+            case ColType::TYPE_STRING:
+            {
+                // 处理字符串字段，确保不超出长度限制
+                size_t copy_len = std::min(field_value.length(), static_cast<size_t>(col.len));
+                std::memcpy(rec.data + col.offset, field_value.c_str(), copy_len);
+                // 如果字符串较短，用0填充剩余空间
+                if (copy_len < col.len)
+                {
+                    std::memset(rec.data + col.offset + copy_len, 0, col.len - copy_len);
+                }
+                break;
+            }
+            case ColType::TYPE_DATETIME:
+            {
+                // 日期时间字段处理
+                size_t copy_len = std::min(field_value.length(), static_cast<size_t>(col.len));
+                std::memcpy(rec.data + col.offset, field_value.c_str(), copy_len);
+                if (copy_len < col.len)
+                {
+                    std::memset(rec.data + col.offset + copy_len, 0, col.len - copy_len);
+                }
+                break;
+            }
+            default:
+                throw RMDBError("不支持的列类型");
+            }
+        }
+        catch (const std::exception &e)
+        {
+            throw RMDBError("解析字段 '" + col.name + "' 时出错: " + e.what() +
+                            ", 值: '" + field_value + "'");
+        }
+    }
+
+    // 设置事务ID
+    txn_mgr->set_record_txn_id(rec.data, context->txn_, false);
+
+    // 插入记录到文件
+    Rid rid = fh_->insert_record(rec.data, context);
+
+    // 更新所有索引
+    update_indexes_for_record(rec, rid, tab, context);
+}
+
+// 解析CSV字段（处理引号和转义）
+void SmManager::parse_csv_fields(const std::string &line, std::vector<std::string> &fields)
+{
+    fields.clear();
+
+    size_t pos = 0;
+    size_t len = line.length();
+
+    while (pos < len)
+    {
+        std::string field;
+
+        // 跳过前导空白
+        while (pos < len && (line[pos] == ' ' || line[pos] == '\t'))
+        {
+            pos++;
+        }
+
+        if (pos >= len)
+            break;
+
+        // 检查是否以引号开始
+        if (line[pos] == '"')
+        {
+            pos++; // 跳过开始引号
+
+            // 处理带引号的字段
+            while (pos < len)
+            {
+                if (line[pos] == '"')
+                {
+                    // 检查是否是转义的引号
+                    if (pos + 1 < len && line[pos + 1] == '"')
+                    {
+                        field += '"';
+                        pos += 2;
+                    }
+                    else
+                    {
+                        // 字段结束
+                        pos++;
+                        break;
+                    }
+                }
+                else
+                {
+                    field += line[pos];
+                    pos++;
+                }
+            }
+
+            // 跳过到下一个逗号
+            while (pos < len && line[pos] != ',')
+            {
+                pos++;
+            }
+        }
+        else
+        {
+            // 处理普通字段
+            while (pos < len && line[pos] != ',')
+            {
+                field += line[pos];
+                pos++;
+            }
+        }
+
+        // 移除尾部空白
+        while (!field.empty() && (field.back() == ' ' || field.back() == '\t'))
+        {
+            field.pop_back();
+        }
+
+        fields.push_back(field);
+
+        // 跳过逗号
+        if (pos < len && line[pos] == ',')
+        {
+            pos++;
+        }
+    }
+}
+
+// 处理文件末尾的剩余行
+void SmManager::process_final_line(const std::string &leftover, const TabMeta &tab,
+                                   int hidden_column_count, Context *context)
+{
+    if (leftover.empty())
+        return;
+
+    try
+    {
+        process_csv_line(leftover, tab, hidden_column_count, context);
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << "处理最后一行时出错: " << e.what() << std::endl;
+        std::cerr << "行内容: " << leftover << std::endl;
+    }
+}
+
+// 安全的整数解析
+int SmManager::parse_int_safe(const std::string &str)
+{
+    if (str.empty())
+        return 0;
+
+    try
+    {
+        size_t pos;
+        int value = std::stoi(str, &pos);
+        if (pos != str.length())
+        {
+            throw std::invalid_argument("包含非数字字符");
+        }
+        return value;
+    }
+    catch (const std::exception &e)
+    {
+        throw std::invalid_argument("无法解析整数: " + str);
+    }
+}
+
+// 安全的浮点数解析
+float SmManager::parse_float_safe(const std::string &str)
+{
+    if (str.empty())
+        return 0.0f;
+
+    try
+    {
+        size_t pos;
+        float value = std::stof(str, &pos);
+        if (pos != str.length())
+        {
+            throw std::invalid_argument("包含非数字字符");
+        }
+        return value;
+    }
+    catch (const std::exception &e)
+    {
+        throw std::invalid_argument("无法解析浮点数: " + str);
+    }
+}
+
+// 为记录更新所有索引
+void SmManager::update_indexes_for_record(const RmRecord &rec, const Rid &rid,
+                                          const TabMeta &tab, Context *context)
+{
+    for (const auto &index : tab.indexes)
+    {
+        std::unique_ptr<char[]> key(new char[index.col_tot_len]);
+        int offset = 0;
+
+        // 构造索引键
+        for (int i = 0; i < index.col_num; ++i)
+        {
+            // 找到索引列在表中的位置
+            auto col_iter = tab.cols_map.find(index.cols[i].name);
+            if (col_iter != tab.cols_map.end())
+            {
+                const auto &col = tab.cols[col_iter->second];
+                std::memcpy(key.get() + offset, rec.data + col.offset, index.cols[i].len);
+            }
+            offset += index.cols[i].len;
+        }
+
+        try
+        {
+            auto ih = get_index_handle(ix_manager_->get_index_name(tab.name, index.cols));
+            ih->insert_entry(key.get(), rid, context->txn_, true);
+        }
+        catch (IndexEntryAlreadyExistError &)
+        {
+            // 忽略重复键错误，继续处理
+        }
+    }
 }
