@@ -786,6 +786,8 @@ Value Analyze::convert_value_type(const Value &value, ColType target_type)
         }
         // TODO: Implement datetime conversion if needed
         break;
+    case TYPE_DATETIME:
+        break;
     }
 
     return result;

@@ -283,15 +283,15 @@ IxNodeHandle IxIndexHandle::find_leaf_page(const char *key, Operation operation,
         {
             if (node.is_leaf_page() && operation != Operation::FIND)
             {
-                node.page->latch_.lock();
+                node.page->lock();
                 transaction->append_index_latch_page_set(node.page);
             }
             else
-                node.page->latch_.lock_shared();
+                node.page->lock_shared();
 
             if (prev_page != nullptr)
             {
-                prev_page->latch_.unlock_shared();
+                prev_page->unlock_shared();
                 ix_manager_->buffer_pool_manager_->unpin_page(prev_page->get_page_id(), false);
             }
             else
@@ -302,10 +302,10 @@ IxNodeHandle IxIndexHandle::find_leaf_page(const char *key, Operation operation,
             if (node.is_leaf_page() && operation == Operation::DELETE && prev_id > 0)
             {
                 auto left_sibling = fetch_node(prev_node.value_at(prev_id - 1));
-                left_sibling.page->latch_.lock();
+                left_sibling.page->lock();
                 transaction->append_index_latch_page_set(left_sibling.page);
             }
-            node.page->latch_.lock();
+            node.page->lock();
             if (node.is_safe(operation))
                 release_all_xlock(transaction->get_index_latch_page_set(), false);
             transaction->append_index_latch_page_set(node.page);
@@ -539,7 +539,7 @@ bool IxIndexHandle::coalesce_or_redistribute_internal(IxNodeHandle &node, Transa
         neighbor_node = fetch_node(parent_node.get_rid(idx - 1)->page_no);
     else
         neighbor_node = fetch_node(parent_node.get_rid(idx + 1)->page_no);
-    neighbor_node.page->latch_.lock();
+    neighbor_node.page->lock();
 
     BufferPoolManager *buffer_pool_manager_ = ix_manager_->buffer_pool_manager_;
     // 4. 如果node结点和兄弟结点的键值对数量之和，能够支撑两个B+树结点（即node.size+neighbor.size >=
@@ -547,7 +547,7 @@ bool IxIndexHandle::coalesce_or_redistribute_internal(IxNodeHandle &node, Transa
     if (node.page_hdr->num_key + neighbor_node.page_hdr->num_key >= (node.get_min_size() << 1))
     {
         redistribute(neighbor_node, node, parent_node, idx);
-        neighbor_node.page->latch_.unlock();
+        neighbor_node.page->unlock();
         buffer_pool_manager_->unpin_page(neighbor_node.get_page_id(), true);
         buffer_pool_manager_->unpin_page(parent_node.get_page_id(), false);
         return false;
@@ -555,7 +555,7 @@ bool IxIndexHandle::coalesce_or_redistribute_internal(IxNodeHandle &node, Transa
     // 5. 如果不满足上述条件，则需要合并两个结点，将右边的结点合并到左边的结点（调用Coalesce函数）
     coalesce(neighbor_node, node, parent_node, idx, transaction);
 
-    neighbor_node.page->latch_.unlock();
+    neighbor_node.page->unlock();
     buffer_pool_manager_->unpin_page(parent_node.get_page_id(), true);
     buffer_pool_manager_->unpin_page(neighbor_node.get_page_id(), true);
     return true;
@@ -596,7 +596,7 @@ bool IxIndexHandle::coalesce_or_redistribute(IxNodeHandle &node, Transaction *tr
     else
     {
         neighbor_node = fetch_node(parent_node.get_rid(idx + 1)->page_no);
-        neighbor_node.page->latch_.lock();
+        neighbor_node.page->lock();
     }
 
     BufferPoolManager *buffer_pool_manager_ = ix_manager_->buffer_pool_manager_;
@@ -606,7 +606,7 @@ bool IxIndexHandle::coalesce_or_redistribute(IxNodeHandle &node, Transaction *tr
     {
         redistribute(neighbor_node, node, parent_node, idx);
         if(idx == 0)
-            neighbor_node.page->latch_.unlock();
+            neighbor_node.page->unlock();
         buffer_pool_manager_->unpin_page(neighbor_node.get_page_id(), true);
         buffer_pool_manager_->unpin_page(parent_node.get_page_id(), false);
         return false;
@@ -615,7 +615,7 @@ bool IxIndexHandle::coalesce_or_redistribute(IxNodeHandle &node, Transaction *tr
     coalesce(neighbor_node, node, parent_node, idx, transaction);
 
     if(idx == 0)
-        neighbor_node.page->latch_.unlock();
+        neighbor_node.page->unlock();
     buffer_pool_manager_->unpin_page(parent_node.get_page_id(), true);
     buffer_pool_manager_->unpin_page(neighbor_node.get_page_id(), true);
     return true;
@@ -762,7 +762,7 @@ std::pair<IxNodeHandle, int> IxIndexHandle::lower_bound(const char *key)
     if (key_idx >= node.page_hdr->num_key && node.get_next_leaf() != IX_LEAF_HEADER_PAGE)
     {
         auto next_node = fetch_node(node.get_next_leaf());
-        next_node.page->latch_.lock_shared();
+        next_node.page->lock_shared();
         unlock_shared(node);
         return std::make_pair(next_node, 0);
     }
@@ -784,7 +784,7 @@ std::pair<IxNodeHandle, int> IxIndexHandle::upper_bound(const char *key)
     if (key_idx >= node.page_hdr->num_key && node.get_next_leaf() != IX_LEAF_HEADER_PAGE)
     {
         auto next_node = fetch_node(node.get_next_leaf());
-        next_node.page->latch_.lock_shared();
+        next_node.page->lock_shared();
         unlock_shared(node);
         return std::make_pair(next_node, 0);
     }
@@ -807,10 +807,10 @@ std::pair<IxNodeHandle, int> IxIndexHandle::upper_bound(const char *key)
 //     while (true)
 //     {
 //         node = fetch_node(next_page_id);
-//         node.page->latch_.lock_shared();
+//         node.page->lock_shared();
 //         if (prev_page != nullptr)
 //         {
-//             prev_page->latch_.unlock_shared();
+//             prev_page->unlock_shared();
 //             ix_manager_->buffer_pool_manager_->unpin_page(prev_page->get_page_id(), false);
 //         }
 //         else
@@ -843,10 +843,10 @@ std::pair<IxNodeHandle, int> IxIndexHandle::upper_bound(const char *key)
 //     while (true)
 //     {
 //         node = fetch_node(next_page_id);
-//         node.page->latch_.lock_shared();
+//         node.page->lock_shared();
 //         if (prev_page != nullptr)
 //         {
-//             prev_page->latch_.unlock_shared();
+//             prev_page->unlock_shared();
 //             ix_manager_->buffer_pool_manager_->unpin_page(prev_page->get_page_id(), false);
 //         }
 //         else
@@ -946,7 +946,7 @@ void IxIndexHandle::release_all_xlock(std::shared_ptr<std::deque<Page *>> page_s
         }
         else
         {
-            node->latch_.unlock();
+            node->unlock();
             buffer_pool_manager_->unpin_page(node->get_page_id(), dirty);
         }
     }
@@ -954,11 +954,11 @@ void IxIndexHandle::release_all_xlock(std::shared_ptr<std::deque<Page *>> page_s
 
 void IxIndexHandle::lock_shared(IxNodeHandle &node)
 {
-    node.page->latch_.lock_shared();
+    node.page->lock_shared();
 }
 
 void IxIndexHandle::unlock_shared(IxNodeHandle &node) const
 {
-    node.page->latch_.unlock_shared();
+    node.page->unlock_shared();
     ix_manager_->buffer_pool_manager_->unpin_page(node.get_page_id(), false);
 }

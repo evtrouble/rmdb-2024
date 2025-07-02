@@ -32,6 +32,9 @@ void IxScan::next_batch() {
     node_ = std::move(new_node);
     pos_ = 0;
     update_max_pos();
+    if(is_end()) {
+        ih_->unlock_shared(node_);
+    }
 }
 
 std::vector<Rid> IxScan::rid_batch() const {

@@ -66,6 +66,20 @@ public:
 
     ~Page() = default;
 
+    inline void lock() {
+        // std::cout << id_.page_no<<" is lock\n";
+        latch_.lock();
+    }
+    inline void lock_shared() { 
+        // std::cout << id_.page_no<<" is lock share\n";
+        latch_.lock_shared(); }
+    inline void unlock() { 
+        // std::cout << id_.page_no<<" is unlock\n";
+        latch_.unlock(); }
+    inline void unlock_shared() { 
+        // std::cout << id_.page_no<<" is unlock share\n";
+        latch_.unlock_shared(); }
+
     PageId get_page_id() const { return id_; }
 
     inline char *get_data() { return data_; }
