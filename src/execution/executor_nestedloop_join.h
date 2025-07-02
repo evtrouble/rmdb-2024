@@ -31,7 +31,29 @@ private:
     size_t right_batch_index_ = 0;
     bool is_end_ = false;
     bool is_initialized_ = false;
-
+    void adjust_join_conditions(std::vector<Condition>& join_conds)
+    {
+        std::unordered_set<std::string> right_cols_set_;
+        for (const auto &col : right_->cols())
+        {
+            right_cols_set_.insert(col.tab_name + "." + col.name);
+        }
+        for (auto& cond : join_conds) {
+            if (cond.is_rhs_val) continue;
+            std::string lhs_col_full_name = cond.lhs_col.tab_name + "." + cond.lhs_col.col_name;
+            if (right_cols_set_.find(lhs_col_full_name) != right_cols_set_.end()) {
+                std::swap(cond.lhs_col, cond.rhs_col);
+                switch (cond.op) {
+                    case CompOp::OP_GT: cond.op = CompOp::OP_LT; break; // > 变 <
+                    case CompOp::OP_LT: cond.op = CompOp::OP_GT; break; // < 变 >
+                    case CompOp::OP_GE: cond.op = CompOp::OP_LE; break; // >= 变 <=
+                    case CompOp::OP_LE: cond.op = CompOp::OP_GE; break; // <= 变 >=
+                    // = 和 != 不需要反转
+                    default: break;
+                }
+            }
+        }
+    }
     // 检查连接条件
     bool check_cond(const std::unique_ptr<RmRecord>& left_rec, 
                    const std::unique_ptr<RmRecord>& right_rec,
@@ -90,6 +112,7 @@ public:
         for (size_t i = right_start; i < cols_.size(); ++i) {
             cols_[i].offset += left_tupleLen;
         }
+        adjust_join_conditions(fed_conds_);
     }
 
     // 初始化执行器状态

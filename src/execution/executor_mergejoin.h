@@ -29,6 +29,30 @@ private:
     size_t left_idx_ = 0;                      // 左表当前索引
     size_t right_idx_ = 0;                     // 右表当前索引
     bool is_end_ = false;                      // 是否结束
+
+    void adjust_join_conditions(std::vector<Condition>& join_conds)
+    {
+        std::unordered_set<std::string> right_cols_set_;
+        for (const auto &col : right_->cols())
+        {
+            right_cols_set_.insert(col.tab_name + "." + col.name);
+        }
+        for (auto& cond : join_conds) {
+            if (cond.is_rhs_val) continue;
+            std::string lhs_col_full_name = cond.lhs_col.tab_name + "." + cond.lhs_col.col_name;
+            if (right_cols_set_.find(lhs_col_full_name) != right_cols_set_.end()) {
+                std::swap(cond.lhs_col, cond.rhs_col);
+                switch (cond.op) {
+                    case CompOp::OP_GT: cond.op = CompOp::OP_LT; break; // > 变 <
+                    case CompOp::OP_LT: cond.op = CompOp::OP_GT; break; // < 变 >
+                    case CompOp::OP_GE: cond.op = CompOp::OP_LE; break; // >= 变 <=
+                    case CompOp::OP_LE: cond.op = CompOp::OP_GE; break; // <= 变 >=
+                    // = 和 != 不需要反转
+                    default: break;
+                }
+            }
+        }
+    }
     
     // 获取左表键值
     std::unique_ptr<RmRecord> get_left_key(size_t idx) {
@@ -94,7 +118,7 @@ public:
             col.offset += left_->tupleLen();
         }
         cols_.insert(cols_.end(), right_cols.begin(), right_cols.end());
-        
+        adjust_join_conditions(fed_conds_);
         // 初始化时缓存所有数据
         cache_all_data();
     }
