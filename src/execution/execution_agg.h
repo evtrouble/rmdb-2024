@@ -184,6 +184,69 @@ public:
                 }
             }
         }
+        // 初始化 ORDER BY 列元数据
+        for (const auto &col : order_by_cols_)
+        {
+            // 如果是 GROUP BY 列，直接使用已有的元数据
+            auto group_by_it = std::find_if(group_by_cols_.begin(), group_by_cols_.end(),
+                                            [&col](const TabCol &group_col)
+                                            {
+                                                return col.tab_name == group_col.tab_name && col.col_name == group_col.col_name;
+                                            });
+
+            if (group_by_it != group_by_cols_.end())
+            {
+                // 如果是 GROUP BY 列，复用其元数据
+                auto temp = get_col(child_executor_->cols(), col);
+                order_by_col_metas_.emplace_back(std::move(temp));
+            }
+            else
+            {
+                // 检查是否是 SELECT 列
+                auto sel_it = std::find_if(sel_cols_.begin(), sel_cols_.end(),
+                                           [&col](const TabCol &sel_col)
+                                           {
+                                               return col.tab_name == sel_col.tab_name && col.col_name == sel_col.col_name;
+                                           });
+
+                if (sel_it != sel_cols_.end())
+                {
+                    // 如果是 SELECT 列，复用其元数据
+                    auto temp = get_col(child_executor_->cols(), col);
+                    order_by_col_metas_.emplace_back(std::move(temp));
+                }
+                else
+                {
+                    // 如果是新的聚合列，需要额外处理
+                    if (col.aggFuncType != ast::AggFuncType::NO_TYPE)
+                    {
+                        // 处理新的聚合列
+                        ColMeta col_meta;
+                        if (ast::AggFuncType::COUNT == col.aggFuncType)
+                        {
+                            col_meta = {col.tab_name, col.col_name, TYPE_INT, sizeof(int), 0};
+                        }
+                        else if (ast::AggFuncType::AVG == col.aggFuncType)
+                        {
+                            col_meta = {col.tab_name, col.col_name, TYPE_STRING, 20, 0};
+                        }
+                        else
+                        {
+                            auto temp = get_col(child_executor_->cols(), col);
+                            col_meta = *temp;
+                        }
+                        order_by_col_metas_.emplace_back(output_cols_.begin());
+                    }
+                    else
+                    {
+                        throw std::runtime_error("Order by column not found in GROUP BY or SELECT columns");
+                    }
+                }
+            }
+        }
+        // 初始化 ORDER BY 聚合值
+        order_by_agg_groups_.clear();
+        order_by_avg_states_.clear();
     }
 
     size_t tupleLen() const override { return TupleLen; }
@@ -252,6 +315,8 @@ private:
         avg_states_.clear();
         having_lhs_avg_states_.clear();
         having_rhs_avg_states_.clear();
+        order_by_agg_groups_.clear();
+        order_by_avg_states_.clear();
         insert_order_.clear();
         results_.clear();
         current_group_index_ = 0;
@@ -560,6 +625,19 @@ void AggExecutor::aggregate_batch(const std::vector<RmRecord> &records)
         aggregate_values(agg_values, avg_states, sel_cols_, sel_col_metas_, record);
         aggregate_values(having_lhs_agg_values, having_lhs_avg_states, having_lhs_cols_, having_lhs_col_metas_, record);
         aggregate_values(having_rhs_agg_values, having_rhs_avg_states, having_rhs_cols_, having_rhs_col_metas_, record);
+        // 增加 ORDER BY 列的聚合处理
+        auto &order_by_agg_values = order_by_agg_groups_[group_key];
+        auto &order_by_avg_states = order_by_avg_states_[group_key];
+
+        if (order_by_agg_values.empty())
+        {
+            order_by_agg_values.resize(order_by_cols_.size());
+            order_by_avg_states.resize(order_by_cols_.size());
+
+            init(order_by_agg_values, order_by_cols_, record);
+        }
+
+        aggregate_values(order_by_agg_values, order_by_avg_states, order_by_cols_, order_by_col_metas_, record);
     }
 }
 
@@ -705,6 +783,16 @@ void AggExecutor::generate_results_batch(size_t batch_size)
                 agg_values[i].export_val(record.data + offset, output_cols_[i].len);
                 offset += output_cols_[i].len;
             }
+            // 写入 ORDER BY 列的值
+            auto &order_by_agg_values = order_by_agg_groups_[group_key];
+            auto &order_by_avg_states = order_by_avg_states_[group_key];
+            avg_calculate(order_by_cols_, order_by_avg_states, order_by_agg_values);
+            for (size_t i = 0; i < order_by_cols_.size(); ++i)
+            {
+                order_by_agg_values[i].export_val(record.data + offset, output_cols_[sel_cols_.size() + i].len);
+                offset += output_cols_[sel_cols_.size() + i].len;
+            }
+
             results_.push_back(std::move(record));
             count++;
         }
