@@ -298,63 +298,14 @@ std::shared_ptr<Plan> create_ordered_join(
     const std::vector<Condition> &join_conds)
 {
     // 根据排序规则决定左右子树
-    bool is_plan1_left = should_left_come_first(plan1, plan2);
-    auto left_plan = is_plan1_left ? plan1 : plan2;
-    auto right_plan = is_plan1_left ? plan2 : plan1;
-
-    // 提取左右表的表名
-    auto left_scan = extract_scan_plan(left_plan);
-    auto right_scan = extract_scan_plan(right_plan);
-    const std::string &left_tab = left_scan->tab_name_;
-    const std::string &right_tab = right_scan->tab_name_;
-
-    // 调整连接条件，确保左列属于左表，右列属于右表
-    std::vector<Condition> adjusted_conds;
-    for (const auto &cond : join_conds)
+    if (should_left_come_first(plan1, plan2))
     {
-        Condition new_cond = cond;
-
-        // 如果条件的左右列与表的左右顺序相反
-        if (cond.lhs_col.tab_name == right_tab && cond.rhs_col.tab_name == left_tab)
-        {
-            // 交换左右列
-            std::swap(new_cond.lhs_col, new_cond.rhs_col);
-            new_cond.needSwap = true;
-            // 反转比较运算符（仅对需要反转的运算符）
-            switch (cond.op)
-            {
-            case CompOp::OP_GT:
-                new_cond.op = CompOp::OP_LT;
-                break; // > 变 <
-            case CompOp::OP_LT:
-                new_cond.op = CompOp::OP_GT;
-                break; // < 变 >
-            case CompOp::OP_GE:
-                new_cond.op = CompOp::OP_LE;
-                break; // >= 变 <=
-            case CompOp::OP_LE:
-                new_cond.op = CompOp::OP_GE;
-                break; // <= 变 >=
-            // = 和 != 不需要反转
-            default:
-                break;
-            }
-        }
-        adjusted_conds.push_back(new_cond);
+        return std::make_shared<JoinPlan>(join_type, plan1, plan2, join_conds);
     }
-    // 创建 JoinPlan
-    if (join_type == T_SortMerge)
+    else
     {
-        if (left_scan->tag != T_IndexScan)
-        {
-            left_plan = std::make_shared<SortPlan>(T_Sort, std::move(left_plan), adjusted_conds[0].lhs_col, false);
-        }
-        if (right_scan->tag != T_IndexScan)
-        {
-            right_plan = std::make_shared<SortPlan>(T_Sort, std::move(right_plan), adjusted_conds[0].rhs_col, false);
-        }
+        return std::make_shared<JoinPlan>(join_type, plan2, plan1, join_conds);
     }
-    return std::make_shared<JoinPlan>(join_type, left_plan, right_plan, adjusted_conds);
 }
 void QueryColumnRequirement::calculate_layered_requirements()
 {
