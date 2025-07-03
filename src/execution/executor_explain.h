@@ -280,12 +280,12 @@ private:
                 result += indent_str + "Filter(condition=[" + formatSortedList(conditions) + "])\n";
 
                 // Scan节点
-                std::string scan_type = (plan->tag == T_SeqScan) ? "Scan" : "IndexScan";
+                std::string scan_type = (plan->tag == T_SeqScan) ? "Scan" : "Scan";
                 result += std::string(depth + 1, '\t') + scan_type + "(table=" + display_name + ")\n";
             }
             else
             {
-                std::string scan_type = (plan->tag == T_SeqScan) ? "Scan" : "IndexScan";
+                std::string scan_type = (plan->tag == T_SeqScan) ? "Scan" : "Scan";
                 result += indent_str + scan_type + "(table=" + display_name + ")\n";
             }
             break;
