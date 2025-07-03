@@ -480,66 +480,6 @@ std::vector<Condition> pop_conds(std::vector<Condition> &conds, std::string &tab
     return solved_conds;
 }
 
-int push_conds(Condition *cond, std::shared_ptr<Plan> plan)
-{
-    switch (plan->tag)
-    {
-    case PlanTag::T_IndexScan:
-    case PlanTag::T_SeqScan:
-    {
-        auto x = std::static_pointer_cast<ScanPlan>(plan);
-        if (x->tab_name_.compare(cond->lhs_col.tab_name) == 0)
-            return 1;
-        else if (x->tab_name_.compare(cond->rhs_col.tab_name) == 0)
-            return 2;
-        return 0;
-    }
-    case PlanTag::T_NestLoop:
-    case PlanTag::T_SortMerge:
-    {
-        auto x = std::static_pointer_cast<JoinPlan>(plan);
-        int left_res = push_conds(cond, x->left_);
-        // 条件已经下推到左子节点
-        if (left_res == 3)
-            return 3;
-        int right_res = push_conds(cond, x->right_);
-        // 条件已经下推到右子节点
-        if (right_res == 3)
-            return 3;
-        // 左子节点或右子节点有一个没有匹配到条件的列
-        if (left_res == 0 || right_res == 0)
-            return left_res + right_res;
-        // 左子节点匹配到条件的右边
-        if (left_res == 2)
-        {
-            // 需要将左右两边的条件变换位置
-            std::swap(cond->lhs_col, cond->rhs_col);
-            cond->op = swap_op.at(cond->op);
-        }
-        x->conds_.emplace_back(std::move(*cond));
-        return 3;
-    }
-    default:
-        return false;
-    }
-}
-
-std::shared_ptr<Plan> pop_scan(int *scantbl, std::string &table, std::unordered_set<std::string> &joined_tables,
-                               std::vector<std::shared_ptr<Plan>> plans)
-{
-    for (size_t i = 0; i < plans.size(); ++i)
-    {
-        auto x = std::static_pointer_cast<ScanPlan>(plans[i]);
-        if (x->tab_name_.compare(table) == 0)
-        {
-            scantbl[i] = 1;
-            joined_tables.emplace(x->tab_name_);
-            return plans[i];
-        }
-    }
-    return nullptr;
-}
-
 std::shared_ptr<Query> Planner::logical_optimization(std::shared_ptr<Query> query, Context *context)
 {
     if (query->parse->Nodetype() == ast::TreeNodeType::SelectStmt)
@@ -1110,10 +1050,13 @@ std::shared_ptr<Plan> Planner::do_planner(std::shared_ptr<Query> query, Context 
         std::shared_ptr<Plan> table_scan_executors;
         // 只有一张表，不需要进行物理优化了
         // int index_no = get_indexNo(x->tab_name, query->conds);
-        if(sm_manager_->get_table_handle(x->tab_name)->get_approximate_num() < BASELINE) {
+        if (sm_manager_->get_table_handle(x->tab_name)->get_approximate_num() < BASELINE)
+        {
             table_scan_executors =
                 std::make_shared<ScanPlan>(T_SeqScan, sm_manager_, x->tab_name, query->conds);
-        } else {
+        }
+        else
+        {
             auto [index_meta, max_match_col_count] = get_index_cols(x->tab_name, query->conds);
 
             if (index_meta == nullptr)
@@ -1138,10 +1081,13 @@ std::shared_ptr<Plan> Planner::do_planner(std::shared_ptr<Query> query, Context 
         std::shared_ptr<Plan> table_scan_executors;
         // 只有一张表，不需要进行物理优化了
         // int index_no = get_indexNo(x->tab_name, query->conds);
-        if(sm_manager_->get_table_handle(x->tab_name)->get_approximate_num() < BASELINE) {
+        if (sm_manager_->get_table_handle(x->tab_name)->get_approximate_num() < BASELINE)
+        {
             table_scan_executors =
                 std::make_shared<ScanPlan>(T_SeqScan, sm_manager_, x->tab_name, query->conds);
-        } else {
+        }
+        else
+        {
             auto [index_meta, max_match_col_count] = get_index_cols(x->tab_name, query->conds);
 
             if (index_meta == nullptr)
