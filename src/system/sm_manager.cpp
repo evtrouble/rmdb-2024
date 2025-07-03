@@ -678,6 +678,7 @@ void SmManager::load_csv_data(std::string &file_name, std::string &tab_name, Con
 // 双缓冲方案主函数
 void SmManager::load_csv_data_double_buffer(std::string &file_name, std::string &tab_name, Context *context)
 {
+
     const size_t BUFFER_SIZE = 1024 * 1024; // 1MB缓冲区
 
     int fd = open(file_name.c_str(), O_RDONLY);
@@ -1112,6 +1113,379 @@ void SmManager::update_indexes_for_record(const RmRecord &rec, const Rid &rid,
         catch (IndexEntryAlreadyExistError &)
         {
             // 忽略重复键错误，继续处理
+        }
+    }
+}
+void SmManager::load_csv_data_threaded(std::string &file_name, std::string &tab_name, Context *context)
+{
+    const size_t BUFFER_SIZE = 1024 * 1024; // 1MB缓冲区
+    const size_t MAX_QUEUE_SIZE = 5;        // 最大队列长度，控制内存使用
+
+    // 创建线程安全队列
+    ThreadSafeQueue data_queue;
+
+    std::cout << "开始双线程加载CSV文件: " << file_name << std::endl;
+    auto start_time = std::chrono::high_resolution_clock::now();
+
+    // 启动读取线程
+    std::thread reader_thread([this, &file_name, &data_queue, BUFFER_SIZE]()
+                              {
+        try {
+            reader_thread_func(file_name, data_queue, BUFFER_SIZE);
+        } catch (...) {
+            data_queue.set_exception(std::current_exception());
+        } });
+
+    // 启动处理线程
+    std::thread processor_thread([this, &data_queue, &tab_name, context]()
+                                 {
+        try {
+            processor_thread_func(data_queue, tab_name, context);
+        } catch (...) {
+            data_queue.set_exception(std::current_exception());
+        } });
+
+    // 等待两个线程完成
+    reader_thread.join();
+    processor_thread.join();
+
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+
+    std::cout << "双线程CSV加载完成！" << std::endl;
+    std::cout << "耗时: " << duration.count() << " ms" << std::endl;
+}
+
+void SmManager::reader_thread_func(const std::string &file_name, ThreadSafeQueue &queue, const size_t buffer_size)
+{
+    int fd = open(file_name.c_str(), O_RDONLY);
+    if (fd == -1)
+    {
+        throw RMDBError("Failed to open file: " + file_name);
+    }
+
+    // 创建读取缓冲区
+    std::unique_ptr<char[]> read_buffer(new char[buffer_size]);
+    ssize_t bytes_read;
+    size_t total_read = 0;
+
+    std::cout << "[读取线程] 开始读取文件..." << std::endl;
+
+    while ((bytes_read = read(fd, read_buffer.get(), buffer_size)) > 0)
+    {
+        // 创建数据块
+        auto chunk = std::make_shared<DataChunk>(buffer_size);
+
+        // 复制数据到chunk
+        std::memcpy(chunk->data.get(), read_buffer.get(), bytes_read);
+        chunk->size = bytes_read;
+        chunk->data[bytes_read] = '\0'; // null终止符
+
+        // 将数据块放入队列
+        queue.push(chunk);
+
+        total_read += bytes_read;
+
+        // 控制队列大小，避免内存使用过多
+        std::this_thread::sleep_for(std::chrono::microseconds(10));
+    }
+
+    // 发送结束标志
+    auto final_chunk = std::make_shared<DataChunk>();
+    final_chunk->is_final = true;
+    queue.push(final_chunk);
+    queue.set_finished();
+
+    close(fd);
+    std::cout << "[读取线程] 文件读取完成，总计: " << total_read << " 字节" << std::endl;
+}
+
+void SmManager::processor_thread_func(ThreadSafeQueue &queue, const std::string &tab_name, Context *context)
+{
+    auto tab_ = db_.get_table(tab_name);
+    auto fh_ = fhs_[tab_name].get();
+    TransactionManager *txn_mgr = context->txn_->get_txn_manager();
+    int hidden_column_count = txn_mgr->get_hidden_column_count();
+
+    std::string leftover; // 处理跨缓冲区的行
+    bool first_chunk = true;
+    size_t total_records = 0;
+
+    std::cout << "[处理线程] 开始处理数据..." << std::endl;
+
+    while (true)
+    {
+        // 从队列获取数据块
+        auto chunk = queue.pop();
+
+        if (!chunk)
+        {
+            break; // 队列已空且读取线程已完成
+        }
+
+        if (chunk->is_final)
+        {
+            break; // 收到结束标志
+        }
+
+        // 处理这个数据块
+        size_t processed_records = process_buffer_chunk_threaded(
+            chunk->data.get(), chunk->size, leftover, tab_,
+            hidden_column_count, context, first_chunk);
+
+        total_records += processed_records;
+        first_chunk = false;
+
+        // 每处理一定数量记录输出进度
+        if (total_records % 5000 == 0)
+        {
+            std::cout << "[处理线程] 已处理记录数: " << total_records << std::endl;
+        }
+    }
+
+    // 处理剩余数据
+    if (!leftover.empty())
+    {
+        try
+        {
+            process_csv_line_threaded(leftover, tab_, hidden_column_count, context);
+            total_records++;
+        }
+        catch (const std::exception &e)
+        {
+            std::cerr << "[处理线程] 处理最后一行时出错: " << e.what() << std::endl;
+        }
+    }
+
+    std::cout << "[处理线程] 数据处理完成，总记录数: " << total_records << std::endl;
+}
+
+// 线程安全版本的缓冲区处理函数
+size_t SmManager::process_buffer_chunk_threaded(char *buffer, size_t buffer_size,
+                                                std::string &leftover, const TabMeta &tab,
+                                                int hidden_column_count, Context *context,
+                                                bool skip_header)
+{
+    char *ptr = buffer;
+    char *end = buffer + buffer_size;
+    size_t processed_count = 0;
+    bool header_skipped = !skip_header;
+
+    while (ptr < end)
+    {
+        char *line_start = ptr;
+        char *line_end = ptr;
+
+        // 寻找行结束符
+        while (line_end < end && *line_end != '\n' && *line_end != '\r')
+        {
+            line_end++;
+        }
+
+        // 如果到达缓冲区末尾但没找到换行符，说明行被截断了
+        if (line_end >= end)
+        {
+            size_t remaining_len = end - line_start;
+            if (leftover.empty())
+            {
+                leftover.assign(line_start, remaining_len);
+            }
+            else
+            {
+                leftover.append(line_start, remaining_len);
+            }
+            break;
+        }
+
+        // 构造完整的行
+        std::string complete_line;
+        if (!leftover.empty())
+        {
+            complete_line = leftover + std::string(line_start, line_end - line_start);
+            leftover.clear();
+        }
+        else
+        {
+            complete_line.assign(line_start, line_end - line_start);
+        }
+
+        // 跳过空行
+        if (complete_line.empty())
+        {
+            ptr = line_end + 1;
+            continue;
+        }
+
+        // 跳过表头
+        if (!header_skipped)
+        {
+            header_skipped = true;
+            ptr = line_end + 1;
+            continue;
+        }
+
+        // 处理这一行数据
+        try
+        {
+            process_csv_line_threaded(complete_line, tab, hidden_column_count, context);
+            processed_count++;
+        }
+        catch (const std::exception &e)
+        {
+            std::cerr << "[处理线程] 处理CSV行时出错: " << e.what() << std::endl;
+            std::cerr << "问题行内容: " << complete_line << std::endl;
+        }
+
+        // 移动到下一行
+        ptr = line_end + 1;
+        if (ptr < end && *(ptr - 1) == '\r' && *ptr == '\n')
+        {
+            ptr++;
+        }
+    }
+
+    return processed_count;
+}
+
+// 线程安全版本的CSV行处理函数
+void SmManager::process_csv_line_threaded(const std::string &line, const TabMeta &tab,
+                                          int hidden_column_count, Context *context)
+{
+    // 获取文件句柄时需要线程安全
+    std::shared_ptr<RmFileHandle> fh;
+    {
+        std::shared_lock<std::shared_mutex> lock(fhs_latch_);
+        auto it = fhs_.find(tab.name);
+        if (it == fhs_.end())
+        {
+            throw RMDBError("表文件句柄未找到: " + tab.name);
+        }
+        fh = it->second;
+    }
+
+    TransactionManager *txn_mgr = context->txn_->get_txn_manager();
+
+    // 创建记录缓冲区
+    RmRecord rec(fh->get_file_hdr().record_size);
+
+    // 解析CSV字段
+    std::vector<std::string> fields;
+    parse_csv_fields(line, fields);
+
+    // 检查字段数量是否匹配
+    size_t expected_fields = tab.cols.size() - hidden_column_count;
+    if (fields.size() != expected_fields)
+    {
+        throw RMDBError("CSV字段数量不匹配，期望: " + std::to_string(expected_fields) +
+                        ", 实际: " + std::to_string(fields.size()));
+    }
+
+    // 填充记录数据
+    for (size_t i = 0; i < fields.size(); ++i)
+    {
+        const auto &col = tab.cols[i + hidden_column_count];
+        const std::string &field_value = fields[i];
+
+        try
+        {
+            switch (col.type)
+            {
+            case ColType::TYPE_INT:
+            {
+                int value = parse_int_safe(field_value);
+                *(reinterpret_cast<int *>(rec.data + col.offset)) = value;
+                break;
+            }
+            case ColType::TYPE_FLOAT:
+            {
+                float value = parse_float_safe(field_value);
+                *(reinterpret_cast<float *>(rec.data + col.offset)) = value;
+                break;
+            }
+            case ColType::TYPE_STRING:
+            {
+                size_t copy_len = std::min(field_value.length(), static_cast<size_t>(col.len));
+                std::memcpy(rec.data + col.offset, field_value.c_str(), copy_len);
+                if (copy_len < col.len)
+                {
+                    std::memset(rec.data + col.offset + copy_len, 0, col.len - copy_len);
+                }
+                break;
+            }
+            case ColType::TYPE_DATETIME:
+            {
+                size_t copy_len = std::min(field_value.length(), static_cast<size_t>(col.len));
+                std::memcpy(rec.data + col.offset, field_value.c_str(), copy_len);
+                if (copy_len < col.len)
+                {
+                    std::memset(rec.data + col.offset + copy_len, 0, col.len - copy_len);
+                }
+                break;
+            }
+            default:
+                throw RMDBError("不支持的列类型");
+            }
+        }
+        catch (const std::exception &e)
+        {
+            throw RMDBError("解析字段 '" + col.name + "' 时出错: " + e.what() +
+                            ", 值: '" + field_value + "'");
+        }
+    }
+
+    // 设置事务ID
+    txn_mgr->set_record_txn_id(rec.data, context->txn_, false);
+
+    // 插入记录到文件（这里需要线程安全）
+    Rid rid = fh->insert_record(rec.data, context);
+
+    // 更新所有索引（需要线程安全）
+    update_indexes_for_record_threaded(rec, rid, tab, context);
+}
+
+// 线程安全版本的索引更新函数
+void SmManager::update_indexes_for_record_threaded(const RmRecord &rec, const Rid &rid,
+                                                   const TabMeta &tab, Context *context)
+{
+    for (const auto &index : tab.indexes)
+    {
+        std::unique_ptr<char[]> key(new char[index.col_tot_len]);
+        int offset = 0;
+
+        // 构造索引键
+        for (int i = 0; i < index.col_num; ++i)
+        {
+            auto col_iter = tab.cols_map.find(index.cols[i].name);
+            if (col_iter != tab.cols_map.end())
+            {
+                const auto &col = tab.cols[col_iter->second];
+                std::memcpy(key.get() + offset, rec.data + col.offset, index.cols[i].len);
+            }
+            offset += index.cols[i].len;
+        }
+
+        try
+        {
+            // 获取索引句柄时需要线程安全
+            std::shared_ptr<IxIndexHandle> ih;
+            {
+                std::shared_lock<std::shared_mutex> lock(ihs_latch_);
+                auto index_name = ix_manager_->get_index_name(tab.name, index.cols);
+                auto it = ihs_.find(index_name);
+                if (it != ihs_.end())
+                {
+                    ih = it->second;
+                }
+            }
+
+            if (ih)
+            {
+                ih->insert_entry(key.get(), rid, context->txn_, true);
+            }
+        }
+        catch (IndexEntryAlreadyExistError &)
+        {
+            // 忽略重复键错误
         }
     }
 }

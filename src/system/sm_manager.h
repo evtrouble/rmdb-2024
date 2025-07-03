@@ -9,7 +9,12 @@ MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 See the Mulan PSL v2 for more details. */
 
 #pragma once
-
+#include <thread>
+#include <queue>
+#include <mutex>
+#include <shared_mutex>
+#include <fcntl.h>  // for open()
+#include <unistd.h> // for read(), close()
 #include "index/ix.h"
 #include "record/rm_file_handle.h"
 #include "sm_defs.h"
@@ -41,6 +46,85 @@ private:
     IxManager *ix_manager_;
     std::shared_mutex fhs_latch_; // 保护fhs_的读写锁，保证对文件句柄的并发访问安全
     std::shared_mutex ihs_latch_; // 保护ihs_的读写锁，保证对索引句柄的并发访问安全
+    struct DataChunk
+    {
+        std::unique_ptr<char[]> data;
+        size_t size;
+        bool is_final;
+
+        DataChunk() : size(0), is_final(false) {}
+        DataChunk(size_t buffer_size) : data(std::make_unique<char[]>(buffer_size + 1)), size(0), is_final(false) {}
+    };
+
+    // 线程安全的数据队列
+    struct ThreadSafeQueue
+    {
+        std::queue<std::shared_ptr<DataChunk>> queue;
+        std::mutex mtx;
+        std::condition_variable cv;
+        bool finished = false;
+        std::exception_ptr exception_ptr = nullptr;
+
+        void push(std::shared_ptr<DataChunk> chunk)
+        {
+            std::lock_guard<std::mutex> lock(mtx);
+            queue.push(chunk);
+            cv.notify_one();
+        }
+
+        std::shared_ptr<DataChunk> pop()
+        {
+            std::unique_lock<std::mutex> lock(mtx);
+            cv.wait(lock, [this]
+                    { return !queue.empty() || finished || exception_ptr; });
+
+            if (exception_ptr)
+            {
+                std::rethrow_exception(exception_ptr);
+            }
+
+            if (queue.empty())
+            {
+                return nullptr; // 队列已空且生产者已完成
+            }
+
+            auto chunk = queue.front();
+            queue.pop();
+            return chunk;
+        }
+
+        void set_finished()
+        {
+            std::lock_guard<std::mutex> lock(mtx);
+            finished = true;
+            cv.notify_all();
+        }
+
+        void set_exception(std::exception_ptr ptr)
+        {
+            std::lock_guard<std::mutex> lock(mtx);
+            exception_ptr = ptr;
+            finished = true;
+            cv.notify_all();
+        }
+    };
+    // 文件读取线程函数
+    void reader_thread_func(const std::string &file_name, ThreadSafeQueue &queue, const size_t buffer_size);
+
+    // 数据处理线程函数
+    void processor_thread_func(ThreadSafeQueue &queue, const std::string &tab_name, Context *context);
+
+    // 线程安全版本的辅助方法
+    size_t process_buffer_chunk_threaded(char *buffer, size_t buffer_size,
+                                         std::string &leftover, const TabMeta &tab,
+                                         int hidden_column_count, Context *context,
+                                         bool skip_header);
+
+    void process_csv_line_threaded(const std::string &line, const TabMeta &tab,
+                                   int hidden_column_count, Context *context);
+
+    void update_indexes_for_record_threaded(const RmRecord &rec, const Rid &rid,
+                                            const TabMeta &tab, Context *context);
 
 public:
     SmManager(DiskManager *disk_manager, BufferPoolManager *buffer_pool_manager, RmManager *rm_manager,
@@ -122,6 +206,7 @@ public:
     float parse_float_safe(const std::string &str);
     void update_indexes_for_record(const RmRecord &rec, const Rid &rid,
                                    const TabMeta &tab, Context *context);
+    void load_csv_data_threaded(std::string &file_name, std::string &tab_name, Context *context);
 
     std::vector<std::shared_ptr<RmFileHandle>> get_all_table_handle()
     {
