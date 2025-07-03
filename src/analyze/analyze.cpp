@@ -13,6 +13,37 @@ See the Mulan PSL v2 for more details. */
 #include "transaction/transaction_manager.h"
 #include "transaction/transaction.h"
 
+bool is_valid_datetime_format(const std::string &datetime_str)
+{
+    // 简单的格式检查：YYYY-MM-DD HH:MM:SS
+    if (datetime_str.length() != 19)
+    {
+        return false;
+    }
+
+    // 检查基本格式：YYYY-MM-DD HH:MM:SS
+    if (datetime_str[4] != '-' || datetime_str[7] != '-' ||
+        datetime_str[10] != ' ' || datetime_str[13] != ':' ||
+        datetime_str[16] != ':')
+    {
+        return false;
+    }
+
+    // 检查所有应该是数字的位置
+    for (int i = 0; i < 19; i++)
+    {
+        if (i == 4 || i == 7 || i == 10 || i == 13 || i == 16)
+        {
+            continue; // 跳过分隔符
+        }
+        if (!std::isdigit(datetime_str[i]))
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
 /**
  * @description: 分析器，进行语义分析和查询重写，需要检查不符合语义规定的部分
  * @param {shared_ptr<ast::TreeNode>} parse parser生成的结果集
@@ -90,7 +121,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
                     sel_col = check_column(all_cols, sel_col, x->has_join); // 列元数据校验
             }
 
-            // 检查是否为“全选”
+            // 检查是否为"全选"
             std::unordered_set<std::string> all_sel_col;
             for (const auto &query_col : query->cols)
             {
@@ -605,6 +636,8 @@ bool Analyze::can_cast_type(ColType from, ColType to)
         return true;
     if (from == TYPE_FLOAT && to == TYPE_INT)
         return true;
+    if (from == TYPE_STRING && to == TYPE_DATETIME)
+        return true;
     if (from == TYPE_DATETIME && to == TYPE_STRING)
         return true;
     return false;
@@ -624,6 +657,14 @@ void Analyze::cast_value(Value &val, ColType to)
         float float_val = val.float_val;
         val.type = TYPE_INT;
         val.int_val = static_cast<int>(float_val);
+    }
+    else if (val.type == TYPE_STRING && to == TYPE_DATETIME)
+    {
+        if (!is_valid_datetime_format(val.str_val))
+        {
+            throw IncompatibleTypeError("STRING", "DATETIME - Invalid format");
+        }
+        val.type = TYPE_DATETIME;
     }
     else if (val.type == TYPE_DATETIME && to == TYPE_STRING)
     {
@@ -678,37 +719,7 @@ CompOp Analyze::convert_sv_comp_op(ast::SvCompOp op)
     };
     return m.at(op);
 }
-bool is_valid_datetime_format(const std::string &datetime_str)
-{
-    // 简单的格式检查：YYYY-MM-DD HH:MM:SS
-    if (datetime_str.length() != 19)
-    {
-        return false;
-    }
 
-    // 检查基本格式：YYYY-MM-DD HH:MM:SS
-    if (datetime_str[4] != '-' || datetime_str[7] != '-' ||
-        datetime_str[10] != ' ' || datetime_str[13] != ':' ||
-        datetime_str[16] != ':')
-    {
-        return false;
-    }
-
-    // 检查所有应该是数字的位置
-    for (int i = 0; i < 19; i++)
-    {
-        if (i == 4 || i == 7 || i == 10 || i == 13 || i == 16)
-        {
-            continue; // 跳过分隔符
-        }
-        if (!std::isdigit(datetime_str[i]))
-        {
-            return false;
-        }
-    }
-
-    return true;
-}
 // 实现类型转换函数
 Value Analyze::convert_value_type(const Value &value, ColType target_type)
 {
