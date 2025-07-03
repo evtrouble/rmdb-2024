@@ -165,7 +165,9 @@ public:
                 val = std::nextafter(val, std::numeric_limits<float>::infinity());
                 break;
             }
-            case TYPE_STRING: {
+            case TYPE_STRING: 
+            case TYPE_DATETIME:
+            {
                 for (int i = len-1; i >= 0; --i) {
                     if (key[i] < 0xFF) {
                         ++key[i];
@@ -174,9 +176,6 @@ public:
                 }
                 break;
             }
-            case TYPE_DATETIME:
-                // 日期类型不支持自增，保持原值
-                break;
         }
     }
 
@@ -192,7 +191,9 @@ public:
                 val = std::nextafter(val, -std::numeric_limits<float>::infinity());
                 break;
             }
-            case TYPE_STRING: {
+            case TYPE_STRING: 
+            case TYPE_DATETIME:
+            {
                 for (int i = len-1; i >= 0; --i) {
                     if (key[i] > 0) {
                         --key[i];
@@ -201,9 +202,6 @@ public:
                 }
                 break;
             }
-            case TYPE_DATETIME:
-                // 日期类型不支持自减，保持原值
-                break;
         }
     }
 

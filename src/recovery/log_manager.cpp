@@ -66,12 +66,10 @@ void LogManager::flush_log_to_disk_without_lock()
  */
 void LogManager::flush_log_to_disk_periodically() {
     while (!shutdown_) {
-        {
-            std::lock_guard lock(latch_);
-            if (is_dirty_) {
-                flush_log_to_disk_without_lock();
-            }
+        if (is_dirty_) {
+            flush_log_to_disk();
         }
+        
         // 释放锁后再sleep，避免长时间持有锁
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }

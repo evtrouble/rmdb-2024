@@ -896,7 +896,7 @@ void SmManager::process_csv_line(const std::string &line, const TabMeta &tab,
             case ColType::TYPE_STRING:
             {
                 // 处理字符串字段，确保不超出长度限制
-                size_t copy_len = std::min(field_value.length(), static_cast<size_t>(col.len));
+                int copy_len = std::min(field_value.length(), static_cast<size_t>(col.len));
                 std::memcpy(rec.data + col.offset, field_value.c_str(), copy_len);
                 // 如果字符串较短，用0填充剩余空间
                 if (copy_len < col.len)
@@ -908,7 +908,7 @@ void SmManager::process_csv_line(const std::string &line, const TabMeta &tab,
             case ColType::TYPE_DATETIME:
             {
                 // 日期时间字段处理
-                size_t copy_len = std::min(field_value.length(), static_cast<size_t>(col.len));
+                int copy_len = std::min(field_value.length(), static_cast<size_t>(col.len));
                 std::memcpy(rec.data + col.offset, field_value.c_str(), copy_len);
                 if (copy_len < col.len)
                 {
