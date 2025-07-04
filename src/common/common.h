@@ -127,11 +127,6 @@ struct Value
     //     type = TYPE_DATETIME;
     //     str_val = std::move(datetime_val_);
     // }
-    void set_datetime()
-    {
-        type = TYPE_DATETIME;
-        // str_val = std::move(datetime_val_);
-    }
 
     void init_raw(int len)
     {

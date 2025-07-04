@@ -668,7 +668,7 @@ void Analyze::cast_value(Value &val, ColType to)
     }
     else if (val.type == TYPE_DATETIME && to == TYPE_STRING)
     {
-        val.set_datetime();
+        val.type = TYPE_STRING;
     }
     else
     {
