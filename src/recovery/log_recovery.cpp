@@ -68,30 +68,24 @@ void RecoveryManager::redo()
                 }
                 auto &txn = it->second;
                 auto write_set = txn->get_write_set();
-                std::unordered_set<Rid> abort_set;
                 while (write_set->size())
                 {
-                    auto write_record = write_set->front();
-                    write_set->pop_front();
+                    auto write_record = write_set->back();
+                    write_set->pop_back();
                     Rid rid = write_record->GetRid();
                     // 根据写操作类型进行回滚
                     switch (write_record->GetWriteType())
                     {
                         case WType::INSERT_TUPLE:
-                            abort_set.emplace(rid);
                             sm_manager_->get_table_handle(write_record->GetTableName())
                                 ->abort_insert_record(rid);
                             break;
                         case WType::DELETE_TUPLE: {
-                            if(abort_set.count(rid))break;
-                            abort_set.emplace(rid);
                             auto fh = sm_manager_->get_table_handle(write_record->GetTableName());
                             fh->abort_delete_record(rid, write_record->GetRecord().data);
                             break;
                         }
                         case WType::UPDATE_TUPLE:{
-                            if(abort_set.count(rid))break;
-                            abort_set.emplace(rid);
                             auto fh = sm_manager_->get_table_handle(write_record->GetTableName());
                             fh->abort_update_record(rid, write_record->GetRecord().data);
                             break;
@@ -197,30 +191,24 @@ void RecoveryManager::redo()
 void RecoveryManager::undo() {
     for(auto& [txn_id, txn] : temp_txns_){
         auto write_set = txn->get_write_set();
-        std::unordered_set<Rid> abort_set;
         while (write_set->size())
         {
-            auto write_record = write_set->front();
-            write_set->pop_front();
+            auto write_record = write_set->back();
+            write_set->pop_back();
             Rid rid = write_record->GetRid();
             // 根据写操作类型进行回滚
             switch (write_record->GetWriteType())
             {
                 case WType::INSERT_TUPLE:
-                    abort_set.emplace(rid);
                     sm_manager_->get_table_handle(write_record->GetTableName())
                         ->abort_insert_record(rid);
                     break;
                 case WType::DELETE_TUPLE: {
-                    if(abort_set.count(rid))break;
-                    abort_set.emplace(rid);
                     auto fh = sm_manager_->get_table_handle(write_record->GetTableName());
                     fh->abort_delete_record(rid, write_record->GetRecord().data);
                     break;
                 }
                 case WType::UPDATE_TUPLE:{
-                    if(abort_set.count(rid))break;
-                    abort_set.emplace(rid);
                     auto fh = sm_manager_->get_table_handle(write_record->GetTableName());
                     fh->abort_update_record(rid, write_record->GetRecord().data);
                     break;

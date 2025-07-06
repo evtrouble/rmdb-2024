@@ -99,7 +99,7 @@ void TransactionManager::commit(Context *context, LogManager *log_manager)
     {
         CommitLogRecord log_record(context->txn_->get_transaction_id());
         log_manager->add_log_to_buffer(&log_record);
-        log_manager->flush_log_to_disk();
+        // log_manager->flush_log_to_disk();
     }
 
     // 5. 更新事务状态为已提交
@@ -212,7 +212,7 @@ void TransactionManager::abort(Context *context, LogManager *log_manager)
     {
         AbortLogRecord log_record(context->txn_->get_transaction_id());
         log_manager->add_log_to_buffer(&log_record);
-        log_manager->flush_log_to_disk();
+        // log_manager->flush_log_to_disk();
     }
     // 5. 更新事务状态
     txn->set_state(TransactionState::ABORTED);
