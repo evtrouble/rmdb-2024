@@ -35,13 +35,31 @@ struct TabCol
     std::string alias;
 
     TabCol() = default;
-    TabCol(const std::string &tab_name, const std::string &col_name,
-           ast::AggFuncType agg_type = ast::AggFuncType::NO_TYPE, const std::string &alias = "")
-        : tab_name(std::move(tab_name)), col_name(std::move(col_name)), aggFuncType(agg_type), alias(std::move(alias)) {}
+    TabCol(std::string tab_name, std::string col_name,
+           ast::AggFuncType agg_type = ast::AggFuncType::NO_TYPE,
+           std::string alias = "")
+        : tab_name(std::move(tab_name)),
+          col_name(std::move(col_name)),
+          aggFuncType(agg_type),
+          alias(std::move(alias)) {}
 
+    // 修复：包含所有字段的比较
     friend bool operator<(const TabCol &x, const TabCol &y)
     {
-        return std::make_pair(x.tab_name, x.col_name) < std::make_pair(y.tab_name, y.col_name);
+        if (x.tab_name != y.tab_name)
+            return x.tab_name < y.tab_name;
+        if (x.col_name != y.col_name)
+            return x.col_name < y.col_name;
+        if (x.aggFuncType != y.aggFuncType)
+            return x.aggFuncType < y.aggFuncType;
+        return x.alias < y.alias;
+    }
+
+    // 添加相等比较
+    friend bool operator==(const TabCol &x, const TabCol &y)
+    {
+        return std::tie(x.tab_name, x.col_name, x.aggFuncType, x.alias) ==
+               std::tie(y.tab_name, y.col_name, y.aggFuncType, y.alias);
     }
 };
 inline int parse_int(const std::string &str)

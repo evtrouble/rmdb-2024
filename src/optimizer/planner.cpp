@@ -598,12 +598,12 @@ std::shared_ptr<Query> Planner::logical_optimization(std::shared_ptr<Query> quer
 
 std::shared_ptr<Plan> Planner::physical_optimization(std::shared_ptr<Query> query, Context *context)
 {
-    column_requirements_ = analyze_column_requirements(query, context);
-    // 生成基本的查询计划
-    std::shared_ptr<Plan> plan = make_one_rel(query, context);
+    // 在顶层计算一次 QueryColumnRequirement
+    QueryColumnRequirement column_requirements;
+    analyze_column_requirements(query, context, column_requirements);
 
-    // 应用投影下推优化
-    // plan = apply_projection_pushdown(plan, query);
+    // 将计算好的 column_requirements 传递给需要的函数
+    std::shared_ptr<Plan> plan = make_one_rel(query, context, column_requirements);
 
     // 处理聚合函数
     plan = generate_agg_plan(query, std::move(plan));
@@ -615,13 +615,6 @@ std::shared_ptr<Plan> Planner::physical_optimization(std::shared_ptr<Query> quer
     if (query->parse->Nodetype() == ast::TreeNodeType::SelectStmt)
     {
         plan = std::make_shared<ProjectionPlan>(PlanTag::T_Projection, plan, query->cols);
-        // if(plan->tag != PlanTag::T_Projection) {
-        //     plan = std::make_shared<ProjectionPlan>(PlanTag::T_Projection, plan, query->cols);
-        // } else {
-        //     auto project_plan = std::static_pointer_cast<ProjectionPlan>(plan);
-        //     plan = std::make_shared<ProjectionPlan>(PlanTag::T_Projection,
-        //         project_plan->subplan_, query->cols);
-        // }
     }
 
     return plan;
@@ -674,7 +667,7 @@ std::unordered_map<std::string, size_t> calculate_table_cardinalities(const std:
     return table_cardinalities;
 }
 
-std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Context *context)
+std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Context *context, const QueryColumnRequirement &column_requirements)
 {
     // 预先计算所有表的基数
     auto table_cardinalities = calculate_table_cardinalities(query->tables, sm_manager_);
@@ -727,7 +720,7 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
         // 只有在非 SELECT * 查询时才添加投影节点,单表不添加
         if (!context->hasIsStarFlag() && query->tables.size() > 1)
         {
-            auto post_filter_cols = column_requirements_.get_post_filter_cols(table);
+            auto post_filter_cols = column_requirements.get_post_filter_cols(table);
             if (post_filter_cols.size())
             {
                 // 转换为vector并按字母顺序排序
@@ -1178,10 +1171,12 @@ std::shared_ptr<Plan> Planner::do_planner(std::shared_ptr<Query> query, Context 
     return nullptr;
 }
 
-QueryColumnRequirement Planner::analyze_column_requirements(std::shared_ptr<Query> query, Context *context)
+void Planner::analyze_column_requirements(std::shared_ptr<Query> query, Context *context, QueryColumnRequirement &requirements)
 {
-    QueryColumnRequirement requirements;
-    // 如果不是SELECT语句，返回空的需求
+    // 清空输入的requirements（如果需要）
+    requirements.clear();
+
+    // 如果不是SELECT语句，直接返回
     if (!query || !query->parse || query->parse->Nodetype() != ast::TreeNodeType::SelectStmt)
     {
         return requirements;

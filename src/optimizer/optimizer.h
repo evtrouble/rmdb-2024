@@ -26,12 +26,6 @@ See the Mulan PSL v2 for more details. */
 #include <memory>
 #include <vector>
 
-// 添加TabCol的比较运算符
-bool operator==(const TabCol &lhs, const TabCol &rhs)
-{
-    return lhs.tab_name == rhs.tab_name && lhs.col_name == rhs.col_name;
-}
-
 class Optimizer
 {
 private:

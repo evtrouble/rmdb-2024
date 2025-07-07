@@ -80,6 +80,26 @@ struct QueryColumnRequirement
         return in_where && !in_select && !in_join && !in_groupby && !in_having && !in_orderby;
     }
     void calculate_layered_requirements();
+    QueryColumnRequirement(const QueryColumnRequirement &) = delete;
+    QueryColumnRequirement &operator=(const QueryColumnRequirement &) = delete;
+
+    // 启用移动构造和移动赋值
+    QueryColumnRequirement() = default;
+    QueryColumnRequirement(QueryColumnRequirement &&) = default;
+    QueryColumnRequirement &operator=(QueryColumnRequirement &&) = default;
+    void clear()
+    {
+        table_required_cols.clear();
+        scan_level_cols.clear();
+        post_filter_cols.clear();
+        final_cols.clear();
+        select_cols.clear();
+        join_cols.clear();
+        where_cols.clear();
+        groupby_cols.clear();
+        having_cols.clear();
+        orderby_cols.clear();
+    }
 };
 class Planner
 {
@@ -108,13 +128,12 @@ private:
     std::shared_ptr<Plan> physical_optimization(std::shared_ptr<Query> query, Context *context);
 
     // 生成执行计划相关函数
-    std::shared_ptr<Plan> make_one_rel(std::shared_ptr<Query> query, Context *context);
+    std::shared_ptr<Plan> make_one_rel(std::shared_ptr<Query> query, Context *context, const QueryColumnRequirement &column_requirements);
     std::shared_ptr<Plan> generate_agg_plan(const std::shared_ptr<Query> &query, std::shared_ptr<Plan> plan);
     std::shared_ptr<Plan> generate_sort_plan(std::shared_ptr<Query> query, std::shared_ptr<Plan> plan);
     std::shared_ptr<Plan> generate_select_plan(std::shared_ptr<Query> query, Context *context);
 
-    // 列需求分析结果
-    QueryColumnRequirement column_requirements_;
+    // 移除这一行：QueryColumnRequirement column_requirements_;
 
     // 列需求分析函数
     QueryColumnRequirement analyze_column_requirements(std::shared_ptr<Query> query, Context *context);
