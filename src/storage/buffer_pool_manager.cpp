@@ -17,24 +17,19 @@ See the Mulan PSL v2 for more details. */
  */
 bool BufferPoolManager::find_victim_page(frame_id_t *frame_id)
 {
-    std::ofstream debug_log("storage_test.log", std::ios::out | std::ios::app);
+    // 移除debug日志文件操作，这在并发环境下也可能造成问题
+    // std::ofstream debug_log("storage_test.log", std::ios::out | std::ios::app);
 
     if (!free_list_.empty())
     {
         *frame_id = free_list_.front();
         free_list_.pop_front();
-        debug_log.close();
+        // debug_log.close();
         return true;
     }
 
     bool found = replacer_->victim(frame_id);
-    if (found)
-    {
-    }
-    else
-    {
-    }
-    debug_log.close();
+    // debug_log.close();
     return found;
 }
 
