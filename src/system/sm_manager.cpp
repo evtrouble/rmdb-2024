@@ -713,7 +713,6 @@ void SmManager::load_csv_data_double_buffer(std::string &file_name, std::string 
     batch_records.reserve(BATCH_SIZE);
     batch_rids.reserve(BATCH_SIZE);
 
-    std::cout << "开始加载CSV文件: " << file_name << std::endl;
     auto start_time = std::chrono::high_resolution_clock::now();
 
     while ((bytes_read = read(fd, read_buffer, BUFFER_SIZE)) > 0)
@@ -731,12 +730,6 @@ void SmManager::load_csv_data_double_buffer(std::string &file_name, std::string 
 
         total_records += processed_records;
         first_chunk = false;
-
-        // 每处理一定数量记录输出进度
-        if (total_records % 10000 == 0)
-        {
-            std::cout << "已处理记录数: " << total_records << std::endl;
-        }
     }
 
     // 处理剩余数据
@@ -748,11 +741,6 @@ void SmManager::load_csv_data_double_buffer(std::string &file_name, std::string 
 
     auto end_time = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-
-    std::cout << "CSV加载完成！" << std::endl;
-    std::cout << "总记录数: " << total_records << std::endl;
-    std::cout << "耗时: " << duration.count() << " ms" << std::endl;
-    std::cout << "平均速度: " << (total_records * 1000.0 / duration.count()) << " 记录/秒" << std::endl;
 
     close(fd);
 }
@@ -1124,7 +1112,6 @@ void SmManager::load_csv_data_threaded(std::string &file_name, std::string &tab_
     // 创建线程安全队列
     ThreadSafeQueue data_queue;
 
-    std::cout << "开始双线程加载CSV文件: " << file_name << std::endl;
     auto start_time = std::chrono::high_resolution_clock::now();
 
     // 启动读取线程
@@ -1151,9 +1138,6 @@ void SmManager::load_csv_data_threaded(std::string &file_name, std::string &tab_
 
     auto end_time = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-
-    std::cout << "双线程CSV加载完成！" << std::endl;
-    std::cout << "耗时: " << duration.count() << " ms" << std::endl;
 }
 
 void SmManager::reader_thread_func(const std::string &file_name, ThreadSafeQueue &queue, const size_t buffer_size)
@@ -1168,8 +1152,6 @@ void SmManager::reader_thread_func(const std::string &file_name, ThreadSafeQueue
     std::unique_ptr<char[]> read_buffer(new char[buffer_size]);
     ssize_t bytes_read;
     size_t total_read = 0;
-
-    std::cout << "[读取线程] 开始读取文件..." << std::endl;
 
     while ((bytes_read = read(fd, read_buffer.get(), buffer_size)) > 0)
     {
@@ -1197,7 +1179,6 @@ void SmManager::reader_thread_func(const std::string &file_name, ThreadSafeQueue
     queue.set_finished();
 
     close(fd);
-    std::cout << "[读取线程] 文件读取完成，总计: " << total_read << " 字节" << std::endl;
 }
 
 void SmManager::processor_thread_func(ThreadSafeQueue &queue, const std::string &tab_name, Context *context)
@@ -1210,8 +1191,6 @@ void SmManager::processor_thread_func(ThreadSafeQueue &queue, const std::string 
     std::string leftover; // 处理跨缓冲区的行
     bool first_chunk = true;
     size_t total_records = 0;
-
-    std::cout << "[处理线程] 开始处理数据..." << std::endl;
 
     while (true)
     {
@@ -1237,10 +1216,6 @@ void SmManager::processor_thread_func(ThreadSafeQueue &queue, const std::string 
         first_chunk = false;
 
         // 每处理一定数量记录输出进度
-        if (total_records % 5000 == 0)
-        {
-            std::cout << "[处理线程] 已处理记录数: " << total_records << std::endl;
-        }
     }
 
     // 处理剩余数据
@@ -1256,8 +1231,6 @@ void SmManager::processor_thread_func(ThreadSafeQueue &queue, const std::string 
             std::cerr << "[处理线程] 处理最后一行时出错: " << e.what() << std::endl;
         }
     }
-
-    std::cout << "[处理线程] 数据处理完成，总记录数: " << total_records << std::endl;
 }
 
 // 线程安全版本的缓冲区处理函数
