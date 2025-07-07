@@ -1179,8 +1179,9 @@ void Planner::analyze_column_requirements(std::shared_ptr<Query> query, Context 
     // 如果不是SELECT语句，直接返回
     if (!query || !query->parse || query->parse->Nodetype() != ast::TreeNodeType::SelectStmt)
     {
-        return requirements;
+        return;
     }
+
     auto select_stmt = std::static_pointer_cast<ast::SelectStmt>(query->parse);
 
     requirements.select_cols.insert(query->cols.begin(), query->cols.end());
@@ -1188,10 +1189,7 @@ void Planner::analyze_column_requirements(std::shared_ptr<Query> query, Context 
     // 2. 分析JOIN条件中需要的列
     for (const auto &cond : query->join_conds)
     {
-        // 处理左侧列
         requirements.join_cols.emplace(cond.lhs_col);
-
-        // 处理右侧列
         requirements.join_cols.emplace(cond.rhs_col);
     }
 
@@ -1207,18 +1205,15 @@ void Planner::analyze_column_requirements(std::shared_ptr<Query> query, Context 
     // 4. 分析GROUP BY子句中需要的列
     if (select_stmt->has_groupby)
     {
-        requirements.groupby_cols.insert(query->groupby.begin(),
-                                         query->groupby.end());
+        requirements.groupby_cols.insert(query->groupby.begin(), query->groupby.end());
     }
 
     // 5. 分析HAVING子句中需要的列
     for (const auto &cond : query->having_conds)
     {
-        // 处理左侧列
         requirements.having_cols.insert(cond.lhs_col);
         if (!cond.is_rhs_val)
         {
-            // 处理右侧列
             requirements.having_cols.insert(cond.rhs_col);
         }
     }
@@ -1235,8 +1230,6 @@ void Planner::analyze_column_requirements(std::shared_ptr<Query> query, Context 
 
     // 合并所有中间分析数据到最终结果
     requirements.calculate_layered_requirements();
-
-    return requirements;
 }
 
 std::vector<TabCol> Planner::get_table_all_cols(const std::string &table_name, std::vector<TabCol> &table_cols, Context *context)

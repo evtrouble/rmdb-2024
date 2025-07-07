@@ -136,7 +136,7 @@ private:
     // 移除这一行：QueryColumnRequirement column_requirements_;
 
     // 列需求分析函数
-    QueryColumnRequirement analyze_column_requirements(std::shared_ptr<Query> query, Context *context);
+    void analyze_column_requirements(std::shared_ptr<Query> query, Context *context, QueryColumnRequirement &requirements);
 
     // 优化器辅助函数
     bool is_single_table_condition(const Condition &cond)
