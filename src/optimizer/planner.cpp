@@ -72,7 +72,7 @@ std::string value_to_string(const Value &val)
     return ss.str();
 }
 
-int get_plan_type_priority(std::shared_ptr<Plan> &plan)
+int get_plan_type_priority(const std::shared_ptr<Plan> &plan)
 {
     switch (plan->tag)
     {
@@ -91,7 +91,7 @@ int get_plan_type_priority(std::shared_ptr<Plan> &plan)
     }
 }
 // 获取Scan节点的表名
-std::string get_scan_table_name(std::shared_ptr<Plan> &plan)
+std::string get_scan_table_name(const std::shared_ptr<Plan> &plan)
 {
     auto scan_plan = std::dynamic_pointer_cast<ScanPlan>(plan);
     if (scan_plan)
@@ -148,7 +148,7 @@ std::vector<std::string> get_join_table_names(const std::shared_ptr<Plan> &plan)
     return tables;
 }
 // 获取Filter节点的条件字符串（用于排序比较）
-std::string get_filter_condition_string(std::shared_ptr<Plan> &plan)
+std::string get_filter_condition_string(const std::shared_ptr<Plan> &plan)
 {
     auto filter_plan = std::dynamic_pointer_cast<FilterPlan>(plan);
     if (!filter_plan || filter_plan->conds_.empty())
@@ -234,7 +234,7 @@ std::string get_project_columns_string(const std::shared_ptr<Plan> &plan)
     return result;
 }
 
-bool should_left_come_first(std::shared_ptr<Plan> &left, const std::shared_ptr<Plan> &right)
+bool should_left_come_first(const std::shared_ptr<Plan> &left, const std::shared_ptr<Plan> &right)
 {
     int left_priority = get_plan_type_priority(left);
     int right_priority = get_plan_type_priority(right);
