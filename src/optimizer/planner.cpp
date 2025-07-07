@@ -72,7 +72,7 @@ std::string value_to_string(const Value &val)
     return ss.str();
 }
 
-int get_plan_type_priority(const std::shared_ptr<Plan>& plan)
+int get_plan_type_priority(std::shared_ptr<Plan> &plan)
 {
     switch (plan->tag)
     {
@@ -91,7 +91,7 @@ int get_plan_type_priority(const std::shared_ptr<Plan>& plan)
     }
 }
 // 获取Scan节点的表名
-std::string get_scan_table_name(const std::shared_ptr<Plan>& plan)
+std::string get_scan_table_name(std::shared_ptr<Plan> &plan)
 {
     auto scan_plan = std::dynamic_pointer_cast<ScanPlan>(plan);
     if (scan_plan)
@@ -101,12 +101,12 @@ std::string get_scan_table_name(const std::shared_ptr<Plan>& plan)
     return "";
 }
 // 获取Join节点的所有表名（按字典序排序）
-std::vector<std::string> get_join_table_names(const std::shared_ptr<Plan>& plan)
+std::vector<std::string> get_join_table_names(const std::shared_ptr<Plan> &plan)
 {
     std::set<std::string> tables_set;
 
     // 递归收集所有表名
-    std::function<void(const std::shared_ptr<Plan>&)> collect_tables = [&](const std::shared_ptr<Plan>& p)
+    std::function<void(const std::shared_ptr<Plan> &)> collect_tables = [&](const std::shared_ptr<Plan> &p)
     {
         if (p->tag == T_SeqScan || p->tag == T_IndexScan)
         {
@@ -148,7 +148,7 @@ std::vector<std::string> get_join_table_names(const std::shared_ptr<Plan>& plan)
     return tables;
 }
 // 获取Filter节点的条件字符串（用于排序比较）
-std::string get_filter_condition_string(const std::shared_ptr<Plan>& plan)
+std::string get_filter_condition_string(std::shared_ptr<Plan> &plan)
 {
     auto filter_plan = std::dynamic_pointer_cast<FilterPlan>(plan);
     if (!filter_plan || filter_plan->conds_.empty())
@@ -176,15 +176,17 @@ std::string get_filter_condition_string(const std::shared_ptr<Plan>& plan)
     // 预分配容量优化字符串拼接
     std::string result;
     size_t total_size = 0;
-    for (const auto& cond_str : cond_strs_set) {
+    for (const auto &cond_str : cond_strs_set)
+    {
         total_size += cond_str.size() + 1; // +1 for comma
     }
-    if (total_size > 0) {
+    if (total_size > 0)
+    {
         result.reserve(total_size - 1); // -1 because last element doesn't need comma
     }
 
     bool first = true;
-    for (const auto& cond_str : cond_strs_set)
+    for (const auto &cond_str : cond_strs_set)
     {
         if (!first)
             result += ",";
@@ -195,7 +197,7 @@ std::string get_filter_condition_string(const std::shared_ptr<Plan>& plan)
 }
 
 // 获取Project节点的列名字符串（用于排序比较）
-std::string get_project_columns_string(const std::shared_ptr<Plan>& plan)
+std::string get_project_columns_string(const std::shared_ptr<Plan> &plan)
 {
     auto proj_plan = std::dynamic_pointer_cast<ProjectionPlan>(plan);
     if (!proj_plan || proj_plan->sel_cols_.empty())
@@ -212,15 +214,17 @@ std::string get_project_columns_string(const std::shared_ptr<Plan>& plan)
     // 预分配容量优化字符串拼接
     std::string result;
     size_t total_size = 0;
-    for (const auto& col_str : col_strs_set) {
+    for (const auto &col_str : col_strs_set)
+    {
         total_size += col_str.size() + 1; // +1 for comma
     }
-    if (total_size > 0) {
+    if (total_size > 0)
+    {
         result.reserve(total_size - 1); // -1 because last element doesn't need comma
     }
 
     bool first = true;
-    for (const auto& col_str : col_strs_set)
+    for (const auto &col_str : col_strs_set)
     {
         if (!first)
             result += ",";
@@ -230,7 +234,7 @@ std::string get_project_columns_string(const std::shared_ptr<Plan>& plan)
     return result;
 }
 
-bool should_left_come_first(const std::shared_ptr<Plan>& left, const std::shared_ptr<Plan>& right)
+bool should_left_come_first(std::shared_ptr<Plan> &left, const std::shared_ptr<Plan> &right)
 {
     int left_priority = get_plan_type_priority(left);
     int right_priority = get_plan_type_priority(right);
@@ -282,7 +286,7 @@ bool should_left_come_first(const std::shared_ptr<Plan>& left, const std::shared
         return false;
     }
 }
-std::shared_ptr<ScanPlan> extract_scan_plan(const std::shared_ptr<Plan>& plan)
+std::shared_ptr<ScanPlan> extract_scan_plan(const std::shared_ptr<Plan> &plan)
 {
     if (!plan)
         return nullptr;
@@ -312,8 +316,8 @@ std::shared_ptr<ScanPlan> extract_scan_plan(const std::shared_ptr<Plan>& plan)
 }
 std::shared_ptr<Plan> create_ordered_join(
     PlanTag join_type,
-    const std::shared_ptr<Plan>& plan1,
-    const std::shared_ptr<Plan>& plan2,
+    const std::shared_ptr<Plan> &plan1,
+    const std::shared_ptr<Plan> &plan2,
     const std::vector<Condition> &join_conds)
 {
     // 根据排序规则决定左右子树
@@ -475,7 +479,7 @@ std::shared_ptr<Query> Planner::logical_optimization(std::shared_ptr<Query> quer
     {
         // 1. 处理 WHERE 条件，将其分类
         auto &where_conds = query->conds;
-        std::vector<Condition> where_join_conds; // WHERE 中的跨表条件
+        std::vector<Condition> where_join_conds;      // WHERE 中的跨表条件
         where_join_conds.reserve(where_conds.size()); // 预分配最大可能容量
 
         for (auto &cond : where_conds)
