@@ -72,7 +72,7 @@ std::string value_to_string(const Value &val)
     return ss.str();
 }
 
-int get_plan_type_priority(std::shared_ptr<Plan> plan)
+int get_plan_type_priority(const std::shared_ptr<Plan>& plan)
 {
     switch (plan->tag)
     {
@@ -91,7 +91,7 @@ int get_plan_type_priority(std::shared_ptr<Plan> plan)
     }
 }
 // 获取Scan节点的表名
-std::string get_scan_table_name(std::shared_ptr<Plan> plan)
+std::string get_scan_table_name(const std::shared_ptr<Plan>& plan)
 {
     auto scan_plan = std::dynamic_pointer_cast<ScanPlan>(plan);
     if (scan_plan)
@@ -101,19 +101,19 @@ std::string get_scan_table_name(std::shared_ptr<Plan> plan)
     return "";
 }
 // 获取Join节点的所有表名（按字典序排序）
-std::vector<std::string> get_join_table_names(std::shared_ptr<Plan> plan)
+std::vector<std::string> get_join_table_names(const std::shared_ptr<Plan>& plan)
 {
-    std::vector<std::string> tables;
+    std::set<std::string> tables_set;
 
     // 递归收集所有表名
-    std::function<void(std::shared_ptr<Plan>)> collect_tables = [&](std::shared_ptr<Plan> p)
+    std::function<void(const std::shared_ptr<Plan>&)> collect_tables = [&](const std::shared_ptr<Plan>& p)
     {
         if (p->tag == T_SeqScan || p->tag == T_IndexScan)
         {
             auto scan_plan = std::dynamic_pointer_cast<ScanPlan>(p);
             if (scan_plan)
             {
-                tables.push_back(scan_plan->tab_name_);
+                tables_set.insert(scan_plan->tab_name_);
             }
         }
         else if (p->tag == T_NestLoop || p->tag == T_SortMerge)
@@ -144,12 +144,11 @@ std::vector<std::string> get_join_table_names(std::shared_ptr<Plan> plan)
     };
 
     collect_tables(plan);
-    std::sort(tables.begin(), tables.end());
-    tables.erase(std::unique(tables.begin(), tables.end()), tables.end());
+    std::vector<std::string> tables(tables_set.begin(), tables_set.end());
     return tables;
 }
 // 获取Filter节点的条件字符串（用于排序比较）
-std::string get_filter_condition_string(std::shared_ptr<Plan> plan)
+std::string get_filter_condition_string(const std::shared_ptr<Plan>& plan)
 {
     auto filter_plan = std::dynamic_pointer_cast<FilterPlan>(plan);
     if (!filter_plan || filter_plan->conds_.empty())
@@ -158,7 +157,7 @@ std::string get_filter_condition_string(std::shared_ptr<Plan> plan)
     }
 
     // 将条件转换为字符串并排序
-    std::vector<std::string> cond_strs;
+    std::set<std::string> cond_strs_set;
     for (const auto &cond : filter_plan->conds_)
     {
         std::string cond_str = cond.lhs_col.tab_name + "." + cond.lhs_col.col_name;
@@ -171,22 +170,32 @@ std::string get_filter_condition_string(std::shared_ptr<Plan> plan)
         {
             cond_str += cond.rhs_col.tab_name + "." + cond.rhs_col.col_name;
         }
-        cond_strs.push_back(cond_str);
+        cond_strs_set.insert(cond_str);
     }
-    std::sort(cond_strs.begin(), cond_strs.end());
 
+    // 预分配容量优化字符串拼接
     std::string result;
-    for (size_t i = 0; i < cond_strs.size(); i++)
+    size_t total_size = 0;
+    for (const auto& cond_str : cond_strs_set) {
+        total_size += cond_str.size() + 1; // +1 for comma
+    }
+    if (total_size > 0) {
+        result.reserve(total_size - 1); // -1 because last element doesn't need comma
+    }
+
+    bool first = true;
+    for (const auto& cond_str : cond_strs_set)
     {
-        if (i > 0)
+        if (!first)
             result += ",";
-        result += cond_strs[i];
+        result += cond_str;
+        first = false;
     }
     return result;
 }
 
 // 获取Project节点的列名字符串（用于排序比较）
-std::string get_project_columns_string(std::shared_ptr<Plan> plan)
+std::string get_project_columns_string(const std::shared_ptr<Plan>& plan)
 {
     auto proj_plan = std::dynamic_pointer_cast<ProjectionPlan>(plan);
     if (!proj_plan || proj_plan->sel_cols_.empty())
@@ -194,24 +203,34 @@ std::string get_project_columns_string(std::shared_ptr<Plan> plan)
         return "";
     }
 
-    std::vector<std::string> col_strs;
+    std::set<std::string> col_strs_set;
     for (const auto &col : proj_plan->sel_cols_)
     {
-        col_strs.push_back(col.tab_name + "." + col.col_name);
+        col_strs_set.insert(col.tab_name + "." + col.col_name);
     }
-    std::sort(col_strs.begin(), col_strs.end());
 
+    // 预分配容量优化字符串拼接
     std::string result;
-    for (size_t i = 0; i < col_strs.size(); i++)
+    size_t total_size = 0;
+    for (const auto& col_str : col_strs_set) {
+        total_size += col_str.size() + 1; // +1 for comma
+    }
+    if (total_size > 0) {
+        result.reserve(total_size - 1); // -1 because last element doesn't need comma
+    }
+
+    bool first = true;
+    for (const auto& col_str : col_strs_set)
     {
-        if (i > 0)
+        if (!first)
             result += ",";
-        result += col_strs[i];
+        result += col_str;
+        first = false;
     }
     return result;
 }
 
-bool should_left_come_first(std::shared_ptr<Plan> left, std::shared_ptr<Plan> right)
+bool should_left_come_first(const std::shared_ptr<Plan>& left, const std::shared_ptr<Plan>& right)
 {
     int left_priority = get_plan_type_priority(left);
     int right_priority = get_plan_type_priority(right);
@@ -263,7 +282,7 @@ bool should_left_come_first(std::shared_ptr<Plan> left, std::shared_ptr<Plan> ri
         return false;
     }
 }
-std::shared_ptr<ScanPlan> extract_scan_plan(std::shared_ptr<Plan> plan)
+std::shared_ptr<ScanPlan> extract_scan_plan(const std::shared_ptr<Plan>& plan)
 {
     if (!plan)
         return nullptr;
@@ -293,8 +312,8 @@ std::shared_ptr<ScanPlan> extract_scan_plan(std::shared_ptr<Plan> plan)
 }
 std::shared_ptr<Plan> create_ordered_join(
     PlanTag join_type,
-    std::shared_ptr<Plan> plan1,
-    std::shared_ptr<Plan> plan2,
+    const std::shared_ptr<Plan>& plan1,
+    const std::shared_ptr<Plan>& plan2,
     const std::vector<Condition> &join_conds)
 {
     // 根据排序规则决定左右子树
@@ -449,96 +468,6 @@ std::pair<IndexMeta *, int> Planner::get_index_for_join(const std::string &tab_n
  * @param tab_names 表名
  * @return std::vector<Condition>
  */
-std::vector<Condition> pop_conds(std::vector<Condition> &conds, std::string &tab_names)
-{
-    std::vector<Condition> solved_conds;
-    solved_conds.reserve(conds.size());
-
-    auto left = conds.begin();
-    auto right = conds.end();
-    auto check = [&](const Condition &cond)
-    {
-        // std::string s = cond.lhs_col.tab_name;
-        return (tab_names.compare(cond.lhs_col.tab_name) == 0 && cond.is_rhs_val) ||
-               (cond.lhs_col.tab_name.compare(cond.rhs_col.tab_name) == 0) /* || (tab_names == cond.lhs_col.tab_name && cond.is_subquery)*/;
-    };
-    while (left < right)
-    {
-        if (check(*left))
-        {
-            // 将右侧非目标元素换到左侧
-            while (left < --right && check(*right))
-                solved_conds.emplace_back(std::move(*right));
-            solved_conds.emplace_back(std::move(*left));
-            if (left >= right)
-                break;
-            *left = std::move(*right);
-        }
-        ++left;
-    }
-    conds.erase(left, conds.end());
-    return solved_conds;
-}
-
-int push_conds(Condition *cond, std::shared_ptr<Plan> plan)
-{
-    switch (plan->tag)
-    {
-    case PlanTag::T_IndexScan:
-    case PlanTag::T_SeqScan:
-    {
-        auto x = std::static_pointer_cast<ScanPlan>(plan);
-        if (x->tab_name_.compare(cond->lhs_col.tab_name) == 0)
-            return 1;
-        else if (x->tab_name_.compare(cond->rhs_col.tab_name) == 0)
-            return 2;
-        return 0;
-    }
-    case PlanTag::T_NestLoop:
-    case PlanTag::T_SortMerge:
-    {
-        auto x = std::static_pointer_cast<JoinPlan>(plan);
-        int left_res = push_conds(cond, x->left_);
-        // 条件已经下推到左子节点
-        if (left_res == 3)
-            return 3;
-        int right_res = push_conds(cond, x->right_);
-        // 条件已经下推到右子节点
-        if (right_res == 3)
-            return 3;
-        // 左子节点或右子节点有一个没有匹配到条件的列
-        if (left_res == 0 || right_res == 0)
-            return left_res + right_res;
-        // 左子节点匹配到条件的右边
-        if (left_res == 2)
-        {
-            // 需要将左右两边的条件变换位置
-            std::swap(cond->lhs_col, cond->rhs_col);
-            cond->op = swap_op.at(cond->op);
-        }
-        x->conds_.emplace_back(std::move(*cond));
-        return 3;
-    }
-    default:
-        return false;
-    }
-}
-
-std::shared_ptr<Plan> pop_scan(int *scantbl, std::string &table, std::unordered_set<std::string> &joined_tables,
-                               std::vector<std::shared_ptr<Plan>> plans)
-{
-    for (size_t i = 0; i < plans.size(); ++i)
-    {
-        auto x = std::static_pointer_cast<ScanPlan>(plans[i]);
-        if (x->tab_name_.compare(table) == 0)
-        {
-            scantbl[i] = 1;
-            joined_tables.emplace(x->tab_name_);
-            return plans[i];
-        }
-    }
-    return nullptr;
-}
 
 std::shared_ptr<Query> Planner::logical_optimization(std::shared_ptr<Query> query, Context *context)
 {
@@ -547,6 +476,7 @@ std::shared_ptr<Query> Planner::logical_optimization(std::shared_ptr<Query> quer
         // 1. 处理 WHERE 条件，将其分类
         auto &where_conds = query->conds;
         std::vector<Condition> where_join_conds; // WHERE 中的跨表条件
+        where_join_conds.reserve(where_conds.size()); // 预分配最大可能容量
 
         for (auto &cond : where_conds)
         {
@@ -628,7 +558,8 @@ std::unordered_map<std::string, size_t> calculate_table_cardinalities(const std:
         try
         {
             // 确保表文件已经打开
-            if (sm_manager_->fhs_.find(table) == sm_manager_->fhs_.end())
+            auto it = sm_manager_->fhs_.find(table);
+            if (it == sm_manager_->fhs_.end())
             {
                 if (!sm_manager_->db_.is_table(table))
                 {
@@ -638,9 +569,9 @@ std::unordered_map<std::string, size_t> calculate_table_cardinalities(const std:
                 {
                     throw TableNotFoundError("Empty table name");
                 }
-                sm_manager_->fhs_.emplace(table, sm_manager_->get_rm_manager()->open_file(table));
+                it = sm_manager_->fhs_.emplace(table, sm_manager_->get_rm_manager()->open_file(table)).first;
             }
-            const auto &file_handle = sm_manager_->fhs_.at(table);
+            const auto &file_handle = it->second;
             if (!file_handle)
             {
                 table_cardinalities[table] = 1000; // 默认估计值
