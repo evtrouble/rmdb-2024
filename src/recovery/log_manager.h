@@ -469,6 +469,16 @@ public:
         offset_ += log_record->log_tot_len_;
     }
 
+    // 新增：重置缓冲区
+    inline void reset() {
+        offset_ = 0;
+    }
+
+    // 新增：获取当前数据大小
+    inline int size() const {
+        return offset_;
+    }
+
     char buffer_[LOG_BUFFER_SIZE + 1];
     int offset_; // 写入log的offset
 };
@@ -479,13 +489,15 @@ class LogManager
 public:
     LogManager(DiskManager *disk_manager, BufferPoolManager *buffer_pool_manager)
         : disk_manager_(disk_manager), buffer_pool_manager_(buffer_pool_manager)
-    { 
+    {
         flush_thread_ = std::thread(&LogManager::flush_log_to_disk_periodically, this);
     }
 
     ~LogManager() {
         shutdown_.store(true);
-        if(flush_thread_.joinable()) {
+        flush_cv_.notify_all();  // 唤醒刷盘线程
+        if (flush_thread_.joinable())
+        {
             flush_thread_.join();
         }
         flush_log_to_disk();
@@ -494,7 +506,7 @@ public:
     lsn_t add_log_to_buffer(LogRecord *log_record);
     void flush_log_to_disk();
 
-    LogBuffer *get_log_buffer() { return &log_buffer_; }
+    LogBuffer *get_log_buffer() { return &log_buffers_[active_buffer_index_]; }
 
     void create_static_check_point(TransactionManager *txn_mgr);
 
@@ -503,11 +515,18 @@ private:
     LogRecord *read_log(long long offset);
     void flush_log_to_disk_without_lock();
     lsn_t add_log_to_buffer_without_lock(LogRecord *log_record);
+    void swap_buffers();  // 新增：交换缓冲区
 
 private:
     std::atomic<lsn_t> global_lsn_{0}; // 全局lsn，递增，用于为每条记录分发lsn
     std::mutex latch_;                 // 用于对log_buffer_的互斥访问
-    LogBuffer log_buffer_;             // 日志缓冲区
+    
+    // 双缓冲区实现
+    LogBuffer log_buffers_[2];         // 双缓冲区
+    std::atomic<int> active_buffer_index_{0};  // 当前活跃缓冲区索引
+    std::mutex flush_mutex_;           // 刷盘操作的互斥锁
+    std::condition_variable flush_cv_; // 用于唤醒刷盘线程
+    
     lsn_t persist_lsn_;                // 记录已经持久化到磁盘中的最后一条日志的日志号
     DiskManager *disk_manager_;
     BufferPoolManager *buffer_pool_manager_;
