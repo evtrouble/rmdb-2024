@@ -19,6 +19,8 @@ See the Mulan PSL v2 for more details. */
 #include <iostream>
 #include <string>
 #include <unordered_map>
+#include <mutex>
+#include <shared_mutex>
 
 #include "common/config.h"
 #include "errors.h"
@@ -26,12 +28,12 @@ See the Mulan PSL v2 for more details. */
 /**
  * @description: DiskManager的作用主要是根据上层的需要对磁盘文件进行操作
  */
-class DiskManager
+class DiskManager_Final
 {
 public:
-        explicit DiskManager();
+        explicit DiskManager_Final();
 
-        ~DiskManager() = default;
+        ~DiskManager_Final() = default;
 
         void write_page(int fd, page_id_t page_no, const char *offset, int num_bytes);
 
@@ -53,6 +55,14 @@ public:
 
         void create_file(const std::string &path);
 
+        inline void clear_log()
+        {
+                if (read_log_fd_ != -1)
+                {
+                        ftruncate(read_log_fd_, 0);
+                }
+        }
+
         void destroy_file(const std::string &path);
 
         int open_file(const std::string &path);
@@ -70,9 +80,25 @@ public:
 
         void write_log(char *log_data, int size);
 
-        void SetLogFd(int log_fd) { log_fd_ = log_fd; }
+        // void SetLogFd(int log_fd) { write_log_fd_ = log_fd; }
 
-        int GetLogFd() { return log_fd_; }
+        // int GetLogFd() { return write_log_fd_; }
+        void create_new_log_file()
+        {
+                if (!is_file(LOG_BAK_FILE_NAME))
+                {
+                        create_file(LOG_BAK_FILE_NAME);
+                }
+                write_log_fd_ = ::open(LOG_BAK_FILE_NAME.c_str(), O_RDWR);
+        }
+
+        void change_log_file()
+        {
+                ::close(read_log_fd_);
+                ::unlink(LOG_FILE_NAME.c_str());
+                ::rename(LOG_BAK_FILE_NAME.c_str(), LOG_FILE_NAME.c_str());
+                read_log_fd_ = write_log_fd_;
+        }
 
         /**
          * @description: 设置文件已经分配的页面个数
@@ -88,13 +114,22 @@ public:
          */
         page_id_t get_fd2pageno(int fd) { return fd2pageno_[fd]; }
 
+        /**
+         * @description: 确保文件大小足够容纳指定的页面
+         * @param {int} fd 文件句柄
+         * @param {page_id_t} page_no 页面编号
+         */
+        void ensure_file_size(int fd, page_id_t page_no);
+
         static constexpr int MAX_FD = 8192;
 
 private:
         // 文件打开列表，用于记录文件是否被打开
-        std::unordered_map<std::string, int> path2fd_; //<Page文件磁盘路径,Page fd>哈希表
-        std::unordered_map<int, std::string> fd2path_; //<Page fd,Page文件磁盘路径>哈希表
+        std::unordered_map<std::string, int> path2fd_; //<Page文件磁盘路径,Page_Final fd>哈希表
+        std::unordered_map<int, std::string> fd2path_; //<Page_Final fd,Page文件磁盘路径>哈希表
+        std::shared_mutex path2fd_mutex_;              // 保护path2fd_和fd2path_的互斥锁
 
-        int log_fd_ = -1;                            // WAL日志文件的文件句柄，默认为-1，代表未打开日志文件
+        int read_log_fd_ = -1; // WAL日志文件的文件句柄，默认为-1，代表未打开日志文件
+        int write_log_fd_ = -1;
         std::atomic<page_id_t> fd2pageno_[MAX_FD]{}; // 文件中已经分配的页面个数，初始值为0
 };

@@ -22,7 +22,7 @@ See the Mulan PSL v2 for more details. */
 #include "planner.h"
 #include "plan.h"
 #include "execution/execution_manager.h"
-#include "record/rm_file_handle.h"
+#include "record/rm_file_handle_final.h"
 #include <memory>
 #include <vector>
 
@@ -31,7 +31,7 @@ class Optimizer
 private:
     SmManager *sm_manager_;
     Planner *planner_;
-    std::map<std::string, std::unique_ptr<RmFileHandle>> fhs_;
+    std::map<std::string, std::unique_ptr<RmFileHandle_Final>> fhs_;
 
 public:
     Optimizer(SmManager *sm_manager, Planner *planner)
@@ -40,7 +40,7 @@ public:
         // 从SmManager获取文件句柄
         for (const auto &[tab_name, fh] : sm_manager->fhs_)
         {
-            fhs_[tab_name] = std::unique_ptr<RmFileHandle>(fh.get());
+            fhs_[tab_name] = std::unique_ptr<RmFileHandle_Final>(fh.get());
         }
     }
 

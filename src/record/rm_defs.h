@@ -11,6 +11,7 @@ See the Mulan PSL v2 for more details. */
 #pragma once
 
 #include "defs.h"
+#include "storage/buffer_pool_manager_final.h"
 #include "storage/buffer_pool_manager.h"
 
 constexpr int RM_NO_PAGE = -1;
@@ -60,10 +61,13 @@ struct RmRecord
     RmRecord(char *data, int size, bool allocate = true)
         : size(size), allocated_(allocate)
     {
-        if(allocated_) {
+        if (allocated_)
+        {
             this->data = new char[size];
             memcpy(this->data, data, size);
-        } else {
+        }
+        else
+        {
             this->data = data;
         }
     }
@@ -77,16 +81,19 @@ struct RmRecord
 
     RmRecord(const RmRecord &other) : size(other.size), allocated_(other.allocated_)
     {
-        if(allocated_) {
+        if (allocated_)
+        {
             data = new char[size];
             memcpy(data, other.data, size);
-        } else {
+        }
+        else
+        {
             data = other.data;
         }
     };
 
-    RmRecord(RmRecord &&other) noexcept : data(other.data), size(other.size), 
-        allocated_(other.allocated_)
+    RmRecord(RmRecord &&other) noexcept : data(other.data), size(other.size),
+                                          allocated_(other.allocated_)
     {
         other.data = nullptr;
         other.size = 0;
@@ -95,7 +102,8 @@ struct RmRecord
 
     RmRecord &operator=(const RmRecord &other)
     {
-        if(other.allocated_) {
+        if (other.allocated_)
+        {
             if (size <= other.size)
             {
                 size = other.size;
@@ -106,7 +114,9 @@ struct RmRecord
 
             memcpy(data, other.data, size);
             allocated_ = true;
-        } else {
+        }
+        else
+        {
             size = other.size;
             if (allocated_)
                 delete[] data;

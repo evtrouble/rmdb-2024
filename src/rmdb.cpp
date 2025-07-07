@@ -30,9 +30,9 @@ See the Mulan PSL v2 for more details. */
 static bool should_exit = false;
 
 // 构建全局所需的管理器对象
-auto disk_manager = std::make_unique<DiskManager>();
-auto buffer_pool_manager = std::make_unique<BufferPoolManager>(BUFFER_POOL_SIZE, disk_manager.get());
-auto rm_manager = std::make_unique<RmManager>(disk_manager.get(), buffer_pool_manager.get());
+auto disk_manager = std::make_unique<DiskManager_Final>();
+auto buffer_pool_manager = std::make_unique<BufferPoolManager_Final>(BUFFER_POOL_SIZE, disk_manager.get());
+auto rm_manager = std::make_unique<RmManager_Final>(disk_manager.get(), buffer_pool_manager.get());
 auto ix_manager = std::make_unique<IxManager>(disk_manager.get(), buffer_pool_manager.get());
 auto sm_manager = std::make_unique<SmManager>(disk_manager.get(), buffer_pool_manager.get(), rm_manager.get(), ix_manager.get());
 auto lock_manager = std::make_unique<LockManager>();

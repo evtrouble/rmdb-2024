@@ -10,116 +10,74 @@ See the Mulan PSL v2 for more details. */
 
 #include "rm_scan.h"
 #include "rm_file_handle.h"
-#include "storage/buffer_pool_manager.h"
-#include "transaction/transaction_manager.h"
 
-RmScan::RmScan(std::shared_ptr<RmFileHandle> file_handle, Context* context) :
-    file_handle_(file_handle), 
-    context_(context),
-    rid_{RM_FILE_HDR_PAGE, -1},  // 初始化为第0页,slot_no为-1表示即将开始扫描
-    current_record_idx_(0)
+/**
+ * @brief 初始化file_handle和rid
+ * @param file_handle
+ */
+RmScan::RmScan(const RmFileHandle *file_handle) : file_handle_(file_handle)
 {
-    page_num = file_handle->get_page_num();
-    // 预分配空间，避免后续resize
-    current_records_.reserve(file_handle_->file_hdr_.num_records_per_page);
-    load_next_page();  // 加载第一页数据
-    rid_.slot_no = current_records_[current_record_idx_].second;
-}
+    // 初始化file_handle和rid（指向第一个存放了记录的位置）
+    rid_.page_no = RM_FIRST_RECORD_PAGE; // 从第一个记录页开始
+    rid_.slot_no = 0;                    // 从第一个slot开始
 
-void RmScan::next() {
-    if(current_record_idx_ < current_records_.size() - 1) {
-        // 移动到下一条记录
-        current_record_idx_++;
-        rid_.slot_no = current_records_[current_record_idx_].second;
-    } else {
-        // 当前页处理完，读取下一页
-        load_next_page();
-        // 如果新页有记录，设置为第一条
-        if(current_records_.size()) {
-            current_record_idx_ = 0;
-            rid_.slot_no = current_records_[0].second;
-        }
+    // 如果当前位置没有记录，移动到下一个记录
+    if (!file_handle_->is_record(rid_))
+    {
+        next();
     }
 }
 
-void RmScan::next_batch() {
-    load_next_page();
-}
+/**
+ * @brief 找到文件中下一个存放了记录的位置
+ */
+void RmScan::next()
+{
+    // 获取文件头信息
+    RmFileHdr file_hdr = file_handle_->get_file_hdr();
 
-void RmScan::load_next_page() {
-    // 移动到下一页
-    rid_.page_no++;
-    current_record_idx_ = 0;
-    
-    // 检查是否到达文件末尾
-    if(rid_.page_no >= page_num) {
-        current_records_.clear();
-        return;
-    }
-    
-    // 获取当前页的所有记录
-    std::vector<std::pair<std::unique_ptr<RmRecord>, int>> raw_records = 
-        file_handle_->get_records(rid_.page_no, context_);
-        
-    // 过滤出可见记录
-    current_records_.clear();
-    current_records_.reserve(raw_records.size());
-    TransactionManager *txn_manager = context_->txn_->get_txn_manager();
-    auto version_info = txn_manager->GetPageVersionInfo(
-        PageId{file_handle_->GetFd(), rid_.page_no});
-    
-    for(auto& record_pair : raw_records) {
-        if(record_pair.first != nullptr) {
-            // 直接可见的记录
-            current_records_.emplace_back(std::move(record_pair));
-            continue;
-        }
-        
-        // 尝试在版本链上查找可见版本
-        if(version_info) {
-            Rid current_rid{rid_.page_no, record_pair.second};
-            auto visible_version = txn_manager->GetVisibleRecord(
-                version_info, current_rid, context_->txn_);
-            if(visible_version) {
-                auto record = std::make_unique<RmRecord>(std::move(*visible_version));
-                current_records_.emplace_back(std::make_pair(std::move(record), record_pair.second));
+    while (rid_.page_no < file_hdr.num_pages)
+    {
+        // 在当前页内查找下一个记录
+        while (rid_.slot_no < file_hdr.num_records_per_page)
+        {
+            rid_.slot_no++;
+            if (rid_.slot_no == file_hdr.num_records_per_page)
+            {
+                break; // 当前页已经遍历完
+            }
+            if (file_handle_->is_record(rid_))
+            {
+                return; // 找到下一个记录
             }
         }
-    }
-    
-    // 如果当前页没有可见记录且还有下一页,继续查找
-    if(current_records_.empty() && rid_.page_no + 1 < page_num) {
-        load_next_page();
+
+        // 当前页遍历完，移动到下一页
+        rid_.page_no++;
+        rid_.slot_no = -1; // 设为-1是因为外层循环开始会先slot_no++
+
+        if (rid_.page_no >= file_hdr.num_pages)
+        {
+            break; // 所有页都遍历完了
+        }
     }
 }
 
-bool RmScan::is_end() const {
-    return rid_.page_no >= page_num ||
-           current_records_.empty();
+/**
+ * @brief ​ 判断是否到达文件末尾
+ */
+bool RmScan::is_end() const
+{
+    RmFileHdr file_hdr = file_handle_->get_file_hdr();
+    // 如果当前页号超出了总页数，或者是最后一页且slot号超出了每页记录数，就表示到达文件末尾
+    return rid_.page_no >= file_hdr.num_pages ||
+           (rid_.page_no == file_hdr.num_pages - 1 && rid_.slot_no >= file_hdr.num_records_per_page);
 }
 
-Rid RmScan::rid() const {
+/**
+ * @brief RmScan内部存放的rid
+ */
+Rid RmScan::rid() const
+{
     return rid_;
-}
-
-std::vector<Rid> RmScan::rid_batch() const {
-    std::vector<Rid> rids;
-    rids.reserve(current_records_.size());
-    
-    // current_records_中的记录都已经是可见的了
-    for(const auto& record_pair : current_records_) {
-        rids.emplace_back(Rid{rid_.page_no, record_pair.second});
-    }
-    return rids;
-}
-
-std::vector<std::unique_ptr<RmRecord>> RmScan::record_batch() {
-    std::vector<std::unique_ptr<RmRecord>> records;
-    records.reserve(current_records_.size());
-    
-    // current_records_中的记录都已经是可见的了
-    for(auto& record_pair : current_records_) {
-        records.emplace_back(std::move(record_pair.first));
-    }
-    return records;
 }

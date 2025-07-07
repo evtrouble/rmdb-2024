@@ -22,11 +22,11 @@ See the Mulan PSL v2 for more details. */
 class DeleteExecutor : public AbstractExecutor
 {
 private:
-    TabMeta tab_;                  // 表的元数据
-    std::vector<Condition> conds_; // delete的条件
-    std::shared_ptr<RmFileHandle> fh_;             // 表的数据文件句柄
-    std::vector<Rid> rids_;        // 需要删除的记录的位置
-    std::string tab_name_;         // 表名称
+    TabMeta tab_;                            // 表的元数据
+    std::vector<Condition> conds_;           // delete的条件
+    std::shared_ptr<RmFileHandle_Final> fh_; // 表的数据文件句柄
+    std::vector<Rid> rids_;                  // 需要删除的记录的位置
+    std::string tab_name_;                   // 表名称
     SmManager *sm_manager_;
     std::vector<std::shared_ptr<IxIndexHandle>> ihs_; // 缓存索引句柄
 
@@ -81,23 +81,24 @@ public:
                 ih->delete_entry(key.get(), rid, context_->txn_);
             }
 
-            if(!context_->lock_mgr_->lock_exclusive_on_key(context_->txn_, fh_->GetFd(), 
-                rec.data + txn_mgr->get_start_offset())) {
-                throw TransactionAbortException(context_->txn_->get_transaction_id(), 
-                    AbortReason::UPGRADE_CONFLICT);
+            if (!context_->lock_mgr_->lock_exclusive_on_key(context_->txn_, fh_->GetFd(),
+                                                            rec.data + txn_mgr->get_start_offset()))
+            {
+                throw TransactionAbortException(context_->txn_->get_transaction_id(),
+                                                AbortReason::UPGRADE_CONFLICT);
             }
             // 删除记录
             fh_->delete_record(rid, context_);
 
-            //记录日志
-            DeleteLogRecord log_record(context_->txn_->get_transaction_id(), 
-                rec, rid, tab_name_);
+            // 记录日志
+            DeleteLogRecord log_record(context_->txn_->get_transaction_id(),
+                                       rec, rid, tab_name_);
             context_->log_mgr_->add_log_to_buffer(&log_record);
-            if(context_->txn_->get_txn_manager()->get_concurrency_mode() != 
+            if (context_->txn_->get_txn_manager()->get_concurrency_mode() !=
                 ConcurrencyMode::MVCC)
             {
                 auto write_record = new WriteRecord(WType::DELETE_TUPLE,
-                            tab_name_, rid, rec);
+                                                    tab_name_, rid, rec);
                 context_->txn_->append_write_record(write_record);
             }
         }

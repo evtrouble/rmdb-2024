@@ -19,7 +19,7 @@ class UpdateExecutor : public AbstractExecutor
 {
 private:
     TabMeta tab_;
-    std::shared_ptr<RmFileHandle> fh_;
+    std::shared_ptr<RmFileHandle_Final> fh_;
     std::vector<Rid> rids_;
     std::string tab_name_;
     std::vector<SetClause> set_clauses_;
@@ -127,7 +127,8 @@ public:
         init(); // 初始化需要更新的索引信息和列元数据
     }
 
-    std::vector<std::unique_ptr<RmRecord>> next_batch(size_t batch_size = BATCH_SIZE) override {
+    std::vector<std::unique_ptr<RmRecord>> next_batch(size_t batch_size = BATCH_SIZE) override
+    {
         // 遍历所有需要更新的记录
         TransactionManager *txn_mgr = context_->txn_->get_txn_manager();
         RmRecord old_rec;

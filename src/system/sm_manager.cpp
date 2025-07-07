@@ -377,7 +377,7 @@ void SmManager::create_index(const std::string &tab_name, const std::vector<std:
 
     // 向索引中插入表中已有数据
     auto insert_data = std::make_unique<char[]>(tot_col_len);
-    for (RmScan rmScan(fh_, context); !rmScan.is_end(); rmScan.next_batch())
+    for (RmScan_Final rmScan(fh_, context); !rmScan.is_end(); rmScan.next_batch())
     {
         auto rids = rmScan.rid_batch();
         auto records = rmScan.record_batch();
@@ -1352,7 +1352,7 @@ void SmManager::process_csv_line_threaded(const std::string &line, const TabMeta
                                           int hidden_column_count, Context *context)
 {
     // 获取文件句柄时需要线程安全
-    std::shared_ptr<RmFileHandle> fh;
+    std::shared_ptr<RmFileHandle_Final> fh;
     {
         std::shared_lock<std::shared_mutex> lock(fhs_latch_);
         auto it = fhs_.find(tab.name);

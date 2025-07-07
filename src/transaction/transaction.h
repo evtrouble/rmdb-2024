@@ -34,15 +34,15 @@ public:
     write_set_ = std::make_shared<std::deque<WriteRecord *>>();
     write_index_set_ = std::make_shared<std::deque<WriteRecord *>>();
     lock_set_ = std::make_shared<std::unordered_set<LockDataId>>();
-    index_latch_page_set_ = std::make_shared<std::deque<Page *>>();
-    index_deleted_page_set_ = std::make_shared<std::deque<Page *>>();
+    index_latch_page_set_ = std::make_shared<std::deque<Page_Final *>>();
+    index_deleted_page_set_ = std::make_shared<std::deque<Page_Final *>>();
     prev_lsn_ = INVALID_LSN;
     thread_id_ = std::this_thread::get_id();
   }
 
   explicit Transaction(TransactionManager *txn_manager)
       : commit_ts_{0}, ref_count_{0}, txn_manager_(txn_manager) {
-        index_latch_page_set_ = std::make_shared<std::deque<Page *>>();
+        index_latch_page_set_ = std::make_shared<std::deque<Page_Final *>>();
       }
 
   ~Transaction() = default;
@@ -70,11 +70,11 @@ public:
   inline std::shared_ptr<std::deque<WriteRecord *>> get_write_index_set() { return write_index_set_; }
   inline void append_write_index_record(WriteRecord *write_record) { write_index_set_->push_back(write_record); }
 
-  inline std::shared_ptr<std::deque<Page *>> get_index_deleted_page_set() { return index_deleted_page_set_; }
-  inline void append_index_deleted_page(Page *page) { index_deleted_page_set_->push_back(page); }
+  inline std::shared_ptr<std::deque<Page_Final *>> get_index_deleted_page_set() { return index_deleted_page_set_; }
+  inline void append_index_deleted_page(Page_Final *page) { index_deleted_page_set_->push_back(page); }
 
-  inline std::shared_ptr<std::deque<Page *>> get_index_latch_page_set() { return index_latch_page_set_; }
-  inline void append_index_latch_page_set(Page *page) { index_latch_page_set_->push_back(page); }
+  inline std::shared_ptr<std::deque<Page_Final *>> get_index_latch_page_set() { return index_latch_page_set_; }
+  inline void append_index_latch_page_set(Page_Final *page) { index_latch_page_set_->push_back(page); }
 
   // inline TimestampRef *get_timestame_ref() { return ref; }
   inline void set_commit_ts(timestamp_t commit_ts) { commit_ts_ = commit_ts; }
@@ -110,8 +110,8 @@ private:
   std::shared_ptr<std::deque<WriteRecord *>> write_set_;       // 事务包含的所有写操作
   std::shared_ptr<std::deque<WriteRecord *>> write_index_set_;       // 事务包含的所有索引写操作
   std::shared_ptr<std::unordered_set<LockDataId>> lock_set_;   // 事务申请的所有锁
-  std::shared_ptr<std::deque<Page *>> index_latch_page_set_;   // 维护事务执行过程中加锁的索引页面
-  std::shared_ptr<std::deque<Page *>> index_deleted_page_set_; // 维护事务执行过程中删除的索引页面
+  std::shared_ptr<std::deque<Page_Final *>> index_latch_page_set_;   // 维护事务执行过程中加锁的索引页面
+  std::shared_ptr<std::deque<Page_Final *>> index_deleted_page_set_; // 维护事务执行过程中删除的索引页面
 
   // std::atomic<timestamp_t> read_ts_{0};
   /** 提交时间戳 */

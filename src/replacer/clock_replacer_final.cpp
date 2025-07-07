@@ -1,6 +1,6 @@
-#include "clock_replacer.h"
+#include "clock_replacer_final.h"
 
-ClockReplacer::ClockReplacer(size_t num_pages) : shards_(SHARD_COUNT)
+ClockReplacer_Final::ClockReplacer_Final(size_t num_pages) : shards_(SHARD_COUNT)
 {
     size_t per_shard = (num_pages + SHARD_COUNT - 1) / SHARD_COUNT;
     for (auto &shard : shards_)
@@ -9,12 +9,12 @@ ClockReplacer::ClockReplacer(size_t num_pages) : shards_(SHARD_COUNT)
     }
 }
 
-ClockReplacer::Shard &ClockReplacer::get_shard(frame_id_t frame_id)
+ClockReplacer_Final::Shard &ClockReplacer_Final::get_shard(frame_id_t frame_id)
 {
     return shards_[frame_id & (SHARD_COUNT - 1)];
 }
 
-bool ClockReplacer::victim(frame_id_t *frame_id)
+bool ClockReplacer_Final::victim(frame_id_t *frame_id)
 {
     for (int round = 0; round < 2; round++)
     {
@@ -56,7 +56,7 @@ bool ClockReplacer::victim(frame_id_t *frame_id)
     return false;
 }
 
-void ClockReplacer::pin(frame_id_t frame_id)
+void ClockReplacer_Final::pin(frame_id_t frame_id)
 {
     auto &shard = get_shard(frame_id);
     std::lock_guard guard(shard.mtx);
@@ -68,7 +68,7 @@ void ClockReplacer::pin(frame_id_t frame_id)
     }
 }
 
-void ClockReplacer::unpin(frame_id_t frame_id)
+void ClockReplacer_Final::unpin(frame_id_t frame_id)
 {
     auto &shard = get_shard(frame_id);
     std::lock_guard guard(shard.mtx);
@@ -81,7 +81,7 @@ void ClockReplacer::unpin(frame_id_t frame_id)
     }
 }
 
-size_t ClockReplacer::Size()
+size_t ClockReplacer_Final::Size()
 {
     size_t total = 0;
     for (auto &shard : shards_)

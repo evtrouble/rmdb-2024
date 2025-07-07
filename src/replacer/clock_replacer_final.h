@@ -6,11 +6,11 @@
 #include "common/config.h"
 #include "replacer/replacer.h"
 
-class ClockReplacer : public Replacer
+class ClockReplacer_Final : public Replacer
 {
 public:
-    explicit ClockReplacer(size_t num_pages);
-    ~ClockReplacer() = default;
+    explicit ClockReplacer_Final(size_t num_pages);
+    ~ClockReplacer_Final() = default;
 
     bool victim(frame_id_t *frame_id) override;
     void pin(frame_id_t frame_id) override;

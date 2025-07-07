@@ -27,14 +27,16 @@ class IxScan : public RecScan
     int max_pos_; // 当前节点最大可访问位置
     std::string max_key_;
     bool close_;
-    BufferPoolManager *bpm_;
+    BufferPoolManager_Final *bpm_;
 
 public:
     // node已加读锁，max_key生命周期由调用者保证
-    IxScan(const std::shared_ptr<IxIndexHandle>& ih, IxNodeHandle node, int start_pos, const std::string& max_key, BufferPoolManager *bpm)
-        : ih_(ih), node_(std::move(node)), pos_(start_pos), max_key_(std::move(max_key)), bpm_(bpm) {
+    IxScan(const std::shared_ptr<IxIndexHandle> &ih, IxNodeHandle node, int start_pos, const std::string &max_key, BufferPoolManager_Final *bpm)
+        : ih_(ih), node_(std::move(node)), pos_(start_pos), max_key_(std::move(max_key)), bpm_(bpm)
+    {
         update_max_pos();
-        if(is_end()) {
+        if (is_end())
+        {
             ih_->unlock_shared(node_);
         }
     }
@@ -52,20 +54,23 @@ public:
 
     bool is_end() const override { return pos_ >= max_pos_; }
 
-    Rid rid() const override {
+    Rid rid() const override
+    {
         return *node_.get_rid(pos_);
     }
 
     // 单记录访问
-    std::unique_ptr<RmRecord> &get_record() override {
+    std::unique_ptr<RmRecord> &get_record() override
+    {
         return temp;
     }
 
-    const IxNodeHandle& node() const { return node_; }
+    const IxNodeHandle &node() const { return node_; }
     int pos() const { return pos_; }
 
 private:
-    inline void update_max_pos() {
+    inline void update_max_pos()
+    {
         max_pos_ = node_.upper_bound_adjust(max_key_.c_str());
         // max_pos_ = std::min(max_pos_, node_.get_size());
     }

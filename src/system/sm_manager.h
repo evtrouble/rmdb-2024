@@ -16,7 +16,7 @@ See the Mulan PSL v2 for more details. */
 #include <fcntl.h>  // for open()
 #include <unistd.h> // for read(), close()
 #include "index/ix.h"
-#include "record/rm_file_handle.h"
+#include "record/rm_file_handle_final.h"
 #include "sm_defs.h"
 #include "sm_meta.h"
 #include "common/context.h"
@@ -34,15 +34,15 @@ struct ColDef
 class SmManager
 {
 public:
-    DbMeta db_;                                                           // 当前打开的数据库的元数据
-    std::unordered_map<std::string, std::shared_ptr<RmFileHandle>> fhs_;  // file name -> record file handle, 当前数据库中每张表的数据文件
-    std::unordered_map<std::string, std::shared_ptr<IxIndexHandle>> ihs_; // file name -> index file handle, 当前数据库中每个索引的文件
+    DbMeta db_;                                                                // 当前打开的数据库的元数据
+    std::unordered_map<std::string, std::shared_ptr<RmFileHandle_Final>> fhs_; // file name -> record file handle, 当前数据库中每张表的数据文件
+    std::unordered_map<std::string, std::shared_ptr<IxIndexHandle>> ihs_;      // file name -> index file handle, 当前数据库中每个索引的文件
     bool io_enabled_ = true;
 
 private:
-    DiskManager *disk_manager_;
-    BufferPoolManager *buffer_pool_manager_;
-    RmManager *rm_manager_;
+    DiskManager_Final *disk_manager_;
+    BufferPoolManager_Final *buffer_pool_manager_;
+    RmManager_Final *rm_manager_;
     IxManager *ix_manager_;
     std::shared_mutex fhs_latch_; // 保护fhs_的读写锁，保证对文件句柄的并发访问安全
     std::shared_mutex ihs_latch_; // 保护ihs_的读写锁，保证对索引句柄的并发访问安全
@@ -127,7 +127,7 @@ private:
                                             const TabMeta &tab, Context *context);
 
 public:
-    SmManager(DiskManager *disk_manager, BufferPoolManager *buffer_pool_manager, RmManager *rm_manager,
+    SmManager(DiskManager_Final *disk_manager, BufferPoolManager_Final *buffer_pool_manager, RmManager_Final *rm_manager,
               IxManager *ix_manager)
         : disk_manager_(disk_manager),
           buffer_pool_manager_(buffer_pool_manager),
@@ -136,9 +136,9 @@ public:
 
     ~SmManager() {}
 
-    BufferPoolManager *get_bpm() { return buffer_pool_manager_; }
+    BufferPoolManager_Final *get_bpm() { return buffer_pool_manager_; }
 
-    RmManager *get_rm_manager() { return rm_manager_; }
+    RmManager_Final *get_rm_manager() { return rm_manager_; }
 
     IxManager *get_ix_manager() { return ix_manager_; }
 
@@ -153,7 +153,7 @@ public:
         return nullptr; // 如果没有找到对应的索引句柄，返回nullptr
     }
 
-    inline std::shared_ptr<RmFileHandle> get_table_handle(const std::string &table_name)
+    inline std::shared_ptr<RmFileHandle_Final> get_table_handle(const std::string &table_name)
     {
         std::shared_lock lock(fhs_latch_);
         auto it = fhs_.find(table_name);
@@ -208,10 +208,10 @@ public:
                                    const TabMeta &tab, Context *context);
     void load_csv_data_threaded(std::string &file_name, std::string &tab_name, Context *context);
 
-    std::vector<std::shared_ptr<RmFileHandle>> get_all_table_handle()
+    std::vector<std::shared_ptr<RmFileHandle_Final>> get_all_table_handle()
     {
         std::shared_lock lock(fhs_latch_);
-        std::vector<std::shared_ptr<RmFileHandle>> handles;
+        std::vector<std::shared_ptr<RmFileHandle_Final>> handles;
         handles.reserve(fhs_.size());
         for (const auto &pair : fhs_)
         {

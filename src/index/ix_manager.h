@@ -22,11 +22,11 @@ class IxManager
 {
     friend class IxIndexHandle;
 private:
-    DiskManager *disk_manager_;
-    BufferPoolManager *buffer_pool_manager_;
+    DiskManager_Final *disk_manager_;
+    BufferPoolManager_Final *buffer_pool_manager_;
 
 public:
-    IxManager(DiskManager *disk_manager, BufferPoolManager *buffer_pool_manager)
+    IxManager(DiskManager_Final *disk_manager, BufferPoolManager_Final *buffer_pool_manager)
         : disk_manager_(disk_manager), buffer_pool_manager_(buffer_pool_manager) {}
 
     std::string get_index_name(const std::string &filename, const std::vector<std::string> &index_cols)

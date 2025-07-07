@@ -10,6 +10,8 @@ See the Mulan PSL v2 for more details. */
 
 #pragma once
 
+#include "rm_scan_final.h"
 #include "rm_scan.h"
+#include "rm_manager_final.h"
 #include "rm_manager.h"
 #include "rm_defs.h"
