@@ -16,6 +16,10 @@ class SQLClient:
         self.server_port = port
         self.buffer_size = 8192
         
+        # 添加缺失的属性初始化
+        self.sock = None
+        self.connected = False
+        
         # 如果没有提供run_id，创建一个基于当前时间的run_id
         if run_id is None:
             run_id = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -55,27 +59,50 @@ class SQLClient:
             f.write(f"服务器响应: {response}\n")
             f.write("-" * 50 + "\n\n")
 
-    def send_sql(self, sql: str, timeout: int = 30) -> Tuple[bool, str]:
-        """发送单条SQL命令到服务器"""
+    def connect(self) -> bool:
+        """建立持久连接"""
         try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-                sock.settimeout(timeout)
-                sock.connect((self.server_host, self.server_port))
-                sock.sendall((sql + '\0').encode('utf-8'))
-                data = sock.recv(self.buffer_size)
-                response = data.decode('utf-8').strip()
-
-                # 记录SQL交互
-                self.log_interaction(sql, True, response)
-
-                return True, response
+            if hasattr(self, 'sock') and self.sock:
+                self.sock.close()
+            self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.sock.settimeout(60)  # 增加超时时间
+            self.sock.connect((self.server_host, self.server_port))
+            self.connected = True
+            return True
+        except Exception as e:
+            self.connected = False
+            return False
+    
+    def disconnect(self):
+        """关闭连接"""
+        if hasattr(self, 'sock') and self.sock:
+            try:
+                self.sock.close()
+            except:
+                pass
+            self.sock = None
+        self.connected = False
+    
+    def send_sql(self, sql: str, timeout: int = 60) -> Tuple[bool, str]:
+        """发送SQL命令（使用持久连接）"""
+        if not self.connected:
+            if not self.connect():
+                return False, "连接失败"
+        
+        try:
+            self.sock.sendall((sql + '\0').encode('utf-8'))
+            data = self.sock.recv(self.buffer_size)
+            response = data.decode('utf-8').strip()
+            self.log_interaction(sql, True, response)
+            return True, response
         except Exception as e:
             error_msg = str(e)
-
-            # 记录失败的SQL交互
             self.log_interaction(sql, False, error_msg)
-
+            self.connected = False
             return False, error_msg
+    
+    def __del__(self):
+        self.disconnect()
 
     def execute_sql_file(self, sql_file: str) -> bool:
         """执行SQL文件中的所有命令"""

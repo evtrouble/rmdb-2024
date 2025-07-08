@@ -49,26 +49,26 @@ bool is_valid_datetime_format(const std::string &datetime_str)
  * @param {shared_ptr<ast::TreeNode>} parse parser生成的结果集
  * @return {shared_ptr<Query>} Query
  */
+// 在 do_analyze 函数中修复所有 check_column 调用
 std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse, Context *context)
 {
     std::shared_ptr<Query> query = std::make_shared<Query>();
     std::unordered_map<std::string, TabCol> alias_to_col;
 
-    table_alias_map_.clear();
+    // 将 table_alias_map_ 改为局部变量
+    std::unordered_map<std::string, std::string> table_alias_map;
+
     switch (parse->Nodetype())
     {
     case ast::TreeNodeType::SelectStmt:
     {
         auto x = std::static_pointer_cast<ast::SelectStmt>(parse);
-        // 处理表名
-        //!!!!这里不能move，后面会用到
         query->tables = x->tabs;
 
         // 建立表别名映射关系,别名->实际表名
         for (size_t i = 0; i < query->tables.size(); ++i)
         {
             std::string &table_name = query->tables[i];
-            // 检查表是否存在
             if (!sm_manager_->db_.is_table(table_name))
             {
                 throw TableNotFoundError(table_name);
@@ -76,12 +76,11 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
             if (x->tab_aliases.size() > i && !x->tab_aliases[i].empty())
             {
                 std::string &alias = x->tab_aliases[i];
-                table_alias_map_.emplace(alias, table_name);
+                table_alias_map.emplace(alias, table_name);
             }
-            // 表名也可以作为自己的别名
-            table_alias_map_.emplace(table_name, table_name);
+            table_alias_map.emplace(table_name, table_name);
         }
-        query->table_alias_map = table_alias_map_;
+        query->table_alias_map = table_alias_map;
 
         // 处理target list，在target list中添加上表名，例如 a.id
         query->cols.reserve(x->cols.size());
@@ -117,8 +116,8 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
             // infer table name from column name
             for (auto &sel_col : query->cols)
             {
-                if (sel_col.col_name != "*")                                // 避免count(*)检查
-                    sel_col = check_column(all_cols, sel_col, x->has_join); // 列元数据校验
+                if (sel_col.col_name != "*")                                                 // 避免count(*)检查
+                    sel_col = check_column(all_cols, sel_col, x->has_join, table_alias_map); // 列元数据校验
             }
 
             // 检查是否为"全选"
@@ -191,7 +190,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
             for (auto &g : x->groupby)
             {
                 TabCol group_col = {g->tab_name, g->col_name};
-                group_col = check_column(all_cols, group_col, false);
+                group_col = check_column(all_cols, group_col, false, table_alias_map);
                 query->groupby.emplace_back(group_col);
             }
         }
@@ -215,7 +214,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
                 join.right = joinclause->right;
                 join.type = joinclause->type;
                 get_clause(joinclause->conds, join.conds);
-                check_clause(query->tables, join.conds, false, context);
+                check_clause(query->tables, join.conds, false, context, table_alias_map);
                 query->jointree.emplace_back(join);
             }
         }
@@ -251,7 +250,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
 
             // 处理 HAVING 条件
             get_clause(x->having_conds, query->having_conds);
-            check_clause(query->tables, query->having_conds, true, context);
+            check_clause(query->tables, query->having_conds, true, context, table_alias_map);
         }
         // 处理ORDER BY
         if (x->order)
@@ -269,7 +268,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
                 }
                 // 检查ORDER BY列是否有效
                 TabCol order_col = {col->tab_name, col->col_name};
-                order_col = check_column(all_cols, order_col, false);
+                order_col = check_column(all_cols, order_col, false, table_alias_map);
                 bool is_agg = false;
                 if (ast::AggFuncType::NO_TYPE != col->agg_type)
                 {
@@ -313,7 +312,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
         }
         // 处理where条件
         get_clause(x->conds, query->conds);
-        check_clause(query->tables, query->conds, false, context);
+        check_clause(query->tables, query->conds, false, context, table_alias_map);
     }
     break;
     case ast::TreeNodeType::UpdateStmt:
@@ -337,7 +336,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
             // 设置要更新的列
             TabCol col(x->tab_name, sv_set_clause->col_name);
             // 验证列是否存在
-            col = check_column(all_cols, col, false);
+            col = check_column(all_cols, col, false, table_alias_map);
             set_clause.lhs = col;
 
             // 获取列的类型信息
@@ -366,16 +365,19 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
 
         // 处理where条件
         get_clause(x->conds, query->conds);
-        check_clause({x->tab_name}, query->conds, false, context);
+        check_clause({x->tab_name}, query->conds, false, context, table_alias_map);
     }
     break;
     case ast::TreeNodeType::DeleteStmt:
     {
         auto x = std::static_pointer_cast<ast::DeleteStmt>(parse);
-        // query->tables = {x->tab_name};
-        // 处理where条件
+
+        // 为 DeleteStmt 创建空的 table_alias_map
+        std::unordered_map<std::string, std::string> delete_table_alias_map;
+        delete_table_alias_map.emplace(x->tab_name, x->tab_name);
+
         get_clause(x->conds, query->conds);
-        check_clause({x->tab_name}, query->conds, false, context);
+        check_clause({x->tab_name}, query->conds, false, context, delete_table_alias_map);
     }
     break;
     case ast::TreeNodeType::InsertStmt:
@@ -436,22 +438,20 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
     return query;
 }
 
-TabCol Analyze::check_column(const std::vector<ColMeta> &all_cols, TabCol target, bool is_semijoin)
+TabCol Analyze::check_column(const std::vector<ColMeta> &all_cols, TabCol target, bool is_semijoin,
+                             const std::unordered_map<std::string, std::string> &table_alias_map)
 {
-    // 如果是通配符 '*'，直接返回，不需要验证
     if (target.col_name == "*")
     {
         return target;
     }
-    // 如果指定了表名/别名，先解析别名
+
     if (!target.tab_name.empty())
     {
-        // 检查是否是表别名，如果是，转换为真实表名
-        auto alias_it = table_alias_map_.find(target.tab_name);
-        if (alias_it != table_alias_map_.end())
+        auto alias_it = table_alias_map.find(target.tab_name);
+        if (alias_it != table_alias_map.end())
         {
             target.tab_name = alias_it->second;
-            // std::cout << "[Debug] Resolved table alias: " << target.tab_name << std::endl;
         }
     }
     if (target.tab_name.empty())
@@ -567,8 +567,94 @@ void Analyze::get_clause(const std::vector<std::shared_ptr<ast::BinaryExpr>> &sv
     }
 }
 
+// 实现类型转换函数
+Value Analyze::convert_value_type(const Value &value, ColType target_type)
+{
+    Value result = value;
+    result.raw = nullptr;
+
+    // 如果类型已经匹配，直接返回
+    if (value.type == target_type)
+    {
+        return result;
+    }
+
+    // 处理类型转换
+    switch (value.type)
+    {
+    case TYPE_INT:
+        if (target_type == TYPE_FLOAT)
+        {
+            // INT 转 FLOAT
+            result.set_float(static_cast<float>(value.int_val));
+        }
+        else if (target_type == TYPE_STRING)
+        {
+            // INT 转 STRING
+            result.set_str(std::to_string(value.int_val));
+        }
+        break;
+
+    case TYPE_FLOAT:
+        if (target_type == TYPE_INT)
+        {
+            // FLOAT 转 INT
+            result.set_int(static_cast<int>(value.float_val));
+        }
+        else if (target_type == TYPE_STRING)
+        {
+            // FLOAT 转 STRING
+            result.set_str(std::to_string(value.float_val));
+        }
+        break;
+
+    case TYPE_STRING:
+        if (target_type == TYPE_INT)
+        {
+            // STRING 转 INT
+            try
+            {
+                result.set_int(std::stoi(value.str_val));
+            }
+            catch (const std::exception &e)
+            {
+                throw IncompatibleTypeError("STRING", "INT");
+            }
+        }
+        else if (target_type == TYPE_FLOAT)
+        {
+            // STRING 转 FLOAT
+            try
+            {
+                result.set_float(std::stof(value.str_val));
+            }
+            catch (const std::exception &e)
+            {
+                throw IncompatibleTypeError("STRING", "FLOAT");
+            }
+        }
+        else if (target_type == TYPE_DATETIME)
+        {
+            if (!is_valid_datetime_format(value.str_val))
+            {
+                throw IncompatibleTypeError("STRING", "DATETIME - Invalid format");
+            }
+            // 格式正确，直接将字符串赋值给 datetime
+            result.set_str(value.str_val); // 先设置字符串值
+        }
+        // TODO: Implement datetime conversion if needed
+        break;
+    case TYPE_DATETIME:
+        break;
+    }
+
+    return result;
+}
+
+// 修改 check_clause 函数签名和实现
 void Analyze::check_clause(const std::vector<std::string> &tab_names,
-                           std::vector<Condition> &conds, bool is_having, Context *context)
+                           std::vector<Condition> &conds, bool is_having, Context *context,
+                           const std::unordered_map<std::string, std::string> &table_alias_map)
 {
     std::vector<ColMeta> all_cols;
     get_all_cols(tab_names, all_cols, context);
@@ -585,11 +671,11 @@ void Analyze::check_clause(const std::vector<std::string> &tab_names,
         // Infer table name from column name
         if (cond.lhs_col.col_name != "*")
         {
-            cond.lhs_col = check_column(all_cols, cond.lhs_col, false);
+            cond.lhs_col = check_column(all_cols, cond.lhs_col, false, table_alias_map);
         }
         if (!cond.is_rhs_val && /* !cond.is_subquery &&*/ cond.rhs_col.col_name != "*")
         {
-            cond.rhs_col = check_column(all_cols, cond.rhs_col, false);
+            cond.rhs_col = check_column(all_cols, cond.rhs_col, false, table_alias_map);
         }
         if ((is_having && cond.lhs_col.col_name != "*") || !is_having)
         {
@@ -718,88 +804,4 @@ CompOp Analyze::convert_sv_comp_op(ast::SvCompOp op)
         // {ast::SV_OP_NOT_IN, OP_NOT_IN},
     };
     return m.at(op);
-}
-
-// 实现类型转换函数
-Value Analyze::convert_value_type(const Value &value, ColType target_type)
-{
-    Value result = value;
-    result.raw = nullptr;
-
-    // 如果类型已经匹配，直接返回
-    if (value.type == target_type)
-    {
-        return result;
-    }
-
-    // 处理类型转换
-    switch (value.type)
-    {
-    case TYPE_INT:
-        if (target_type == TYPE_FLOAT)
-        {
-            // INT 转 FLOAT
-            result.set_float(static_cast<float>(value.int_val));
-        }
-        else if (target_type == TYPE_STRING)
-        {
-            // INT 转 STRING
-            result.set_str(std::to_string(value.int_val));
-        }
-        break;
-
-    case TYPE_FLOAT:
-        if (target_type == TYPE_INT)
-        {
-            // FLOAT 转 INT
-            result.set_int(static_cast<int>(value.float_val));
-        }
-        else if (target_type == TYPE_STRING)
-        {
-            // FLOAT 转 STRING
-            result.set_str(std::to_string(value.float_val));
-        }
-        break;
-
-    case TYPE_STRING:
-        if (target_type == TYPE_INT)
-        {
-            // STRING 转 INT
-            try
-            {
-                result.set_int(std::stoi(value.str_val));
-            }
-            catch (const std::exception &e)
-            {
-                throw IncompatibleTypeError("STRING", "INT");
-            }
-        }
-        else if (target_type == TYPE_FLOAT)
-        {
-            // STRING 转 FLOAT
-            try
-            {
-                result.set_float(std::stof(value.str_val));
-            }
-            catch (const std::exception &e)
-            {
-                throw IncompatibleTypeError("STRING", "FLOAT");
-            }
-        }
-        else if (target_type == TYPE_DATETIME)
-        {
-            if (!is_valid_datetime_format(value.str_val))
-            {
-                throw IncompatibleTypeError("STRING", "DATETIME - Invalid format");
-            }
-            // 格式正确，直接将字符串赋值给 datetime
-            result.set_str(value.str_val); // 先设置字符串值
-        }
-        // TODO: Implement datetime conversion if needed
-        break;
-    case TYPE_DATETIME:
-        break;
-    }
-
-    return result;
 }

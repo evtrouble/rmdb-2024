@@ -5,6 +5,7 @@ TPC-C事务语句生成器
 用于生成TPC-C性能测试所需的各种事务SQL语句
 包含五种标准TPC-C事务的随机生成
 支持生成多个独立的事务文件
+支持数据分区策略以减少UPDATE冲突
 """
 
 import random
@@ -53,27 +54,63 @@ class TPCCTransactionGenerator:
             'BARBARESE', 'BARBARANTI', 'BARBARCALLY', 'BARBARATION', 'BARBAREING',
             'OUGHTBAR', 'OUGHTOUGHT', 'OUGHTABLE', 'OUGHTPRI', 'OUGHTPRES'
         ]
+        
+        # 分区配置
+        self.partition_config = None
+        self.current_partition_id = 0
 
         print(f"🚀 TPC-C事务生成器初始化完成")
         print(f"  仓库数量: {self.num_warehouses}")
         print(f"  输出目录: {self.output_dir}")
 
-    def generate_random_timestamp(self) -> str:
-        """生成随机时间戳"""
-        base_time = datetime.datetime(2025, 1, 1)
-        random_days = random.randint(0, 180)  # 半年内的随机时间
-        random_time = base_time + datetime.timedelta(
-            days=random_days,
-            hours=random.randint(0, 23),
-            minutes=random.randint(0, 59),
-            seconds=random.randint(0, 59)
-        )
-        return random_time.strftime('%Y-%m-%d %H:%M:%S')
+    def set_partition_config(self, partition_id: int, total_partitions: int):
+        """
+        设置当前分区配置
+        
+        Args:
+            partition_id: 当前分区ID (0-based)
+            total_partitions: 总分区数
+        """
+        self.current_partition_id = partition_id
+        
+        # 计算warehouse分区范围
+        warehouses_per_partition = max(1, self.num_warehouses // total_partitions)
+        warehouse_start = partition_id * warehouses_per_partition + 1
+        warehouse_end = min((partition_id + 1) * warehouses_per_partition, self.num_warehouses)
+        
+        # 计算item分区范围
+        items_per_partition = max(1000, self.num_items // total_partitions)
+        item_start = partition_id * items_per_partition + 1
+        item_end = min((partition_id + 1) * items_per_partition, self.num_items)
+        
+        self.partition_config = {
+            'warehouse_range': (warehouse_start, warehouse_end),
+            'item_range': (item_start, item_end),
+            'partition_id': partition_id,
+            'total_partitions': total_partitions
+        }
+        
+        print(f"  分区 {partition_id+1}/{total_partitions}: 仓库 {warehouse_start}-{warehouse_end}, 商品 {item_start}-{item_end}")
 
-    def generate_random_string(self, length: int) -> str:
-        """生成随机字符串"""
-        chars = string.ascii_uppercase + string.digits + ' '
-        return ''.join(random.choice(chars) for _ in range(length)).strip()
+    def get_partition_warehouse_id(self) -> int:
+        """
+        获取当前分区的warehouse_id
+        """
+        if self.partition_config:
+            start, end = self.partition_config['warehouse_range']
+            return random.randint(start, end)
+        else:
+            return random.randint(1, self.num_warehouses)
+
+    def get_partition_item_id(self) -> int:
+        """
+        获取当前分区的item_id
+        """
+        if self.partition_config:
+            start, end = self.partition_config['item_range']
+            return random.randint(start, end)
+        else:
+            return random.randint(1, self.num_items)
 
     def generate_setup_sql(self) -> List[str]:
         """生成初始设置SQL语句"""
@@ -153,9 +190,26 @@ class TPCCTransactionGenerator:
             ""
         ]
 
+    def generate_random_timestamp(self) -> str:
+        """生成随机时间戳"""
+        base_time = datetime.datetime(2025, 1, 1)
+        random_days = random.randint(0, 180)  # 半年内的随机时间
+        random_time = base_time + datetime.timedelta(
+            days=random_days,
+            hours=random.randint(0, 23),
+            minutes=random.randint(0, 59),
+            seconds=random.randint(0, 59)
+        )
+        return random_time.strftime('%Y-%m-%d %H:%M:%S')
+
+    def generate_random_string(self, length: int) -> str:
+        """生成随机字符串"""
+        chars = string.ascii_uppercase + string.digits + ' '
+        return ''.join(random.choice(chars) for _ in range(length)).strip()
+
     def generate_new_order_transaction(self) -> List[str]:
-        """生成NewOrder事务"""
-        w_id = random.randint(1, self.num_warehouses)
+        """生成NewOrder事务（使用分区策略）"""
+        w_id = self.get_partition_warehouse_id()
         d_id = random.randint(1, self.num_districts_per_warehouse)
         c_id = random.randint(1, self.num_customers_per_district)
         o_id = random.randint(1, self.num_orders_per_district)
@@ -163,7 +217,7 @@ class TPCCTransactionGenerator:
         timestamp = self.generate_random_timestamp()
     
         sql_statements = [
-            f"-- NewOrder事务 (W:{w_id}, D:{d_id}, C:{c_id}, O:{o_id})",
+            f"-- NewOrder事务 (W:{w_id}, D:{d_id}, C:{c_id}, O:{o_id}) [分区{self.current_partition_id+1 if self.partition_config else 'N/A'}]",
             "BEGIN;",
             "",
             f"SELECT w_tax FROM warehouse WHERE w_id = {w_id};",
@@ -171,26 +225,24 @@ class TPCCTransactionGenerator:
             f"UPDATE district SET d_next_o_id=d_next_o_id+1 WHERE d_w_id = {w_id} AND d_id = {d_id};",
             f"SELECT c_discount, c_last, c_credit FROM customer WHERE c_w_id = {w_id} AND c_d_id = {d_id} AND c_id = {c_id};",
             "",
-            # 将NULL替换为0（表示未分配承运商）
             f"INSERT INTO orders VALUES ({o_id}, {d_id}, {w_id}, {c_id}, '{timestamp}', 0, {ol_cnt}, 1);",
             f"INSERT INTO new_orders VALUES ({o_id}, {d_id}, {w_id});",
             ""
         ]
     
-        # 生成订单行
+        # 生成订单行（使用分区item_id）
         for ol_number in range(1, ol_cnt + 1):
-            i_id = random.randint(1, self.num_items)
-            supply_w_id = w_id if random.random() < 0.9 else random.randint(1, self.num_warehouses)
+            i_id = self.get_partition_item_id()
+            supply_w_id = w_id if random.random() < 0.9 else self.get_partition_warehouse_id()
             quantity = random.randint(1, 10)
             amount = round(random.uniform(0.01, 99.99), 2)
             dist_info = self.generate_random_string(24)
     
             sql_statements.extend([
-                f"-- 订单行 {ol_number}",
+                f"-- 订单行 {ol_number} (Item:{i_id})",
                 f"SELECT i_price, i_name, i_data FROM item WHERE i_id = {i_id};",
                 f"SELECT s_quantity, s_data, s_dist_{d_id:02d} FROM stock WHERE s_w_id = {supply_w_id} AND s_i_id = {i_id};",
                 f"UPDATE stock SET s_quantity=s_quantity-{quantity}, s_order_cnt=s_order_cnt+1 WHERE s_w_id = {supply_w_id} AND s_i_id = {i_id};",
-                # 将NULL替换为空字符串（表示未交付）
                 f"INSERT INTO order_line VALUES ({o_id}, {d_id}, {w_id}, {ol_number}, {i_id}, {supply_w_id}, '', {quantity}, {amount}, '{dist_info}');",
                 ""
             ])
@@ -199,8 +251,8 @@ class TPCCTransactionGenerator:
         return sql_statements
 
     def generate_payment_transaction(self) -> List[str]:
-        """生成Payment事务"""
-        w_id = random.randint(1, self.num_warehouses)
+        """生成Payment事务（使用分区策略）"""
+        w_id = self.get_partition_warehouse_id()
         d_id = random.randint(1, self.num_districts_per_warehouse)
         amount = round(random.uniform(1.0, 5000.0), 2)
         timestamp = self.generate_random_timestamp()
@@ -214,13 +266,12 @@ class TPCCTransactionGenerator:
         else:
             last_name = random.choice(self.last_names)
             customer_query = f"SELECT c_first, c_middle, c_id, c_street_1, c_street_2, c_city, c_state, c_zip, c_phone, c_credit, c_credit_lim, c_discount, c_balance, c_since FROM customer WHERE c_w_id = {w_id} AND c_d_id = {d_id} AND c_last = '{last_name}' ORDER BY c_first LIMIT 1;"
-            # 获取特定客户ID进行更新
             c_id_for_update = random.randint(1, self.num_customers_per_district)
             customer_update = f"UPDATE customer SET c_balance=c_balance-{amount}, c_ytd_payment=c_ytd_payment+{amount}, c_payment_cnt=c_payment_cnt+1 WHERE c_w_id = {w_id} AND c_d_id = {d_id} AND c_last = '{last_name}';"
             history_insert = f"INSERT INTO history VALUES ({c_id_for_update}, {d_id}, {w_id}, {d_id}, {w_id}, '{timestamp}', {amount}, 'Payment by Last Name');"
 
         return [
-            f"-- Payment事务 (W:{w_id}, D:{d_id}, Amount:{amount})",
+            f"-- Payment事务 (W:{w_id}, D:{d_id}, Amount:{amount}) [分区{self.current_partition_id+1 if self.partition_config else 'N/A'}]",
             "BEGIN;",
             "",
             f"SELECT w_street_1, w_street_2, w_city, w_state, w_zip, w_name FROM warehouse WHERE w_id = {w_id};",
@@ -462,18 +513,34 @@ class TPCCTransactionGenerator:
         return filepath
     
     def generate_transaction_files(self, num_files: int = 10, transactions_per_file: int = 100) -> List[str]:
-        """生成多个事务文件"""
+        """生成多个事务文件（使用分区策略）"""
         files = []
+        print(f"📝 使用数据分区策略生成 {num_files} 个事务文件...")
+        
         for i in range(num_files):
+            # 为每个文件设置不同的分区
+            self.set_partition_config(i, num_files)
+            
             filename = f"transactions_{i+1:03d}.sql"
             filepath = os.path.join(self.output_dir, filename)
             
             with open(filepath, 'w', encoding='utf-8') as f:
+                # 添加分区信息注释
+                f.write(f"-- ========================================\n")
+                f.write(f"-- TPC-C事务文件 {i+1}/{num_files} (分区策略)\n")
+                f.write(f"-- 仓库范围: {self.partition_config['warehouse_range'][0]}-{self.partition_config['warehouse_range'][1]}\n")
+                f.write(f"-- 商品范围: {self.partition_config['item_range'][0]}-{self.partition_config['item_range'][1]}\n")
+                f.write(f"-- ========================================\n\n")
+                
                 for line in self.generate_mixed_workload(transactions_per_file):
                     f.write(line + '\n')
             
             files.append(filepath)
             print(f"  生成事务文件: {filename}")
+        
+        # 重置分区配置
+        self.partition_config = None
+        self.current_partition_id = 0
         
         return files
     
