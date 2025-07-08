@@ -17,7 +17,7 @@ See the Mulan PSL v2 for more details. */
  */
 bool BufferPoolManager::find_victim_page(frame_id_t *frame_id)
 {
-
+    // 注意：此函数的调用者已经持有 latch_ 锁，所以这里不需要额外加锁
     if (!free_list_.empty())
     {
         *frame_id = free_list_.front();
