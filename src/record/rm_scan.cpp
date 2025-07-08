@@ -10,6 +10,7 @@ See the Mulan PSL v2 for more details. */
 
 #include "rm_scan.h"
 #include "rm_file_handle.h"
+std::unique_ptr<RmRecord> RmScan::temp = nullptr;
 
 /**
  * @brief 初始化file_handle和rid
