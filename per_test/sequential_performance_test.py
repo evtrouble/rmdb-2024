@@ -23,7 +23,8 @@ from sql_client import SQLClient
 
 class TPCCSequentialPerformanceTest:
     def __init__(self, host: str = "localhost", port: int = 5432,
-                 num_warehouses: int = 10, output_dir: str = "sqls", dbname: str = "testdb"):
+                 num_warehouses: int = 10, output_dir: str = "sqls", 
+                 dbname: str = "testdb", external_server: bool = False):
         """
         初始化TPC-C顺序性能测试
 
@@ -33,6 +34,7 @@ class TPCCSequentialPerformanceTest:
             num_warehouses: 仓库数量
             output_dir: SQL文件输出目录
             dbname: 数据库名称
+            external_server: 是否使用外部启动的服务器
         """
         self.host = host
         self.port = port
@@ -40,6 +42,7 @@ class TPCCSequentialPerformanceTest:
         self.output_dir = output_dir
         self.test_dir = output_dir
         self.dbname = dbname
+        self.external_server = external_server  # 新增参数
 
         # 数据库服务器相关
         self.db_server_process = None
@@ -58,7 +61,7 @@ class TPCCSequentialPerformanceTest:
         # 创建事务生成器
         self.generator = TPCCTransactionGenerator(
             num_warehouses=num_warehouses,
-            output_dir=output_dir
+            output_dir=output_dir,
         )
 
         # 测试结果
@@ -122,13 +125,33 @@ class TPCCSequentialPerformanceTest:
     def start_perf_monitoring(self) -> bool:
         """启动perf监控"""
         try:
-            if self.db_server_process is None:
-                print("❌ 数据库服务器未启动，无法开始perf监控")
-                return False
+            if self.external_server:
+                # 外部服务器模式：通过进程名查找PID
+                try:
+                    result = subprocess.run(["pgrep", "-f", "rmdb"], 
+                                           capture_output=True, text=True)
+                    if result.returncode == 0:
+                        pids = result.stdout.strip().split('\n')
+                        if pids and pids[0]:
+                            db_pid = int(pids[0])  # 取第一个匹配的PID
+                            print(f"📊 找到外部rmdb进程，PID: {db_pid}")
+                        else:
+                            print("❌ 未找到运行中的rmdb进程")
+                            return False
+                    else:
+                        print("❌ 未找到运行中的rmdb进程")
+                        return False
+                except Exception as e:
+                    print(f"❌ 查找rmdb进程失败: {e}")
+                    return False
+            else:
+                # 内部服务器模式：使用启动的进程PID
+                if self.db_server_process is None:
+                    print("❌ 数据库服务器未启动，无法开始perf监控")
+                    return False
+                db_pid = self.db_server_process.pid
 
-            db_pid = self.db_server_process.pid
             perf_output = os.path.join(self.perf_dir, f"perf_data_{self.run_id}.data")
-
             print(f"📊 开始perf监控，PID: {db_pid}")
 
             # 启动perf record
@@ -190,10 +213,10 @@ class TPCCSequentialPerformanceTest:
 
             # 检查是否安装了FlameGraph工具
             flamegraph_path = None
-            
+
             # 首先尝试使用which命令查找stackcollapse-perf.pl
             try:
-                result = subprocess.run(["which", "stackcollapse-perf.pl"], 
+                result = subprocess.run(["which", "stackcollapse-perf.pl"],
                                        capture_output=True, text=True)
                 if result.returncode == 0:
                     stackcollapse_full_path = result.stdout.strip()
@@ -201,13 +224,13 @@ class TPCCSequentialPerformanceTest:
                     print(f"✅ 在PATH中找到FlameGraph工具: {flamegraph_path}")
             except Exception:
                 pass
-            
+
             # 如果which命令没找到，尝试常见路径
             if flamegraph_path is None:
                 possible_paths = [
                     "/home/nero/FlameGraph",  # 用户确认的绝对路径
                     "/opt/FlameGraph",
-                    "/usr/local/FlameGraph", 
+                    "/usr/local/FlameGraph",
                     "./FlameGraph",
                     os.path.expanduser("~/FlameGraph")
                 ]
@@ -480,7 +503,7 @@ ol_i_id int, ol_supply_w_id int, ol_delivery_d char(30), ol_quantity int, ol_amo
         # 顺序执行每个事务文件
         for i, file_path in enumerate(transaction_files):
             print(f"\n📄 执行事务文件 {i+1}/{total_files}: {os.path.basename(file_path)}")
-            
+
             try:
                 success_count, total_count, execution_time = self.execute_transaction_file(file_path, i+1)
                 total_success += success_count
@@ -544,12 +567,15 @@ ol_i_id int, ol_supply_w_id int, ol_delivery_d char(30), ol_quantity int, ol_amo
         print("="*80)
 
         try:
-            # 1. 清理数据库目录
-            self.cleanup_database()
+            if not self.external_server:
+                # 1. 清理数据库目录（仅内部模式）
+                self.cleanup_database()
 
-            # 2. 启动数据库服务器
-            if not self.start_database_server():
-                return False
+                # 2. 启动数据库服务器（仅内部模式）
+                if not self.start_database_server():
+                    return False
+            else:
+                print("🔗 使用外部启动的数据库服务器")
 
             # 3. 检查服务器连接
             if not self.check_server_connection():
@@ -614,6 +640,7 @@ def main():
     parser.add_argument('--transactions-per-file', '-t', type=int, default=100, help='每文件事务数')
     parser.add_argument('--dbname', '-d', default='testdb', help='数据库名称')
     parser.add_argument('--generate-only', action='store_true', help='只生成文件，不执行测试')
+    parser.add_argument('--external-server', action='store_true', help='使用外部启动的数据库服务器')
 
     args = parser.parse_args()
 
@@ -626,7 +653,8 @@ def main():
         port=args.port,
         num_warehouses=args.warehouses,
         output_dir=args.output_dir,
-        dbname=args.dbname
+        dbname=args.dbname,
+        external_server=args.external_server  # 新增参数
     )
 
     try:

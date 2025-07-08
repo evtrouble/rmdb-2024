@@ -469,6 +469,10 @@ setClause:
     {
         $$ = std::make_shared<SetClause>(std::move($1), std::move($3), UpdateOp::ASSINGMENT);
     }
+    |   colName '=' colName value
+    {
+        $$ = std::make_shared<SetClause>($1, $4, UpdateOp::SELF_ADD);
+    }
     |   colName '=' colName '+' value  // 修复：移除多余的参数
     {
         $$ = std::make_shared<SetClause>(std::move($1), std::move($5), UpdateOp::SELF_ADD);
@@ -528,7 +532,7 @@ tableList:
     {
         auto join_expr = std::make_shared<JoinExpr>(
             std::move($1.tables.back()),  // left
-            std::move($3),                // right  
+            std::move($3),                // right
             std::move($4),                // conds
             INNER_JOIN,                   // type
             "",                           // left_alias
