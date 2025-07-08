@@ -32,15 +32,6 @@ enum class ConcurrencyMode
     MVCC
 };
 
-struct PageVersionInfo
-{
-    std::shared_mutex mutex_;
-    /** 存储所有槽的先前版本信息。注意：不要使用 `[x]` 来访问它，因为
-     * 即使不存在也会创建新元素。请使用 `find` 来代替。
-     */
-    std::unordered_map<slot_offset_t, UndoLog*> prev_version_;
-};
-
 class TransactionManager
 {
 public:
@@ -127,15 +118,6 @@ public:
     std::shared_mutex txn_map_mutex_;
     /** ------------------------以下函数仅可能在MVCC当中使用------------------------------------------*/
 
-    std::shared_ptr<PageVersionInfo> GetPageVersionInfo(const PageId &page_id);
-
-    void TruncateVersionChain(std::shared_ptr<PageVersionInfo> page_info,
-                            const Rid &rid, timestamp_t watermark);
-    void TruncateVersionChain(int fd, const Rid &rid, timestamp_t watermark);
-
-    void DeleteVersionChain(int fd, const Rid &rid);
-    void DeleteVersionChain(std::shared_ptr<PageVersionInfo> page_info, const PageId &page_id, const Rid &rid);
-
     void StartPurgeCleaner();
     inline void StopPurgeCleaner() { 
         terminate_purge_cleaner_ = true;
@@ -159,17 +141,6 @@ public:
         if(iter == TransactionManager::txn_map.end())return start_txn_;
         return iter->second;
     }
-
-    std::optional<RmRecord> GetVisibleRecord(int fd, const Rid &rid, Transaction *current_txn);
-    std::optional<RmRecord> GetVisibleRecord(std::shared_ptr<PageVersionInfo> page_info_ptr,
-                                             const Rid &rid, Transaction* current_txn);
-
-    bool UpdateUndoLink(int fd, const Rid &rid, UndoLog* prev_link,
-                                            std::function<bool(UndoLog*)> &&check = nullptr);
-    /** 保护版本信息 */
-    std::shared_mutex version_info_mutex_;
-    /** 存储表堆中每个元组的先前版本。 */
-    std::unordered_map<PageId, std::shared_ptr<PageVersionInfo>, PageIdHash> version_info_;
 
     // 定义MVCC隐藏字段
     static constexpr const char* TXN_ID_FIELD = "__txn_id";

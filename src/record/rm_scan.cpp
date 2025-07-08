@@ -21,7 +21,7 @@ RmScan::RmScan(std::shared_ptr<RmFileHandle> file_handle, Context* context) :
 {
     page_num = file_handle->get_page_num();
     // 预分配空间，避免后续resize
-    current_records_.reserve(file_handle_->file_hdr_.num_records_per_page);
+    current_records_.reserve(file_handle_->get_file_hdr().num_records_per_page);
     load_next_page();  // 加载第一页数据
     rid_.slot_no = current_records_[current_record_idx_].second;
 }
@@ -64,9 +64,7 @@ void RmScan::load_next_page() {
     // 过滤出可见记录
     current_records_.clear();
     current_records_.reserve(raw_records.size());
-    TransactionManager *txn_manager = context_->txn_->get_txn_manager();
-    auto version_info = txn_manager->GetPageVersionInfo(
-        PageId{file_handle_->GetFd(), rid_.page_no});
+    auto version_info = file_handle_->GetPageVersionInfo(rid_.page_no);
     
     for(auto& record_pair : raw_records) {
         if(record_pair.first != nullptr) {
@@ -78,7 +76,7 @@ void RmScan::load_next_page() {
         // 尝试在版本链上查找可见版本
         if(version_info) {
             Rid current_rid{rid_.page_no, record_pair.second};
-            auto visible_version = txn_manager->GetVisibleRecord(
+            auto visible_version = file_handle_->GetVisibleRecord(
                 version_info, current_rid, context_->txn_);
             if(visible_version) {
                 auto record = std::make_unique<RmRecord>(std::move(*visible_version));
