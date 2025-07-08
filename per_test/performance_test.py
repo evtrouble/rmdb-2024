@@ -25,7 +25,8 @@ from sql_client import SQLClient
 
 class TPCCPerformanceTest:
     def __init__(self, host: str = "localhost", port: int = 5432,
-                 num_warehouses: int = 10, output_dir: str = "sqls", dbname: str = "testdb"):
+                 num_warehouses: int = 10, output_dir: str = "sqls", dbname: str = "testdb",
+                 external_server: bool = False):
         """
         初始化TPC-C性能测试
 
@@ -35,6 +36,7 @@ class TPCCPerformanceTest:
             num_warehouses: 仓库数量
             output_dir: SQL文件输出目录
             dbname: 数据库名称
+            external_server: 是否使用外部服务器（用户手动启动）
         """
         self.host = host
         self.port = port
@@ -42,6 +44,7 @@ class TPCCPerformanceTest:
         self.output_dir = output_dir
         self.test_dir = output_dir
         self.dbname = dbname
+        self.external_server = external_server
 
         # 数据库服务器相关
         self.db_server_process = None
@@ -133,18 +136,34 @@ class TPCCPerformanceTest:
     def start_perf_monitoring(self) -> bool:
         """启动perf监控"""
         try:
-            if self.db_server_process is None:
-                print("❌ 数据库服务器未启动，无法开始perf监控")
-                return False
+            if self.external_server:
+                # 外部服务器模式：通过进程名查找数据库服务器PID
+                try:
+                    result = subprocess.run(['pgrep', '-f', 'rmdb'], capture_output=True, text=True)
+                    if result.returncode == 0 and result.stdout.strip():
+                        db_pid = int(result.stdout.strip().split('\n')[0])
+                        print(f"📊 找到外部数据库服务器，PID: {db_pid}")
+                    else:
+                        print("❌ 未找到运行中的数据库服务器进程")
+                        print("请确保数据库服务器已启动并且进程名包含 'rmdb'")
+                        return False
+                except (ValueError, subprocess.SubprocessError) as e:
+                    print(f"❌ 查找数据库服务器进程失败: {e}")
+                    return False
+            else:
+                # 内部服务器模式：使用启动的进程PID
+                if self.db_server_process is None:
+                    print("❌ 数据库服务器未启动，无法开始perf监控")
+                    return False
+                db_pid = self.db_server_process.pid
 
-            db_pid = self.db_server_process.pid
             perf_output = os.path.join(self.perf_dir, f"perf_data_{self.run_id}.data")
 
             print(f"📊 开始perf监控，PID: {db_pid}")
 
             # 启动perf record
             self.perf_process = subprocess.Popen([
-                "perf", "record", "-g", "-p", str(db_pid), "-o", perf_output
+                "perf", "record", "-F", "4000", "-g", "-p", str(db_pid), "-o", perf_output
             ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
             # 等待perf启动
@@ -205,6 +224,8 @@ class TPCCPerformanceTest:
                 # 尝试其他可能的路径
                 possible_paths = [
                     "/usr/local/FlameGraph",
+                    "~/FlameGraph",
+                    "/home/nero/FlameGraph",
                     "./FlameGraph",
                     os.path.expanduser("~/FlameGraph")
                 ]
@@ -269,7 +290,10 @@ class TPCCPerformanceTest:
         """清理资源"""
         print("🧹 清理资源...")
         self.stop_perf_monitoring()
-        self.stop_database_server()
+        if not self.external_server:
+            self.stop_database_server()
+        else:
+            print("🔗 外部服务器模式：数据库服务器由用户管理，不自动停止")
 
     def check_server_connection(self) -> bool:
         """检查服务器连接"""
@@ -541,12 +565,17 @@ ol_i_id int, ol_supply_w_id int, ol_delivery_d char(30), ol_quantity int, ol_amo
         print("="*80)
 
         try:
-            # 1. 清理数据库目录
-            self.cleanup_database()
+            # 1. 清理数据库目录（仅在非外部服务器模式下）
+            if not self.external_server:
+                self.cleanup_database()
 
-            # 2. 启动数据库服务器
-            if not self.start_database_server():
-                return False
+            # 2. 启动数据库服务器（仅在非外部服务器模式下）
+            if not self.external_server:
+                if not self.start_database_server():
+                    return False
+            else:
+                print("🔗 使用外部数据库服务器模式")
+                print("请确保数据库服务器已手动启动")
 
             # 3. 检查服务器连接
             if not self.check_server_connection():
@@ -612,6 +641,7 @@ def main():
     parser.add_argument('--threads', type=int, default=4, help='并发线程数')
     parser.add_argument('--dbname', '-d', default='testdb', help='数据库名称')
     parser.add_argument('--generate-only', action='store_true', help='只生成文件，不执行测试')
+    parser.add_argument('--external-server', action='store_true', help='使用外部服务器（用户手动启动数据库服务器）')
 
     args = parser.parse_args()
 
@@ -624,7 +654,8 @@ def main():
         port=args.port,
         num_warehouses=args.warehouses,
         output_dir=args.output_dir,
-        dbname=args.dbname
+        dbname=args.dbname,
+        external_server=args.external_server
     )
 
     try:
