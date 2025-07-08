@@ -1,4 +1,4 @@
-    /* keywords are case insensitive */
+/* keywords are case insensitive */
 %option caseless
     /* we don't need yywrap() function */
 %option noyywrap
@@ -32,8 +32,8 @@
     }
 
 // 浮点数精度常量
-const int FLOAT_PRECISION = 6;
-const float FLOAT_PRECISION_MULTIPLIER = std::pow(10, FLOAT_PRECISION);
+constexpr int FLOAT_PRECISION = 6;
+constexpr float FLOAT_PRECISION_MULTIPLIER = 1000000.0f; // 10^6 预计算
 
 %}
 
@@ -139,14 +139,16 @@ value_path [\.|\/][^ \t]+\.csv
     return VALUE_INT;
 }
 {value_float} {
-    double  raw_val = atof(yytext);
+    // 使用 strtod 替代 atof，性能更好且更安全
+    char* endptr;
+    double raw_val = strtod(yytext, &endptr);
     // 对浮点数进行精度处理
     yylval->sv_float = std::round(raw_val * FLOAT_PRECISION_MULTIPLIER) / FLOAT_PRECISION_MULTIPLIER;
     yylval->sv_str = yytext;  // 保存原始文本
     return VALUE_FLOAT;
 }
 {value_string} {
-    yylval->sv_str = std::string(yytext + 1, strlen(yytext) - 2);
+    yylval->sv_str = std::move(std::string(yytext + 1, strlen(yytext) - 2));
     return VALUE_STRING;
 }
 {value_path} {

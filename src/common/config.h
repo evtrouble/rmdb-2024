@@ -25,24 +25,24 @@ extern std::atomic<bool> enable_logging;
 /** If ENABLE_LOGGING is true, the log should be flushed to disk every LOG_TIMEOUT. */
 extern std::chrono::duration<int64_t> log_timeout;
 
-static constexpr int INVALID_FRAME_ID = -1;        // invalid frame id
-static constexpr int INVALID_PAGE_ID = -1;         // invalid page id
-static constexpr int INVALID_TXN_ID = -1;          // invalid transaction id
-static constexpr int INVALID_TIMESTAMP = -1;       // invalid transaction timestamp
-static constexpr int64_t INVALID_LSN = -1;         // invalid log sequence number
+static constexpr int INVALID_FRAME_ID = -1;  // invalid frame id
+static constexpr int INVALID_PAGE_ID = -1;   // invalid page id
+static constexpr int INVALID_TXN_ID = -1;    // invalid transaction id
+static constexpr int INVALID_TIMESTAMP = -1; // invalid transaction timestamp
+static constexpr int64_t INVALID_LSN = -1;   // invalid log sequence number
 // static constexpr int64_t TXN_START_ID = 1LL << 62; // first txn id
 static constexpr int64_t TXN_DELETE_TAG = 1LL << 30;
 static constexpr int64_t TXN_ID_MASK = TXN_DELETE_TAG - 1;
-static constexpr int64_t INVALID_TS = -1;          // invalid log sequence number
-static constexpr int HEADER_PAGE_ID = 0;           // the header page id
-static constexpr int PAGE_SIZE = 4096;             // size of a data page in byte  4KB
+static constexpr int64_t INVALID_TS = -1; // invalid log sequence number
+static constexpr int HEADER_PAGE_ID = 0;  // the header page id
+static constexpr int PAGE_SIZE = 4096;    // size of a data page in byte  4KB
 // static constexpr int BUFFER_POOL_SIZE = 65536;     // size of buffer pool 256MB
-static constexpr int BUFFER_POOL_SIZE = 262144;    // size of buffer pool 1GB
+static constexpr int BUFFER_POOL_SIZE = 262144;            // size of buffer pool 1GB
 static constexpr int LOG_BUFFER_SIZE = (1024 * PAGE_SIZE); // size of a log buffer in byte
 static constexpr int BUCKET_SIZE = 50;                     // size of extendible hash bucket
 
-using frame_id_t = int32_t;   // frame id type, 帧页ID, 页在BufferPool中的存储单元称为帧,一帧对应一页
-using page_id_t = int32_t;    // page id type , 页ID
+using frame_id_t = int32_t; // frame id type, 帧页ID, 页在BufferPool中的存储单元称为帧,一帧对应一页
+using page_id_t = int32_t;  // page id type , 页ID
 // using txn_id_t = int64_t;     // transaction id type
 using txn_id_t = int32_t;     // transaction id type, 事务ID
 using lsn_t = int32_t;        // log sequence number type
@@ -58,4 +58,4 @@ static const std::string LOG_BAK_FILE_NAME = "db.log.bak";
 static const std::string DB_META_NAME = "db.meta";
 constexpr double multiplier = 1000000.0;
 constexpr size_t BATCH_SIZE = 256;
-constexpr int BASELINE = 256;
+constexpr int BASELINE = 2560;

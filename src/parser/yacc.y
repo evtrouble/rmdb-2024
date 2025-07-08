@@ -113,7 +113,7 @@ stmt:
     |   setStmt
     |   EXPLAIN dml
     {
-        $$ = std::make_shared<ExplainStmt>($2);
+        $$ = std::make_shared<ExplainStmt>(std::move($2));
     }
     ;
 
@@ -143,14 +143,14 @@ dbStmt:
     }
     |   LOAD fileName INTO tbName
     {
-         $$ = std::make_shared<LoadStmt>($2, $4);
+        $$ = std::make_shared<LoadStmt>(std::move($2), std::move($4));
     }
     ;
 
 setStmt:
         SET set_knob_type '=' VALUE_BOOL
     {
-        $$ = std::make_shared<SetStmt>($2, $4);
+        $$ = std::make_shared<SetStmt>($2, $4);  // 移除std::move
     }
     ;
 io_stmt:
@@ -166,27 +166,27 @@ io_stmt:
 ddl:
         CREATE TABLE tbName '(' fieldList ')'
     {
-        $$ = std::make_shared<CreateTable>($3, $5);
+        $$ = std::make_shared<CreateTable>(std::move($3), std::move($5));
     }
     |   DROP TABLE tbName
     {
-        $$ = std::make_shared<DropTable>($3);
+        $$ = std::make_shared<DropTable>(std::move($3));
     }
     |   DESC tbName
     {
-        $$ = std::make_shared<DescTable>($2);
+        $$ = std::make_shared<DescTable>(std::move($2));
     }
     |   CREATE INDEX tbName '(' colNameList ')'
     {
-        $$ = std::make_shared<CreateIndex>($3, $5);
+        $$ = std::make_shared<CreateIndex>(std::move($3), std::move($5));
     }
     |   DROP INDEX tbName '(' colNameList ')'
     {
-        $$ = std::make_shared<DropIndex>($3, $5);
+        $$ = std::make_shared<DropIndex>(std::move($3), std::move($5));
     }
     |   SHOW INDEX FROM tbName
     {
-        $$ = std::make_shared<ShowIndex>($4);
+        $$ = std::make_shared<ShowIndex>(std::move($4));
     }
     |   CREATE STATIC_CHECKPOINT
     {
@@ -197,28 +197,29 @@ ddl:
 dml:
         INSERT INTO tbName VALUES '(' valueList ')'
     {
-        $$ = std::make_shared<InsertStmt>($3, $6);
+        $$ = std::make_shared<InsertStmt>(std::move($3), std::move($6));
     }
     |   DELETE FROM tbName optWhereClause
     {
-        $$ = std::make_shared<DeleteStmt>($3, $4);
+        $$ = std::make_shared<DeleteStmt>(std::move($3), std::move($4));
     }
     |   UPDATE tbName SET setClauses optWhereClause
     {
-        $$ = std::make_shared<UpdateStmt>($2, $4, $5);
+        $$ = std::make_shared<UpdateStmt>(std::move($2), std::move($4), std::move($5));
     }
     |   SELECT selector FROM tableList optWhereClause opt_groupby_clause opt_having_clause opt_order_clause opt_limit_clause
     {
+        // 例如在 SelectStmt 创建时
         $$ = std::make_shared<SelectStmt>(
-            $2,             // selector
-            $4.tables,      // 表列表
-            $4.jointree,    // 连接树
-            $5,             // where条件
-            $6,             // groupby
-            $7,             // having
-            $8,             // order
-            $9,             // limit
-            $4.aliases      // 表别名
+            std::move($2),             // selector
+            std::move($4.tables),      // 表列表
+            std::move($4.jointree),    // 连接树
+            std::move($5),             // where条件
+            std::move($6),             // groupby
+            std::move($7),             // having
+            std::move($8),             // order
+            $9,                        // limit (int，不需要move)
+            std::move($4.aliases)      // 表别名
         );
     }
     ;
@@ -226,29 +227,29 @@ dml:
 fieldList:
         field
     {
-        $$ = std::vector<std::shared_ptr<Field>>{$1};
+        $$ = std::vector<std::shared_ptr<Field>>{std::move($1)};
     }
     |   fieldList ',' field
     {
-        $$.emplace_back($3);
+        $$.emplace_back(std::move($3));
     }
     ;
 
 colNameList:
         colName
     {
-        $$ = std::vector<std::string>{$1};
+        $$ = std::vector<std::string>{std::move($1)}; // 使用 move
     }
     | colNameList ',' colName
     {
-        $$.emplace_back($3);
+        $$.emplace_back(std::move($3)); // 使用 move
     }
     ;
 
 field:
         colName type
     {
-        $$ = std::make_shared<ColDef>($1, $2);
+        $$ = std::make_shared<ColDef>(std::move($1), std::move($2));
     }
     ;
 
@@ -274,11 +275,11 @@ type:
 valueList:
         value
     {
-        $$ = std::vector<std::shared_ptr<Value>>{$1};
+        $$ = std::vector<std::shared_ptr<Value>>{std::move($1)}; // 使用 move
     }
     |   valueList ',' value
     {
-        $$.emplace_back($3);
+        $$.emplace_back(std::move($3)); // 使用 move
     }
     ;
 
@@ -294,7 +295,7 @@ value:
     }
     |   VALUE_STRING
     {
-        $$ = std::make_shared<StringLit>($1);
+        $$ = std::make_shared<StringLit>(std::move($1));
     }
     |   VALUE_BOOL
     {
@@ -305,7 +306,7 @@ value:
 condition:
         col op expr
     {
-        $$ = std::make_shared<BinaryExpr>($1, $2, $3);
+        $$ = std::make_shared<BinaryExpr>(std::move($1), $2, std::move($3));
     }
     ;
 
@@ -337,11 +338,11 @@ opt_having_clause:
 whereClause:
         condition
     {
-        $$ = std::vector<std::shared_ptr<BinaryExpr>>{$1};
+        $$ = std::vector<std::shared_ptr<BinaryExpr>>{std::move($1)}; // 使用 move
     }
     |   whereClause AND condition
     {
-        $$.emplace_back($3);
+        $$.emplace_back(std::move($3)); // 使用 move
     }
     ;
 
@@ -349,49 +350,45 @@ whereClause:
 col:
         tbName '.' colName
     {
-        $$ = std::make_shared<Col>($1, $3);
+        $$ = std::make_shared<Col>(std::move($1), std::move($3));
     }
     |   colName
     {
-        $$ = std::make_shared<Col>("", $1);
-    }
-    ;
-    |   aggCol
-    {
-        $$ = $1;
+        $$ = std::make_shared<Col>("", std::move($1));
     }
     |   colName AS ALIAS
     {
-        $$ = std::make_shared<Col>("", $1);
-        $$->alias = $3;
+        $$ = std::make_shared<Col>("", std::move($1));
+        $$->alias = std::move($3);
     }
     |   aggCol AS ALIAS
     {
-        $$ = $1;
-        $$->alias = $3;
+        $$ = std::move($1);
+        $$->alias = std::move($3);
     }
     ;
 
 aggCol:
-        SUM '(' col ')'
-    {
-        $$ = std::make_shared<Col>($3->tab_name, $3->col_name, AggFuncType::SUM);
-    }
+    SUM '(' col ')'
+{
+    $$ = std::make_shared<Col>(std::move($3->tab_name), std::move($3->col_name), AggFuncType::SUM);
+}
     |   MIN '(' col ')'
     {
-        $$ = std::make_shared<Col>($3->tab_name, $3->col_name, AggFuncType::MIN);
+        // 优化后
+        $$ = std::make_shared<Col>(std::move($3->tab_name), std::move($3->col_name), AggFuncType::MIN);
     }
     |   MAX '(' col ')'
     {
-        $$ = std::make_shared<Col>($3->tab_name, $3->col_name, AggFuncType::MAX);
+        $$ = std::make_shared<Col>(std::move($3->tab_name), std::move($3->col_name), AggFuncType::MAX);
     }
     |   AVG '(' col ')'
     {
-        $$ = std::make_shared<Col>($3->tab_name, $3->col_name, AggFuncType::AVG);
+        $$ = std::make_shared<Col>(std::move($3->tab_name), std::move($3->col_name), AggFuncType::AVG);
     }
     |   COUNT '(' col ')'
     {
-        $$ = std::make_shared<Col>($3->tab_name, $3->col_name, AggFuncType::COUNT);
+        $$ = std::make_shared<Col>(std::move($3->tab_name), std::move($3->col_name), AggFuncType::COUNT);
     }
     |   COUNT '(' '*' ')'
     {
@@ -402,11 +399,11 @@ aggCol:
 colList:
         col
     {
-        $$ = std::vector<std::shared_ptr<Col>>{$1};
+        $$ = std::vector<std::shared_ptr<Col>>{std::move($1)}; // 使用 move
     }
     |   colList ',' col
     {
-        $$.emplace_back($3);
+        $$.emplace_back(std::move($3)); // 使用 move
     }
     ;
 
@@ -459,38 +456,34 @@ expr:
 setClauses:
         setClause
     {
-        $$ = std::vector<std::shared_ptr<SetClause>>{$1};
+        $$ = std::vector<std::shared_ptr<SetClause>>{std::move($1)}; // 使用 move
     }
     |   setClauses ',' setClause
     {
-        $$.emplace_back($3);
+        $$.emplace_back(std::move($3)); // 使用 move
     }
     ;
 
 setClause:
         colName '=' value
     {
-        $$ = std::make_shared<SetClause>($1, $3, UpdateOp::ASSINGMENT);
+        $$ = std::make_shared<SetClause>(std::move($1), std::move($3), UpdateOp::ASSINGMENT);
     }
-    |   colName '=' colName value
+    |   colName '=' colName '+' value  // 修复：移除多余的参数
     {
-        $$ = std::make_shared<SetClause>($1, $4, UpdateOp::SELF_ADD);
-    }
-    |   colName '=' colName '+' value
-    {
-        $$ = std::make_shared<SetClause>($1, $5, UpdateOp::SELF_ADD);
+        $$ = std::make_shared<SetClause>(std::move($1), std::move($5), UpdateOp::SELF_ADD);
     }
     |   colName '=' colName '-' value
     {
-        $$ = std::make_shared<SetClause>($1, $5, UpdateOp::SELF_SUB);
+        $$ = std::make_shared<SetClause>(std::move($1), std::move($5), UpdateOp::SELF_SUB);
     }
     |   colName '=' colName '*' value
     {
-        $$ = std::make_shared<SetClause>($1, $5, UpdateOp::SELF_MUT);
+        $$ = std::make_shared<SetClause>(std::move($1), std::move($5), UpdateOp::SELF_MUT);
     }
     |   colName '=' colName DIV value
     {
-        $$ = std::make_shared<SetClause>($1, $5, UpdateOp::SELF_DIV);
+        $$ = std::make_shared<SetClause>(std::move($1), std::move($5), UpdateOp::SELF_DIV);
     }
     ;
 
@@ -505,91 +498,99 @@ selector:
 tableList:
         tbName
     {
-        $$.tables = {$1};
+        $$.tables = {std::move($1)}; // 使用 move
         $$.aliases = {""};
         $$.jointree = {};
     }
     |   tbName ALIAS
     {
-        $$.tables = {$1};
-        $$.aliases = {$2};
+        $$.tables = {std::move($1)}; // 使用 move
+        $$.aliases = {std::move($2)}; // 使用 move
         $$.jointree = {};
     }
     |   tableList ',' tbName
     {
-        $$.tables = $1.tables;
-        $$.aliases = $1.aliases;
-        $$.tables.emplace_back($3);
+        $$.tables = std::move($1.tables); // 使用 move
+        $$.aliases = std::move($1.aliases); // 使用 move
+        $$.tables.emplace_back(std::move($3)); // 使用 move
         $$.aliases.emplace_back("");
-        $$.jointree = $1.jointree;
+        $$.jointree = std::move($1.jointree); // 使用 move
     }
     |   tableList ',' tbName ALIAS
     {
-        $$.tables = $1.tables;
-        $$.aliases = $1.aliases;
-        $$.tables.emplace_back($3);
-        $$.aliases.emplace_back($4);
-        $$.jointree = $1.jointree;
+        $$.tables = std::move($1.tables);     // 使用 move
+        $$.aliases = std::move($1.aliases);   // 使用 move
+        $$.tables.emplace_back(std::move($3)); // 使用 move
+        $$.aliases.emplace_back(std::move($4)); // 使用 move
+        $$.jointree = std::move($1.jointree);  // 使用 move
     }
     |   tableList JOIN tbName optJoinClause
     {
         auto join_expr = std::make_shared<JoinExpr>(
-            $1.tables.back(),
-            $3,
-            $4,
-            INNER_JOIN
+            std::move($1.tables.back()),  // left
+            std::move($3),                // right  
+            std::move($4),                // conds
+            INNER_JOIN,                   // type
+            "",                           // left_alias
+            ""                            // right_alias
         );
-        $$.tables = $1.tables;
-        $$.aliases = $1.aliases;
-        $$.tables.emplace_back($3);
+        $$.tables = std::move($1.tables);
+        $$.aliases = std::move($1.aliases);
+        $$.tables.emplace_back(std::move($3));
         $$.aliases.emplace_back("");
-        $$.jointree = $1.jointree;
-        $$.jointree.emplace_back(join_expr);
+        $$.jointree = std::move($1.jointree);
+        $$.jointree.emplace_back(std::move(join_expr));
     }
     |   tableList JOIN tbName ALIAS optJoinClause
     {
         auto join_expr = std::make_shared<JoinExpr>(
-            $1.tables.back(),
-            $3,
-            $5,
-            INNER_JOIN
+            std::move($1.tables.back()),  // left
+            std::move($3),                // right
+            std::move($5),                // conds
+            INNER_JOIN,                   // type
+            "",                           // left_alias
+            std::move($4)                 // right_alias
         );
-        $$.tables = $1.tables;
-        $$.aliases = $1.aliases;
-        $$.tables.emplace_back($3);
-        $$.aliases.emplace_back($4);
-        $$.jointree = $1.jointree;
-        $$.jointree.emplace_back(join_expr);
+        $$.tables = std::move($1.tables);
+        $$.aliases = std::move($1.aliases);
+        $$.tables.emplace_back(std::move($3));
+        $$.aliases.emplace_back(std::move($4));
+        $$.jointree = std::move($1.jointree);
+        $$.jointree.emplace_back(std::move(join_expr));
     }
     |   tableList SEMI JOIN tbName optJoinClause
     {
         auto join_expr = std::make_shared<JoinExpr>(
-            $1.tables.back(),
-            $4,
-            $5,
-            SEMI_JOIN
+            std::move($1.tables.back()),  // left
+            std::move($4),                // right
+            std::move($5),                // conds
+            SEMI_JOIN,                    // type
+            "",                           // left_alias
+            ""                            // right_alias
         );
-        $$.tables = $1.tables;
-        $$.aliases = $1.aliases;
-        $$.tables.emplace_back($4);
+        $$.tables = std::move($1.tables);
+        $$.aliases = std::move($1.aliases);
+        $$.tables.emplace_back(std::move($4));
         $$.aliases.emplace_back("");
-        $$.jointree = $1.jointree;
-        $$.jointree.emplace_back(join_expr);
+        $$.jointree = std::move($1.jointree);
+        $$.jointree.emplace_back(std::move(join_expr));
     }
     |   tableList SEMI JOIN tbName ALIAS optJoinClause
     {
         auto join_expr = std::make_shared<JoinExpr>(
-            $1.tables.back(),
-            $4,
-            $6,
-            SEMI_JOIN
+            std::move($1.tables.back()),  // left
+            std::move($4),                // right
+            std::move($6),                // conds
+            SEMI_JOIN,                    // type
+            "",                           // left_alias
+            std::move($5)                 // right_alias
         );
-        $$.tables = $1.tables;
-        $$.aliases = $1.aliases;
-        $$.tables.emplace_back($4);
-        $$.aliases.emplace_back($5);
-        $$.jointree = $1.jointree;
-        $$.jointree.emplace_back(join_expr);
+        $$.tables = std::move($1.tables);
+        $$.aliases = std::move($1.aliases);
+        $$.tables.emplace_back(std::move($4));
+        $$.aliases.emplace_back(std::move($5));
+        $$.jointree = std::move($1.jointree);
+        $$.jointree.emplace_back(std::move(join_expr));
     }
     ;
 
@@ -623,19 +624,19 @@ opt_groupby_clause:
 order_clause:
       order_item
     {
-        $$ = std::make_shared<OrderBy>($1.first, $1.second);
+        $$ = std::make_shared<OrderBy>(std::move($1.first), $1.second);
     }
     |   order_clause ',' order_item
     {
-        $1->addItem($3.first, $3.second);
-        $$ = $1;
+        $1->addItem(std::move($3.first), $3.second);
+        $$ = std::move($1);  // 使用 move
     }
     ;
 
 order_item:
       col opt_asc_desc
     {
-        $$ = std::make_pair($1, $2);
+        $$ = std::make_pair(std::move($1), $2);
     }
     ;
 
