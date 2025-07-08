@@ -516,7 +516,7 @@ class LogManager
 {
 public:
     LogManager(DiskManager_Final *disk_manager, BufferPoolManager_Final *buffer_pool_manager)
-        : disk_manager_(disk_manager), buffer_pool_manager_(buffer_pool_manager), active_buffer_index_(0)
+        : disk_manager_(disk_manager), buffer_pool_manager_(buffer_pool_manager)
     {
         flush_thread_ = std::thread(&LogManager::flush_log_to_disk_periodically, this);
     }

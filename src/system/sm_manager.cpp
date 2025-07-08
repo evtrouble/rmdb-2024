@@ -916,7 +916,6 @@ void SmManager::update_indexes_for_record(const RmRecord &rec, const Rid &rid,
 void SmManager::load_csv_data_threaded(std::string &file_name, std::string &tab_name, Context *context)
 {
     const size_t BUFFER_SIZE = 1024 * 1024; // 1MB缓冲区
-    const size_t MAX_QUEUE_SIZE = 5;        // 最大队列长度，控制内存使用
 
     // 创建线程安全队列
     ThreadSafeQueue data_queue;
@@ -993,7 +992,6 @@ void SmManager::reader_thread_func(const std::string &file_name, ThreadSafeQueue
 void SmManager::processor_thread_func(ThreadSafeQueue &queue, const std::string &tab_name, Context *context)
 {
     auto tab_ = db_.get_table(tab_name);
-    auto fh_ = fhs_[tab_name].get();
     TransactionManager *txn_mgr = context->txn_->get_txn_manager();
     int hidden_column_count = txn_mgr->get_hidden_column_count();
 
@@ -1186,7 +1184,7 @@ void SmManager::process_csv_line_threaded(const std::string &line, const TabMeta
             }
             case ColType::TYPE_STRING:
             {
-                size_t copy_len = std::min(field_value.length(), static_cast<size_t>(col.len));
+                int copy_len = std::min(field_value.length(), static_cast<size_t>(col.len));
                 std::memcpy(rec.data + col.offset, field_value.c_str(), copy_len);
                 if (copy_len < col.len)
                 {
@@ -1196,7 +1194,7 @@ void SmManager::process_csv_line_threaded(const std::string &line, const TabMeta
             }
             case ColType::TYPE_DATETIME:
             {
-                size_t copy_len = std::min(field_value.length(), static_cast<size_t>(col.len));
+                int copy_len = std::min(field_value.length(), static_cast<size_t>(col.len));
                 std::memcpy(rec.data + col.offset, field_value.c_str(), copy_len);
                 if (copy_len < col.len)
                 {
@@ -1322,7 +1320,7 @@ void SmManager::load_csv_data_page_batch(std::string &file_name, std::string &ta
         record_batch.push_back(std::move(record));
 
         // 当批次达到页面容量时，执行批量插入
-        if (record_batch.size() >= records_per_page)
+        if ((int)record_batch.size() >= records_per_page)
         {
             batch_insert_records(record_batch, batch_rids, tab_, context);
             batch_update_indexes(record_batch, batch_rids, tab_, context);
@@ -1396,9 +1394,6 @@ void SmManager::batch_reader_thread_func(const std::string &file_name, ThreadSaf
         throw RMDBError("Failed to open file: " + file_name);
     }
     
-    auto fh_ = fhs_[tab.name].get();
-    TransactionManager *txn_mgr = context->txn_->get_txn_manager();
-    
     // 跳过表头
     std::string line;
     std::getline(file, line);
@@ -1445,7 +1440,6 @@ void SmManager::batch_reader_thread_func(const std::string &file_name, ThreadSaf
 void SmManager::batch_processor_thread_func(ThreadSafeBatchQueue &queue, const std::string &tab_name, Context *context)
 {
     auto tab_ = db_.get_table(tab_name);
-    auto fh_ = fhs_[tab_name].get();
     size_t total_records = 0;
     
     while (true) {
