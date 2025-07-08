@@ -1229,19 +1229,29 @@ void SmManager::process_csv_line_threaded(const std::string &line, const TabMeta
 void SmManager::update_indexes_for_record_threaded(const RmRecord &rec, const Rid &rid,
                                                    const TabMeta &tab, Context *context)
 {
+    if (tab.indexes.empty()) return;
+    
+    // 计算所需的最大键长度，一次性分配内存
+    size_t max_key_len = 0;
+    for (const auto &index : tab.indexes) {
+        max_key_len = std::max(max_key_len, static_cast<size_t>(index.col_tot_len));
+    }
+    
+    // 一次性分配最大所需内存，避免重复分配
+    std::unique_ptr<char[]> reusable_key(new char[max_key_len]);
+    
     for (const auto &index : tab.indexes)
     {
-        std::unique_ptr<char[]> key(new char[index.col_tot_len]);
         int offset = 0;
 
-        // 构造索引键
+        // 构造索引键 - 复用已分配的内存
         for (int i = 0; i < index.col_num; ++i)
         {
             auto col_iter = tab.cols_map.find(index.cols[i].name);
             if (col_iter != tab.cols_map.end())
             {
                 const auto &col = tab.cols[col_iter->second];
-                std::memcpy(key.get() + offset, rec.data + col.offset, index.cols[i].len);
+                std::memcpy(reusable_key.get() + offset, rec.data + col.offset, index.cols[i].len);
             }
             offset += index.cols[i].len;
         }
@@ -1262,7 +1272,7 @@ void SmManager::update_indexes_for_record_threaded(const RmRecord &rec, const Ri
 
             if (ih)
             {
-                ih->insert_entry(key.get(), rid, context->txn_, true);
+                ih->insert_entry(reusable_key.get(), rid, context->txn_, true);
             }
         }
         catch (IndexEntryAlreadyExistError &)
