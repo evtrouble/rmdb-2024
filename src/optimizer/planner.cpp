@@ -578,17 +578,8 @@ std::unordered_map<std::string, size_t> calculate_table_cardinalities(const std:
                 continue;
             }
 
-            size_t num_pages = file_handle->get_file_hdr().num_pages;
-            size_t num_records = 0;
+            table_cardinalities[table] = file_handle->get_approximate_num();
 
-            // 遍历所有数据页来计算记录数
-            for (size_t page_no = 1; page_no < num_pages; page_no++)
-            {
-                auto page_handle = file_handle->fetch_page_handle(page_no);
-                num_records += page_handle.page_hdr->num_records;
-                sm_manager_->get_bpm()->unpin_page(page_handle.page->get_page_id(), false);
-            }
-            table_cardinalities[table] = num_records;
         }
         catch (const std::exception &e)
         {

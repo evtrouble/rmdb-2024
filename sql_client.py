@@ -11,12 +11,18 @@ from datetime import datetime
 from typing import Tuple, List
 
 class SQLClient:
-    def __init__(self, host: str = "127.0.0.1", port: int = 8765):
+    def __init__(self, host: str = "127.0.0.1", port: int = 8765, run_id: str = None):
         self.server_host = host
         self.server_port = port
         self.buffer_size = 8192
-        self.log_dir = "sql_logs"
-
+        
+        # 如果没有提供run_id，创建一个基于当前时间的run_id
+        if run_id is None:
+            run_id = datetime.now().strftime('%Y%m%d_%H%M%S')
+        
+        # 为每次运行创建专门的子目录
+        self.log_dir = os.path.join("sql_logs", f"run_{run_id}")
+        
         # 确保日志目录存在
         if not os.path.exists(self.log_dir):
             os.makedirs(self.log_dir)
@@ -74,38 +80,57 @@ class SQLClient:
     def execute_sql_file(self, sql_file: str) -> bool:
         """执行SQL文件中的所有命令"""
         print(f"\n执行SQL文件: {sql_file}")
-
+    
         if not os.path.exists(sql_file):
             print(f"错误: SQL文件不存在 - {sql_file}")
             return False
-
+    
         try:
             with open(sql_file, 'r') as f:
                 content = f.read()
-
+    
+            # 定义特殊命令列表（不需要分号结尾）
+            special_commands = {'set output_file on', 'set output_file off', 'restart', 'crash'}
+            
             # 将内容按分号分割成单独的SQL语句
             # 过滤掉空语句和注释
             queries = []
             current_query = []
-
+    
             for line in content.split('\n'):
                 line = line.strip()
                 if not line or line.startswith('--'):
                     continue
-
+    
+                # 检查是否是特殊命令
+                if line.lower() in special_commands:
+                    # 如果有未完成的查询，先处理它
+                    if current_query:
+                        query = ' '.join(current_query)
+                        if query.strip():
+                            queries.append(query)
+                        current_query = []
+                    # 添加特殊命令
+                    queries.append(line)
+                    continue
+    
                 current_query.append(line)
                 if line.endswith(';'):
                     query = ' '.join(current_query)
                     if query.strip(';').strip():  # 确保去掉分号后还有内容
                         queries.append(query)
                     current_query = []
-
+    
             # 检查是否有未完成的查询
             if current_query:
                 remaining_query = ' '.join(current_query)
                 if remaining_query.strip():
-                    print(f"警告: 发现未以分号结尾的SQL语句: {remaining_query}")
-
+                    # 检查是否是特殊命令但没有被识别
+                    if remaining_query.lower() in special_commands:
+                        queries.append(remaining_query)
+                    else:
+                        print(f"警告: 发现未以分号结尾的SQL语句: {remaining_query}")
+    
             total_queries = len(queries)
             print(f"准备执行 {total_queries} 个SQL命令")
 
