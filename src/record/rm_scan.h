@@ -16,6 +16,7 @@ class RmFileHandle;
 
 class RmScan : public RecScan
 {
+    static std::unique_ptr<RmRecord> temp;
     const RmFileHandle *file_handle_;
     Rid rid_;
 
@@ -28,14 +29,14 @@ public:
 
     Rid rid() const override;
     // 单记录访问
-    void record(std::unique_ptr<RmRecord> &out) {};
-    std::unique_ptr<RmRecord> &get_record() {};
+    void record(std::unique_ptr<RmRecord> &out) {}
+    std::unique_ptr<RmRecord> &get_record() { return temp; }
 
-    void next_batch() {};
+    void next_batch() {}
 
     // 批量访问接口
-    std::vector<Rid> rid_batch() const {};
+    std::vector<Rid> rid_batch() const { return {}; }
     std::vector<std::unique_ptr<RmRecord>> record_batch() {
-
-    };
+        return {};
+    }
 };
