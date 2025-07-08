@@ -100,6 +100,7 @@ public:
         queryFlags_.joinFlag = false;
         queryFlags_.orderbyFlag = false;
         queryFlags_.aggFlag = false;
+        queryFlags_.isStarFlag = false;
     }
 
     // TransactionManager *txn_mgr_;

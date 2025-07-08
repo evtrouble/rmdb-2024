@@ -59,7 +59,7 @@ void sigint_handler(int signo)
 // 判断当前正在执行的是显式事务还是单条SQL语句的事务，并更新事务ID
 void SetTransaction(txn_id_t *txn_id, Context *context)
 {
-    context->txn_ = txn_manager->get_transaction(*txn_id);
+    // context->txn_ = txn_manager->get_transaction(*txn_id);
     if (context->txn_ == nullptr)
     {
         context->txn_ = txn_manager->begin(nullptr, context->log_mgr_);
@@ -86,6 +86,8 @@ void *client_handler(void *sock_fd)
 
     // std::string output = "establish client connection, sockfd: " + std::to_string(fd) + "\n";
     // std::cout << output;
+    // 开启事务，初始化系统所需的上下文信息（包括事务对象指针、锁管理器指针、日志管理器指针、存放结果的buffer、记录结果长度的变量）
+    auto context = std::make_unique<Context>(lock_manager.get(), log_manager.get(), nullptr, data_send, &offset);
 
     while (true)
     {
@@ -120,10 +122,8 @@ void *client_handler(void *sock_fd)
         }
         // std::cout << "Read from client " << fd << ": " << data_recv << std::endl;
         offset = 0;
-
-        // 开启事务，初始化系统所需的上下文信息（包括事务对象指针、锁管理器指针、日志管理器指针、存放结果的buffer、记录结果长度的变量）
-        auto context = std::make_unique<Context>(lock_manager.get(), log_manager.get(), nullptr, data_send, &offset);
         SetTransaction(&txn_id, context.get());
+        context->clearFlags(); // 清除标志位
 
         // 用于判断是否已经调用了yy_delete_buffer来删除buf
         bool finish_analyze = false;
@@ -140,7 +140,6 @@ void *client_handler(void *sock_fd)
                     yy_delete_buffer(buf);
                     finish_analyze = true;
                     pthread_mutex_unlock(buffer_mutex);
-                    // context->clearFlags(); // 清除标志位
                     // 优化器
                     std::shared_ptr<Plan> plan = optimizer->plan_query(query, context.get());
                     std::shared_ptr<PortalStmt> portalStmt = portal->start(plan, context.get());
@@ -237,12 +236,14 @@ void *client_handler(void *sock_fd)
         {
             // 事务已经结束，释放事务对象
             context->txn_->release();
+            context->txn_ = nullptr;
             txn_id = INVALID_TXN_ID;
         }
         else if (!context->txn_->get_txn_mode())
         {
             txn_manager->commit(context.get(), context->log_mgr_);
             context->txn_->release();
+            context->txn_ = nullptr;
             txn_id = INVALID_TXN_ID;
         }
     }
