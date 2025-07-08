@@ -38,6 +38,77 @@ public:
     std::unordered_map<std::string, std::shared_ptr<RmFileHandle_Final>> fhs_; // file name -> record file handle, 当前数据库中每张表的数据文件
     std::unordered_map<std::string, std::shared_ptr<IxIndexHandle>> ihs_;      // file name -> index file handle, 当前数据库中每个索引的文件
     bool io_enabled_ = true;
+    // 添加新的批量数据结构
+    struct BatchDataChunk
+    {
+        std::vector<std::unique_ptr<char[]>> records;
+        std::vector<std::string> raw_lines; // 用于错误处理
+        bool is_final;
+
+        BatchDataChunk() : is_final(false)
+        {
+            records.reserve(1000); // 预分配空间
+            raw_lines.reserve(1000);
+        }
+    };
+
+    struct ThreadSafeBatchQueue
+    {
+        std::queue<std::shared_ptr<BatchDataChunk>> queue;
+        std::mutex mtx;
+        std::condition_variable cv;
+        bool finished = false;
+        std::exception_ptr exception_ptr = nullptr;
+
+        void push(std::shared_ptr<BatchDataChunk> chunk)
+        {
+            std::lock_guard<std::mutex> lock(mtx);
+            queue.push(chunk);
+            cv.notify_one();
+        }
+
+        std::shared_ptr<BatchDataChunk> pop()
+        {
+            std::unique_lock<std::mutex> lock(mtx);
+            cv.wait(lock, [this]
+                    { return !queue.empty() || finished || exception_ptr; });
+
+            if (exception_ptr)
+            {
+                std::rethrow_exception(exception_ptr);
+            }
+
+            if (queue.empty())
+            {
+                return nullptr;
+            }
+
+            auto chunk = queue.front();
+            queue.pop();
+            return chunk;
+        }
+
+        void set_finished()
+        {
+            std::lock_guard<std::mutex> lock(mtx);
+            finished = true;
+            cv.notify_all();
+        }
+
+        void set_exception(std::exception_ptr ptr)
+        {
+            std::lock_guard<std::mutex> lock(mtx);
+            exception_ptr = ptr;
+            finished = true;
+            cv.notify_all();
+        }
+    };
+
+    // 新的方法声明
+    void load_csv_data_threaded_batch(std::string &file_name, std::string &tab_name, Context *context);
+    void batch_reader_thread_func(const std::string &file_name, ThreadSafeBatchQueue &queue,
+                                  const TabMeta &tab, int hidden_column_count, Context *context);
+    void batch_processor_thread_func(ThreadSafeBatchQueue &queue, const std::string &tab_name, Context *context);
 
 private:
     DiskManager_Final *disk_manager_;
@@ -125,6 +196,19 @@ private:
 
     void update_indexes_for_record_threaded(const RmRecord &rec, const Rid &rid,
                                             const TabMeta &tab, Context *context);
+    void load_csv_data_page_batch(std::string &file_name, std::string &tab_name, Context *context);
+    void batch_insert_records(const std::vector<std::unique_ptr<char[]>> &records,
+                              std::vector<Rid> &rids,
+                              const TabMeta &tab,
+                              Context *context);
+    void batch_update_indexes(const std::vector<std::unique_ptr<char[]>> &records,
+                              const std::vector<Rid> &rids,
+                              const TabMeta &tab,
+                              Context *context);
+    std::unique_ptr<char[]> parse_csv_to_record(const std::string &line,
+                                                const TabMeta &tab,
+                                                int hidden_column_count,
+                                                Context *context);
 
 public:
     SmManager(DiskManager_Final *disk_manager, BufferPoolManager_Final *buffer_pool_manager, RmManager_Final *rm_manager,
@@ -132,7 +216,9 @@ public:
         : disk_manager_(disk_manager),
           buffer_pool_manager_(buffer_pool_manager),
           rm_manager_(rm_manager),
-          ix_manager_(ix_manager) {}
+          ix_manager_(ix_manager)
+    {
+    }
 
     ~SmManager() {}
 
@@ -191,8 +277,6 @@ public:
     void drop_index(const std::string &tab_name, const std::vector<ColMeta> &col_names, Context *context);
     void show_index(const std::string &tab_name, Context *context);
 
-    void load_csv_data(std::string &file_name, std::string &tab_name, Context *context);
-    void load_csv_data_double_buffer(std::string &file_name, std::string &tab_name, Context *context);
     size_t process_buffer_chunk(char *buffer, size_t buffer_size,
                                 std::string &leftover, const TabMeta &tab,
                                 int hidden_column_count, Context *context,

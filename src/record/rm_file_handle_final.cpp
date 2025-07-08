@@ -641,3 +641,57 @@ void RmFileHandle_Final::ensure_file_size()
     DiskManager_Final *disk_manager = rm_manager_->disk_manager_;
     disk_manager->ensure_file_size(fd_, file_hdr_.num_pages);
 }
+
+// 批量插入记录方法
+std::vector<Rid> RmFileHandle_Final::batch_insert_records(const std::vector<std::unique_ptr<char[]>> &records, Context *context)
+{
+    std::vector<Rid> rids;
+    rids.reserve(records.size());
+
+    if (records.empty())
+    {
+        return rids;
+    }
+
+    RmPageHandle_FInal page_handle = create_page_handle();
+    std::lock_guard lock(page_handle.page->latch_);
+
+    for (const auto &record : records)
+    {
+        // 检查当前页面是否还有空间
+        if (page_handle.page_hdr->num_records >= file_hdr_.num_records_per_page)
+        {
+            // 当前页面已满，释放并创建新页面
+            rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);
+            page_handle = create_page_handle();
+            // 注意：这里需要重新获取锁，但由于是新的page_handle，会自动获取新的锁
+        }
+
+        // 找到空闲slot
+        int slot_no = Bitmap::first_bit(false, page_handle.bitmap, file_hdr_.num_records_per_page);
+
+        if (slot_no < file_hdr_.num_records_per_page)
+        {
+            // 设置bitmap和复制数据
+            Bitmap::set(page_handle.bitmap, slot_no);
+            memcpy(page_handle.get_slot(slot_no), record.get(), file_hdr_.record_size);
+            page_handle.page_hdr->num_records++;
+
+            // 记录RID
+            rids.emplace_back(Rid{page_handle.page->get_page_id().page_no, slot_no});
+
+            // 如果页面已满，更新空闲页面链表
+            if (page_handle.page_hdr->num_records == file_hdr_.num_records_per_page)
+            {
+                std::lock_guard file_lock(lock_);
+                if (file_hdr_.first_free_page_no == page_handle.page->get_page_id().page_no)
+                {
+                    file_hdr_.first_free_page_no = page_handle.page_hdr->next_free_page_no;
+                }
+            }
+        }
+    }
+
+    rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);
+    return rids;
+}

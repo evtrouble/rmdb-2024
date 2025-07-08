@@ -190,7 +190,8 @@ void QlManager::run_cmd_utility(std::shared_ptr<Plan> plan, txn_id_t *txn_id, Co
     case T_LoadData:
     {
         auto x = std::static_pointer_cast<OtherPlan>(plan);
-        sm_manager_->load_csv_data_threaded(x->file_name_, x->tab_name_, context);
+        // 使用双缓冲 + 页级批量插入的优化版本
+        sm_manager_->load_csv_data_threaded_batch(x->file_name_, x->tab_name_, context);
         break;
     }
     case T_IoEnable:

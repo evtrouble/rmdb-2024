@@ -122,6 +122,9 @@ public:
     void insert_record(const Rid &rid, char *buf);
     void recovery_insert_record(const Rid &rid, char *buf);
 
+    // 添加页级批量插入方法声明
+    std::vector<Rid> batch_insert_records(const std::vector<std::unique_ptr<char[]>> &records, Context *context);
+
     void delete_record(const Rid &rid, Context *context);
     void recovery_delete_record(const Rid &rid);
 
