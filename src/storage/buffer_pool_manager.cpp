@@ -17,19 +17,15 @@ See the Mulan PSL v2 for more details. */
  */
 bool BufferPoolManager::find_victim_page(frame_id_t *frame_id)
 {
-    // 移除debug日志文件操作，这在并发环境下也可能造成问题
-    // std::ofstream debug_log("storage_test.log", std::ios::out | std::ios::app);
 
     if (!free_list_.empty())
     {
         *frame_id = free_list_.front();
         free_list_.pop_front();
-        // debug_log.close();
         return true;
     }
 
     bool found = replacer_->victim(frame_id);
-    // debug_log.close();
     return found;
 }
 
@@ -39,11 +35,9 @@ bool BufferPoolManager::find_victim_page(frame_id_t *frame_id)
  * @param {PageId} new_page_id 新的page_id
  * @param {frame_id_t} new_frame_id 新的帧frame_id
  */
-// 用一个新的页面替换掉当前帧中的页面。
 void BufferPoolManager::update_page(Page *page, PageId new_page_id, frame_id_t new_frame_id)
 {
     std::scoped_lock lock{latch_};
-    std::ofstream debug_log("storage_test.log", std::ios::out | std::ios::app);
 
     if (page->is_dirty_)
     {
@@ -54,7 +48,6 @@ void BufferPoolManager::update_page(Page *page, PageId new_page_id, frame_id_t n
     page_table_.erase(page->id_);
     page_table_[new_page_id] = new_frame_id;
     page->id_ = new_page_id;
-    debug_log.close();
 }
 
 /**
