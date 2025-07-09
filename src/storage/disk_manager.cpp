@@ -17,8 +17,9 @@ See the Mulan PSL v2 for more details. */
 
 #include "defs.h"
 
-DiskManager::DiskManager() { 
-    // memset(fd2pageno_, 0, MAX_FD * (sizeof(std::atomic<page_id_t>) / sizeof(char))); 
+DiskManager::DiskManager()
+{
+    // memset(fd2pageno_, 0, MAX_FD * (sizeof(std::atomic<page_id_t>) / sizeof(char)));
 }
 
 /**
@@ -40,7 +41,7 @@ void DiskManager::write_page(int fd, page_id_t page_no, const char *offset, int 
     // 定位到对应页面的起始位置
     if (lseek(fd, offset_in_file, SEEK_SET) == -1)
     {
-        throw UnixError();
+        // throw UnixError();
     }
 
     // 写入数据
@@ -67,7 +68,7 @@ void DiskManager::read_page(int fd, page_id_t page_no, char *offset, int num_byt
     size_t offset_in_file = static_cast<size_t>(page_no) * PAGE_SIZE;
     if (lseek(fd, offset_in_file, SEEK_SET) == -1)
     {
-        throw UnixError();
+        // throw UnixError();
     }
     ssize_t bytes_read = read(fd, offset, num_bytes);
     if (bytes_read != num_bytes)
@@ -102,7 +103,7 @@ void DiskManager::create_dir(const std::string &path)
     std::string cmd = "mkdir " + path;
     if (system(cmd.c_str()) < 0)
     { // 创建一个名为path的目录
-        throw UnixError();
+      // throw UnixError();
     }
 }
 
@@ -111,7 +112,7 @@ void DiskManager::destroy_dir(const std::string &path)
     std::string cmd = "rm -r " + path;
     if (system(cmd.c_str()) < 0)
     {
-        throw UnixError();
+        // throw UnixError();
     }
 }
 
@@ -148,7 +149,7 @@ void DiskManager::create_file(const std::string &path)
     int fd = open(path.c_str(), O_CREAT | O_RDWR, 0644);
     if (fd < 0)
     {
-        throw UnixError();
+        // throw UnixError();
     }
 
     // 创建完后需要关闭文件
@@ -228,7 +229,7 @@ void DiskManager::close_file(int fd)
     // 关闭文件
     if (close(fd) < 0)
     {
-        throw UnixError();
+        // throw UnixError();
     }
 
     // 从文件打开列表中移除
@@ -323,6 +324,6 @@ void DiskManager::write_log(char *log_data, int size)
     ssize_t bytes_write = write(log_fd_, log_data, size);
     if (bytes_write != size)
     {
-        throw UnixError();
+        // throw UnixError();
     }
 }
