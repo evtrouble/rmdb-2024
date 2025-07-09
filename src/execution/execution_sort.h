@@ -183,7 +183,7 @@ public:
                 const std::vector<TabCol> &sel_cols,
                 const std::vector<bool> &is_desc_orders, 
                 int limit, Context *context, 
-                size_t block_size = 2*1024*1024)
+                const int64_t block_size = 1LL<<30)
         : AbstractExecutor(context), 
           prev_(std::move(prev)), 
           is_desc_orders_(is_desc_orders), 
