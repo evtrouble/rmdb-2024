@@ -66,7 +66,7 @@ SUM COUNT MAX MIN AVG AS LOAD
 
 
 // type-specific tokens
-%token <sv_raw_str> IDENTIFIER VALUE_STRING VALUE_PATH
+%token <sv_str> IDENTIFIER VALUE_STRING VALUE_PATH
 %token <sv_int> VALUE_INT
 %token <sv_float> VALUE_FLOAT
 %token <sv_bool> VALUE_BOOL
@@ -131,7 +131,7 @@ stmt:
     |   setStmt
     |   EXPLAIN dml
     {
-        $$ = new ExplainStmt(std::shared_ptr<ast::TreeNode>($2));
+        $$ = new ExplainStmt($2);
     }
     ;
 
@@ -258,9 +258,9 @@ dml:
             *$2,             // selector
             $4->tables,      // 表列表
             $4->jointree,    // 连接树
-            $9,                        // limit (int，不需要move)
-            $4->aliases      // 表别名
+            $9               // limit (int，不需要move)
         );
+        select_stmt->tab_aliases = std::move($4->aliases);      // 表别名
         if($5 != nullptr) {
             select_stmt->conds = std::move(*$5);
             delete $5;
@@ -286,15 +286,13 @@ dml:
 fieldList:
         field
     {
-        $$ = new std::vector<ColDef>();
-        $$->emplace_back(std::move(*$1));
-        delete $1;
+        $$ = new std::vector<std::unique_ptr<Field>>();
+        $$->emplace_back($1);
     }
     |   fieldList ',' field
     {
         $$ = $1;
-        $$->emplace_back(std::move(*$3));
-        delete $3;
+        $$->emplace_back($3);
     }
     ;
 
@@ -344,15 +342,13 @@ type:
 valueList:
         value
     {
-        $$ = new std::vector<Value>(); // 使用 move
-        $$->emplace_back(std::move(*$1));
-        delete $1;
+        $$ = new std::vector<std::unique_ptr<Value>>();
+        $$->emplace_back($1);
     }
     |   valueList ',' value
     {
         $$ = $1;
-        $$->emplace_back(std::move(*$3)); // 使用 move
-        delete $3;
+        $$->emplace_back($3); // 使用 move
     }
     ;
 
@@ -368,7 +364,7 @@ value:
     }
     |   VALUE_STRING
     {
-        $$ = new StringLit($1);
+        $$ = new StringLit(*$1);
     }
     |   VALUE_BOOL
     {
@@ -435,12 +431,12 @@ col:
     }
     |   colName
     {
-        $$ = new Col("", *$1);
+        $$ = new Col(*$1);
         delete $1;
     }
     |   colName AS ALIAS
     {
-        $$ = new Col("", *$1);
+        $$ = new Col(*$1);
         $$->alias = std::move(*$3);
         delete $1;
         delete $3;
@@ -649,7 +645,7 @@ tableList:
         $$ = $1;
 
         $$->jointree.emplace_back(std::string($1->tables.back()), std::string(*$3), 
-            INNER_JOIN, "", "");
+            INNER_JOIN);
         $$->tables.emplace_back(std::move(*$3));
         $$->aliases.emplace_back("");
         delete $3;
@@ -663,7 +659,8 @@ tableList:
         $$ = $1;
 
         $$->jointree.emplace_back(std::string($1->tables.back()), std::string(*$3), 
-            INNER_JOIN, "", *$4);
+            INNER_JOIN);
+        $$->jointree.back().right_alias = std::move(*$4);
         $$->tables.emplace_back(std::move(*$3));
         $$->aliases.emplace_back("");
         delete $3;
@@ -678,7 +675,7 @@ tableList:
         $$ = $1;
 
         $$->jointree.emplace_back(std::string($1->tables.back()), std::string(*$4), 
-            SEMI_JOIN, "", "");
+            SEMI_JOIN);
         $$->tables.emplace_back(std::move(*$4));
         $$->aliases.emplace_back("");
         delete $4;
@@ -692,7 +689,8 @@ tableList:
         $$ = $1;
 
         $$->jointree.emplace_back(std::string($1->tables.back()), std::string(*$4), 
-            INNER_JOIN, "", *$5);
+            INNER_JOIN);
+        $$->jointree.back().right_alias = std::move(*$5);
         $$->tables.emplace_back(std::move(*$4));
         $$->aliases.emplace_back("");
         delete $4;
@@ -734,7 +732,7 @@ opt_groupby_clause:
 order_clause:
       order_item
     {
-        $$ = new OrderBy(std::move($1->first), $1->second);
+        $$ = new OrderBy($1->first, $1->second);
         delete $1;
     }
     |   order_clause ',' order_item
@@ -763,9 +761,9 @@ set_knob_type:
     |   ENABLE_SORTMERGE { $$ = ast::SetKnobType::EnableSortMerge; }
     ;
 
-tbName: IDENTIFIER { $$ = new std::string($1); };
-colName: IDENTIFIER { $$ = new std::string($1); };
-ALIAS: IDENTIFIER { $$ = new std::string($1); };
-fileName: VALUE_PATH { $$ = new std::string($1); };
+tbName: IDENTIFIER { $$ = $1; };
+colName: IDENTIFIER { $$ = $1; };
+ALIAS: IDENTIFIER { $$ = $1; };
+fileName: VALUE_PATH { $$ = $1; };
 
 %%

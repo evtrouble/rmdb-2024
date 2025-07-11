@@ -397,7 +397,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
             ColType target_type = col.type;
 
             // 转换值并进行类型检查
-            Value val = convert_sv_value(&x->vals[i]);
+            Value val = convert_sv_value(x->vals[i].get());
 
             // 如果类型不匹配，尝试进行类型转换
             if (val.type != target_type)

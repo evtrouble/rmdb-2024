@@ -981,9 +981,9 @@ std::shared_ptr<Plan> Planner::do_planner(std::shared_ptr<Query> query, Context 
         col_defs.reserve(x->fields.size());
         for (auto &field : x->fields)
         {
-            if (field.Nodetype() == ast::TreeNodeType::ColDef)
+            if (field->Nodetype() == ast::TreeNodeType::ColDef)
             {
-                auto sv_col_def = static_cast<ast::ColDef*>(&field);
+                auto sv_col_def = static_cast<ast::ColDef*>(field.get());
                 ColDef col_def = {.name = std::move(sv_col_def->col_name),
                                   .type = interp_sv_type(sv_col_def->type_len.type),
                                   .len = sv_col_def->type_len.len};

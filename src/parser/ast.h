@@ -85,6 +85,7 @@ namespace ast
         TxnAbort,
         TxnRollback,
         TypeLen,
+        Field,
         ColDef,
         CreateTable,
         DropTable,
@@ -129,7 +130,8 @@ namespace ast
     {
         std::shared_ptr<TreeNode> query;
 
-        ExplainStmt(const std::shared_ptr<TreeNode>& query_) : query(std::move(query_)) {}
+        ExplainStmt(std::shared_ptr<TreeNode>& query_) : query(std::move(query_)) {}
+        ExplainStmt(TreeNode* query_) : query(query_) {}
         TreeNodeType Nodetype() const override { return TreeNodeType::ExplainStmt; }
     };
     struct ShowTables : public TreeNode
@@ -166,21 +168,27 @@ namespace ast
         TreeNodeType Nodetype() const override { return TreeNodeType::TypeLen; }
     };
 
-    struct ColDef : public TreeNode
+    struct Field : public TreeNode
+    {
+        virtual TreeNodeType Nodetype() const override { return TreeNodeType::Field; }
+    };
+
+    struct ColDef : public Field
     {
         std::string col_name;
         TypeLen type_len;
 
-        ColDef(const std::string &col_name_, const TypeLen& type_len_) : col_name(std::move(col_name_)), type_len(type_len_) {}
+        ColDef(std::string &col_name_, TypeLen& type_len_) : col_name(std::move(col_name_)), type_len(type_len_) {}
         TreeNodeType Nodetype() const override { return TreeNodeType::ColDef; }
     };
 
     struct CreateTable : public TreeNode
     {
         std::string tab_name;
-        std::vector<ColDef> fields;
+        std::vector<std::unique_ptr<Field>> fields;
 
-        CreateTable(const std::string &tab_name_, const std::vector<ColDef> &fields_) : tab_name(std::move(tab_name_)), fields(std::move(fields_)) {}
+        CreateTable(std::string &tab_name_, std::vector<std::unique_ptr<Field>>& fields_) 
+            : tab_name(std::move(tab_name_)), fields(std::move(fields_)) {}
         TreeNodeType Nodetype() const override { return TreeNodeType::CreateTable; }
     };
 
@@ -188,7 +196,7 @@ namespace ast
     {
         std::string tab_name;
 
-        DropTable(const std::string &tab_name_) : tab_name(std::move(tab_name_)) {}
+        DropTable(std::string &tab_name_) : tab_name(std::move(tab_name_)) {}
         TreeNodeType Nodetype() const override { return TreeNodeType::DropTable; }
     };
 
@@ -196,7 +204,7 @@ namespace ast
     {
         std::string tab_name;
 
-        DescTable(const std::string &tab_name_) : tab_name(std::move(tab_name_)) {}
+        DescTable(std::string &tab_name_) : tab_name(std::move(tab_name_)) {}
         TreeNodeType Nodetype() const override { return TreeNodeType::DescTable; }
     };
 
@@ -205,7 +213,7 @@ namespace ast
         std::string tab_name;
         std::vector<std::string> col_names;
 
-        CreateIndex(const std::string &tab_name_, const std::vector<std::string> &col_names_) : tab_name(std::move(tab_name_)), col_names(std::move(col_names_)) {}
+        CreateIndex(std::string &tab_name_, std::vector<std::string> &col_names_) : tab_name(std::move(tab_name_)), col_names(std::move(col_names_)) {}
         TreeNodeType Nodetype() const override { return TreeNodeType::CreateIndex; }
     };
 
@@ -214,7 +222,7 @@ namespace ast
         std::string tab_name;
         std::vector<std::string> col_names;
 
-        DropIndex(const std::string &tab_name_, const std::vector<std::string> &col_names_) : tab_name(std::move(tab_name_)), col_names(std::move(col_names_)) {}
+        DropIndex(std::string &tab_name_, std::vector<std::string> &col_names_) : tab_name(std::move(tab_name_)), col_names(std::move(col_names_)) {}
         TreeNodeType Nodetype() const override { return TreeNodeType::DropIndex; }
     };
 
@@ -222,7 +230,7 @@ namespace ast
     {
         std::string tab_name;
 
-        ShowIndex(const std::string &tab_name_) : tab_name(std::move(tab_name_)) {};
+        ShowIndex(std::string &tab_name_) : tab_name(std::move(tab_name_)) {};
         TreeNodeType Nodetype() const override { return TreeNodeType::ShowIndex; }
     };
 
@@ -258,7 +266,7 @@ namespace ast
     {
         std::string val;
 
-        StringLit(const std::string &val_) : val(std::move(val_)) {}
+        StringLit(std::string &val_) : val(std::move(val_)) {}
         TreeNodeType Nodetype() const override { return TreeNodeType::StringLit; }
     };
 
@@ -277,11 +285,11 @@ namespace ast
         AggFuncType agg_type = NO_TYPE;
         std::string alias = "";
 
-        Col(const std::string &tab_name_, const std::string &col_name_) : tab_name(std::move(tab_name_)), col_name(std::move(col_name_)) {}
+        Col(std::string &tab_name_, std::string &col_name_) : tab_name(std::move(tab_name_)), col_name(std::move(col_name_)) {}
+        Col(std::string &col_name_) : col_name(std::move(col_name_)) {}
 
-        Col(const std::string &tab_name_, const std::string &col_name_, AggFuncType agg_type, 
-            const std::string &alias_ = "") 
-            : tab_name(std::move(tab_name_)), col_name(std::move(col_name_)), agg_type(agg_type), alias(std::move(alias_)) {}
+        Col(std::string tab_name_, std::string col_name_, AggFuncType agg_type) 
+            : tab_name(std::move(tab_name_)), col_name(std::move(col_name_)), agg_type(agg_type) {}
 
         TreeNodeType Nodetype() const override { return TreeNodeType::Col; }
     };
@@ -292,7 +300,7 @@ namespace ast
         Value val;
         UpdateOp op;
 
-        SetClause(const std::string &col_name_, const Value& val_, UpdateOp op) : col_name(std::move(col_name_)), val(std::move(val_)), op(op) {}
+        SetClause(std::string &col_name_, Value& val_, UpdateOp op) : col_name(std::move(col_name_)), val(std::move(val_)), op(op) {}
         TreeNodeType Nodetype() const override { return TreeNodeType::SetClause; }
     };
 
@@ -302,7 +310,7 @@ namespace ast
         SvCompOp op;
         Expr rhs;
 
-        BinaryExpr(const Col& lhs_, SvCompOp op_, const Expr& rhs_) : lhs(std::move(lhs_)), op(op_), rhs(std::move(rhs_)) {}
+        BinaryExpr(Col& lhs_, SvCompOp op_, Expr& rhs_) : lhs(std::move(lhs_)), op(op_), rhs(std::move(rhs_)) {}
         TreeNodeType Nodetype() const override { return TreeNodeType::BinaryExpr; }
     };
 
@@ -313,20 +321,20 @@ namespace ast
         OrderBy() = default;
 
         // 添加单个列和方向的构造函数
-        OrderBy(const Col& col, OrderByDir dir)
+        OrderBy(Col& col, OrderByDir dir)
         {
             cols.emplace_back(std::move(col));
             dirs.emplace_back(dir);
         }
 
         // 添加多个列和方向的构造函数
-        OrderBy(const std::vector<Col>& cols_, const std::vector<OrderByDir>& dirs_)
+        OrderBy(std::vector<Col>& cols_, std::vector<OrderByDir>& dirs_)
             : cols(std::move(cols_)), dirs(std::move(dirs_)) {}
 
         TreeNodeType Nodetype() const override { return TreeNodeType::OrderBy; }
 
         // 添加一个列和方向的方法
-        void addItem(const Col& col, OrderByDir dir)
+        void addItem(Col& col, OrderByDir dir)
         {
             cols.emplace_back(std::move(col));
             dirs.emplace_back(dir);
@@ -336,9 +344,10 @@ namespace ast
     struct InsertStmt : public TreeNode
     {
         std::string tab_name;
-        std::vector<Value> vals;
+        std::vector<std::unique_ptr<Value>> vals;
 
-        InsertStmt(const std::string &tab_name_, const std::vector<Value> &vals_) : tab_name(std::move(tab_name_)), vals(std::move(vals_)) {}
+        InsertStmt(std::string &tab_name_, std::vector<std::unique_ptr<Value>> &vals_) 
+        : tab_name(std::move(tab_name_)), vals(std::move(vals_)) {}
         TreeNodeType Nodetype() const override { return TreeNodeType::InsertStmt; }
     };
     struct LoadStmt : public TreeNode
@@ -346,7 +355,7 @@ namespace ast
         std::string file_name;
         std::string tab_name;
 
-        LoadStmt(const std::string& file_name_, const std::string& table_name_) : file_name(std::move(file_name_)), tab_name(std::move(table_name_)) {}
+        LoadStmt(std::string& file_name_, std::string& table_name_) : file_name(std::move(file_name_)), tab_name(std::move(table_name_)) {}
         TreeNodeType Nodetype() const override
         {
             return TreeNodeType::LoadStmt; // 或者对应的枚举值
@@ -357,7 +366,7 @@ namespace ast
         std::string tab_name;
         std::vector<BinaryExpr> conds;
 
-        DeleteStmt(const std::string &tab_name_) : tab_name(std::move(tab_name_)) {}
+        DeleteStmt(std::string &tab_name_) : tab_name(std::move(tab_name_)) {}
         TreeNodeType Nodetype() const override { return TreeNodeType::DeleteStmt; }
     };
     struct IoEnable : public TreeNode
@@ -373,8 +382,8 @@ namespace ast
         std::vector<SetClause> set_clauses;
         std::vector<BinaryExpr> conds;
 
-        UpdateStmt(const std::string &tab_name_,
-                   const std::vector<SetClause> &set_clauses_) : tab_name(std::move(tab_name_)), set_clauses(std::move(set_clauses_)) {}
+        UpdateStmt(std::string &tab_name_,
+                std::vector<SetClause> &set_clauses_) : tab_name(std::move(tab_name_)), set_clauses(std::move(set_clauses_)) {}
         TreeNodeType Nodetype() const override { return TreeNodeType::UpdateStmt; }
     };
 
@@ -390,10 +399,8 @@ namespace ast
         // 添加默认构造函数
         JoinExpr() : type(INNER_JOIN) {}
 
-        JoinExpr(const std::string &left_, const std::string &right_, JoinType type_,
-                 const std::string &left_alias_ = "", const std::string &right_alias_ = "")
+        JoinExpr(std::string left_, std::string right_, JoinType type_)
             : left(std::move(left_)), right(std::move(right_)),
-              left_alias(std::move(left_alias_)), right_alias(std::move(right_alias_)),
               type(type_) {}
 
         // 获取左表实际使用的名称（如果有别名则返回别名，否则返回原表名）
@@ -420,14 +427,12 @@ namespace ast
 
         bool has_agg = false;
 
-        SelectStmt(const std::vector<Col> &cols_,
-                   const std::vector<std::string> &tabs_,
-                   const std::vector<JoinExpr> &jointree_,
-                   int limit_ = -1,
-                   const std::vector<std::string> &tab_aliases_ = {})
+        SelectStmt(std::vector<Col> &cols_,
+                std::vector<std::string> &tabs_,
+                std::vector<JoinExpr> &jointree_,
+                int limit_ = -1)
             : cols(std::move(cols_)), tabs(std::move(tabs_)),
-              jointree(std::move(jointree_)), limit(limit_),
-              tab_aliases(std::move(tab_aliases_))
+              jointree(std::move(jointree_)), limit(limit_)
         {
             // 确保 tab_aliases 的大小与 tabs 相同
             if (tab_aliases.size() < tabs.size())
@@ -529,7 +534,7 @@ namespace ast
     union SemValue {
         int sv_int;
         float sv_float;
-        char* sv_raw_str;
+        // char* sv_raw_str;
         std::string* sv_str;
         bool sv_bool;
         OrderByDir sv_orderby_dir;
@@ -541,13 +546,13 @@ namespace ast
 
         TypeLen* sv_type_len;
 
-        ColDef* sv_field;
-        std::vector<ColDef>* sv_fields;
+        Field* sv_field;
+        std::vector<std::unique_ptr<Field>>* sv_fields;
 
         Expr* sv_expr;
 
         Value* sv_val;
-        std::vector<Value>* sv_vals;
+        std::vector<std::unique_ptr<Value>>* sv_vals;
 
         Col* sv_col;
         std::vector<Col>* sv_cols;

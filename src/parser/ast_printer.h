@@ -72,7 +72,7 @@ namespace ast
         }
 
         template <typename T>
-        static void print_node_list(std::vector<T> nodes, int offset)
+        static void print_node_list(std::vector<T>& nodes, int offset)
         {
             std::cout << offset2string(offset);
             offset += 2;
@@ -80,6 +80,18 @@ namespace ast
             for (auto &node : nodes)
             {
                 print_node(&node, offset);
+            }
+        }
+
+        template <typename T>
+        static void print_node_list(std::vector<std::unique_ptr<T>>& nodes, int offset)
+        {
+            std::cout << offset2string(offset);
+            offset += 2;
+            std::cout << "LIST\n";
+            for (auto &node : nodes)
+            {
+                print_node(node.get(), offset);
             }
         }
 
