@@ -1377,7 +1377,7 @@ void SmManager::process_csv_line_threaded(const std::string &line, const TabMeta
             }
             case ColType::TYPE_STRING:
             {
-                size_t copy_len = std::min(field_value.length(), static_cast<size_t>(col.len));
+                int copy_len = std::min(field_value.length(), static_cast<size_t>(col.len));
                 std::memcpy(rec.data + col.offset, field_value.c_str(), copy_len);
                 if (copy_len < col.len)
                 {
@@ -1387,7 +1387,7 @@ void SmManager::process_csv_line_threaded(const std::string &line, const TabMeta
             }
             case ColType::TYPE_DATETIME:
             {
-                size_t copy_len = std::min(field_value.length(), static_cast<size_t>(col.len));
+                int copy_len = std::min(field_value.length(), static_cast<size_t>(col.len));
                 std::memcpy(rec.data + col.offset, field_value.c_str(), copy_len);
                 if (copy_len < col.len)
                 {

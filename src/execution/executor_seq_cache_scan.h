@@ -78,9 +78,9 @@ private:
     }
 
 public:
-    SeqCacheScanExecutor(SmManager *sm_manager, const std::string &tab_name, const std::vector<Condition> &conds,
-                    Context *context) : AbstractExecutor(context), tab_name_(std::move(tab_name)),
-                                        fed_conds_(std::move(conds)), sm_manager_(sm_manager)
+    SeqCacheScanExecutor(SmManager *sm_manager, std::string &tab_name, std::vector<Condition> &conds,
+                         Context *context) : AbstractExecutor(context), tab_name_(std::move(tab_name)),
+                                             fed_conds_(std::move(conds)), sm_manager_(sm_manager)
     {
         // 检查文件句柄是否存在
         tab_ = sm_manager_->db_.get_table(tab_name_);

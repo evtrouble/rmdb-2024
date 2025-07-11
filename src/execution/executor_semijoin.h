@@ -137,7 +137,7 @@ private:
 
 public:
     SemiJoinExecutor(std::unique_ptr<AbstractExecutor> left, std::unique_ptr<AbstractExecutor> right,
-                    const std::vector<Condition> &conds)
+                    std::vector<Condition> &conds)
         : left_(std::move(left)), right_(std::move(right)),
         len_(left_->tupleLen()), cols_(left_->cols()),
         fed_conds_(std::move(conds)), 

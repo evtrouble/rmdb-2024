@@ -180,13 +180,13 @@ private:
 
 public:
     SortExecutor(std::unique_ptr<AbstractExecutor> prev, 
-                const std::vector<TabCol> &sel_cols,
-                const std::vector<bool> &is_desc_orders, 
+                std::vector<TabCol> &sel_cols,
+                std::vector<bool> &is_desc_orders, 
                 int limit, Context *context, 
                 size_t block_size = 2*1024*1024)
         : AbstractExecutor(context), 
           prev_(std::move(prev)), 
-          is_desc_orders_(is_desc_orders), 
+          is_desc_orders_(std::move(is_desc_orders)), 
           limit_(limit), 
           block_size_(block_size),
           current_index_(0),

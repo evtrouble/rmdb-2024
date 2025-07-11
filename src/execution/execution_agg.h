@@ -67,9 +67,9 @@ private:
     void generate_results_batch(size_t batch_size);
 
 public:
-    AggExecutor(std::unique_ptr<AbstractExecutor> child_executor, const std::vector<TabCol> &sel_cols,
-                const std::vector<TabCol> &group_by_cols, const std::vector<Condition> &having_conds,
-                const std::vector<TabCol> &order_by_cols,
+    AggExecutor(std::unique_ptr<AbstractExecutor> child_executor, std::vector<TabCol> &sel_cols,
+                std::vector<TabCol> &group_by_cols, std::vector<Condition> &having_conds,
+                std::vector<TabCol> &order_by_cols,
                 Context *context)
         : AbstractExecutor(context), child_executor_(std::move(child_executor)),
           sel_cols_(std::move(sel_cols)), group_by_cols_(std::move(group_by_cols)), having_conds_(std::move(having_conds)),

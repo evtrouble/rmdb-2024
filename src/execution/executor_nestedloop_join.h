@@ -100,7 +100,7 @@ private:
 public:
     NestedLoopJoinExecutor(std::unique_ptr<AbstractExecutor> left, 
                          std::unique_ptr<AbstractExecutor> right,
-                         const std::vector<Condition> &conds)
+                        std::vector<Condition> &conds)
         : left_(std::move(left)), right_(std::move(right)),
           fed_conds_(std::move(conds)) {
         int left_tupleLen = left_->tupleLen();

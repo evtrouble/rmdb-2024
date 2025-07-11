@@ -35,9 +35,10 @@ private:
     std::vector<std::unique_ptr<RmRecord>> result_cache_;
 
 public:
-    IndexCacheScanExecutor(SmManager *sm_manager, const std::string& tab_name, const std::vector<Condition> &conds, const IndexMeta& index_meta,
-                      int max_match_col_count, Context *context) : AbstractExecutor(context), sm_manager_(sm_manager), 
-        tab_name_(std::move(tab_name)), fed_conds_(std::move(conds)), index_meta_(std::move(index_meta)), max_match_col_count_(max_match_col_count) {
+    IndexCacheScanExecutor(SmManager *sm_manager, std::string &tab_name, std::vector<Condition> &conds, IndexMeta &index_meta,
+                           int max_match_col_count, Context *context) : AbstractExecutor(context), sm_manager_(sm_manager),
+                                                                        tab_name_(std::move(tab_name)), fed_conds_(std::move(conds)), index_meta_(std::move(index_meta)), max_match_col_count_(max_match_col_count)
+    {
 
         // 增加错误检查
         try {

@@ -107,7 +107,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
             query->cols.reserve(all_cols.size());
             for (auto &col : all_cols)
             {
-                query->cols.emplace_back(TabCol(col.tab_name, col.name));
+                query->cols.emplace_back(col.tab_name, col.name);
             }
             context->setIsStarFlag(true);
         }

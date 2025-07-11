@@ -29,7 +29,7 @@ private:
     std::vector<std::vector<int>> index_col_offsets_; // 每个索引的列偏移量
 
 public:
-    InsertExecutor(SmManager *sm_manager, const std::string &tab_name, const std::vector<Value> &values, Context *context)
+    InsertExecutor(SmManager *sm_manager, std::string &tab_name, std::vector<Value> &values, Context *context)
         : AbstractExecutor(context), values_(std::move(values)),
           tab_name_(std::move(tab_name)), sm_manager_(sm_manager) {
         tab_ = sm_manager_->db_.get_table(tab_name_);

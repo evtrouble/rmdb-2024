@@ -84,8 +84,8 @@ private:
     }
 
 public:
-    UpdateExecutor(SmManager *sm_manager, const std::string &tab_name, const std::vector<SetClause> &set_clauses,
-                   const std::vector<Rid> &rids, Context *context)
+    UpdateExecutor(SmManager *sm_manager, std::string &tab_name, std::vector<SetClause> &set_clauses,
+                std::vector<Rid> &rids, Context *context)
         : AbstractExecutor(context), rids_(std::move(rids)),
           tab_name_(std::move(tab_name)), set_clauses_(std::move(set_clauses)),
           sm_manager_(sm_manager)

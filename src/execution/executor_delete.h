@@ -44,8 +44,8 @@ private:
     }
 
 public:
-    DeleteExecutor(SmManager *sm_manager, const std::string &tab_name,
-                   const std::vector<Rid> &rids, Context *context)
+    DeleteExecutor(SmManager *sm_manager, std::string &tab_name,
+                std::vector<Rid> &rids, Context *context)
         : AbstractExecutor(context), rids_(std::move(rids)),
           tab_name_(std::move(tab_name)), sm_manager_(sm_manager)
     {
