@@ -98,12 +98,12 @@ SUM COUNT MAX MIN AVG AS LOAD
 start:
         stmt ';'
     {
-        parse_tree = std::shared_ptr<ast::TreeNode>($1);
+        parse_tree = std::unique_ptr<ast::TreeNode>($1);
         YYACCEPT;
     }
     |   HELP
     {
-        parse_tree = std::make_shared<Help>();
+        parse_tree = std::make_unique<Help>();
         YYACCEPT;
     }
     |   EXIT
@@ -118,7 +118,7 @@ start:
     }
     |  io_stmt
     {
-        parse_tree = std::shared_ptr<ast::TreeNode>($1);
+        parse_tree = std::unique_ptr<ast::TreeNode>($1);
         YYACCEPT;
     }
     ;

@@ -136,13 +136,13 @@ void *client_handler(void *sock_fd)
                 try
                 {
                     // analyze and rewrite
-                    std::shared_ptr<Query> query = analyze->do_analyze(ast::parse_tree, context.get());
+                    std::unique_ptr<Query> query = analyze->do_analyze(ast::parse_tree, context.get());
                     yy_delete_buffer(buf);
                     finish_analyze = true;
                     pthread_mutex_unlock(buffer_mutex);
                     // 优化器
-                    std::shared_ptr<Plan> plan = optimizer->plan_query(query, context.get());
-                    std::shared_ptr<PortalStmt> portalStmt = portal->start(plan, context.get());
+                    std::unique_ptr<Plan> plan = optimizer->plan_query(query, context.get());
+                    std::unique_ptr<PortalStmt> portalStmt = portal->start(plan, context.get());
                     // portal
                     portal->run(portalStmt, ql_manager.get(), &txn_id, context.get());
                     portal->drop();

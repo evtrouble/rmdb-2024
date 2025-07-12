@@ -1937,7 +1937,7 @@ yyreduce:
   case 2: /* start: stmt ';'  */
 #line 100 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
-        parse_tree = std::shared_ptr<ast::TreeNode>((yyvsp[-1].sv_node));
+        parse_tree = std::unique_ptr<ast::TreeNode>((yyvsp[-1].sv_node));
         YYACCEPT;
     }
 #line 1944 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
@@ -1946,7 +1946,7 @@ yyreduce:
   case 3: /* start: HELP  */
 #line 105 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
-        parse_tree = std::make_shared<Help>();
+        parse_tree = std::make_unique<Help>();
         YYACCEPT;
     }
 #line 1953 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
@@ -1973,7 +1973,7 @@ yyreduce:
   case 6: /* start: io_stmt  */
 #line 120 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
-        parse_tree = std::shared_ptr<ast::TreeNode>((yyvsp[0].sv_node));
+        parse_tree = std::unique_ptr<ast::TreeNode>((yyvsp[0].sv_node));
         YYACCEPT;
     }
 #line 1980 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"

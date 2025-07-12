@@ -45,11 +45,15 @@ struct PortalStmt
 
     std::vector<TabCol> sel_cols;
     std::unique_ptr<AbstractExecutor> root;
-    std::shared_ptr<Plan> plan;
+    std::unique_ptr<Plan> plan;
 
-    PortalStmt(portalTag tag_, std::vector<TabCol> sel_cols_, std::unique_ptr<AbstractExecutor> root_, std::shared_ptr<Plan> plan_) : tag(tag_), sel_cols(std::move(sel_cols_)), root(std::move(root_)), plan(std::move(plan_)) {}
-    PortalStmt(portalTag tag_, std::unique_ptr<AbstractExecutor> root_, std::shared_ptr<Plan> plan_) : tag(tag_), root(std::move(root_)), plan(std::move(plan_)) {}
-    PortalStmt(portalTag tag_, std::shared_ptr<Plan> plan_) : tag(tag_), plan(std::move(plan_)) {}
+    PortalStmt(portalTag tag_, std::vector<TabCol>& sel_cols_, std::unique_ptr<AbstractExecutor> &root_, 
+        std::unique_ptr<Plan> &plan_) 
+        : tag(tag_), sel_cols(std::move(sel_cols_)), root(std::move(root_)), 
+        plan(std::move(plan_)) {}
+    PortalStmt(portalTag tag_, std::unique_ptr<AbstractExecutor>& root_, 
+        std::unique_ptr<Plan>& plan_) : tag(tag_), root(std::move(root_)), plan(std::move(plan_)) {}
+    PortalStmt(portalTag tag_, std::unique_ptr<Plan>& plan_) : tag(tag_), plan(std::move(plan_)) {}
 };
 
 class Portal
@@ -62,7 +66,7 @@ public:
     ~Portal() {}
 
     // 将查询执行计划转换成对应的算子树
-    std::shared_ptr<PortalStmt> start(std::shared_ptr<Plan> plan, Context *context)
+    std::unique_ptr<PortalStmt> start(std::unique_ptr<Plan> &plan, Context *context)
     {
         // 这里可以将select进行拆分，例如：一个select，带有return的select等
         switch (plan->tag)
@@ -76,24 +80,24 @@ public:
         case PlanTag::T_Transaction_rollback:
         case PlanTag::T_SetKnob:
         case PlanTag::T_Create_StaticCheckPoint:
-            return std::make_shared<PortalStmt>(PORTAL_CMD_UTILITY, plan);
+            return std::make_unique<PortalStmt>(PORTAL_CMD_UTILITY, plan);
         case PlanTag::T_CreateTable:
         case PlanTag::T_DropTable:
         case PlanTag::T_CreateIndex:
         case PlanTag::T_DropIndex:
         case PlanTag::T_ShowIndex:
         case PlanTag::T_Explain:
-            return std::make_shared<PortalStmt>(PORTAL_MULTI_QUERY, plan);
+            return std::make_unique<PortalStmt>(PORTAL_MULTI_QUERY, plan);
         case T_Select:
         {
-            auto x = std::static_pointer_cast<DMLPlan>(plan);
-            std::shared_ptr<ProjectionPlan> p = std::static_pointer_cast<ProjectionPlan>(x->subplan_);
-            std::unique_ptr<AbstractExecutor> root = convert_plan_executor(p, context);
-            return std::make_shared<PortalStmt>(PORTAL_ONE_SELECT, std::move(p->sel_cols_), std::move(root), plan);
+            auto x = static_cast<DMLPlan*>(plan.get());
+            ProjectionPlan* p = static_cast<ProjectionPlan*>(x->subplan_.get());
+            std::unique_ptr<AbstractExecutor> root = convert_plan_executor(x->subplan_, context);
+            return std::make_unique<PortalStmt>(PORTAL_ONE_SELECT, p->sel_cols_, root, plan);
         }
         case T_Update:
         {
-            auto x = std::static_pointer_cast<DMLPlan>(plan);
+            auto x = static_cast<DMLPlan*>(plan.get());
             std::unique_ptr<AbstractExecutor> scan = convert_plan_executor(x->subplan_, context);
             std::vector<Rid> rids;
             auto batch = scan->rid_batch();
@@ -104,11 +108,11 @@ public:
             }
             std::unique_ptr<AbstractExecutor> root = std::make_unique<UpdateExecutor>(sm_manager_,
                                             x->tab_name_, x->set_clauses_, rids, context);
-            return std::make_shared<PortalStmt>(PORTAL_DML_WITHOUT_SELECT, std::move(root), plan);
+            return std::make_unique<PortalStmt>(PORTAL_DML_WITHOUT_SELECT, root, plan);
         }
         case T_Delete:
         {
-            auto x = std::static_pointer_cast<DMLPlan>(plan);
+            auto x = static_cast<DMLPlan*>(plan.get());
             std::unique_ptr<AbstractExecutor> scan = convert_plan_executor(x->subplan_, context);
             std::vector<Rid> rids;
             auto batch = scan->rid_batch();
@@ -120,19 +124,19 @@ public:
             std::unique_ptr<AbstractExecutor> root =
                 std::make_unique<DeleteExecutor>(sm_manager_, x->tab_name_, rids, context);
 
-            return std::make_shared<PortalStmt>(PORTAL_DML_WITHOUT_SELECT, std::move(root), plan);
+            return std::make_unique<PortalStmt>(PORTAL_DML_WITHOUT_SELECT, root, plan);
         }
         case T_Insert:
         {
-            auto x = std::static_pointer_cast<DMLPlan>(plan);
+            auto x = static_cast<DMLPlan*>(plan.get());
             std::unique_ptr<AbstractExecutor> root =
                 std::make_unique<InsertExecutor>(sm_manager_, x->tab_name_, x->values_, context);
 
-            return std::make_shared<PortalStmt>(PORTAL_DML_WITHOUT_SELECT, std::move(root), plan);
+            return std::make_unique<PortalStmt>(PORTAL_DML_WITHOUT_SELECT, root, plan);
         }
         case T_LoadData:
         case T_IoEnable:
-            return std::make_shared<PortalStmt>(PORTAL_CMD_UTILITY, std::vector<TabCol>(), std::unique_ptr<AbstractExecutor>(), plan);
+            return std::make_unique<PortalStmt>(PORTAL_CMD_UTILITY, plan);
 
         default:
             throw InternalError("Unexpected field type");
@@ -143,13 +147,13 @@ public:
     }
 
     // 遍历算子树并执行算子生成执行结果
-    void run(std::shared_ptr<PortalStmt> portal, QlManager *ql, txn_id_t *txn_id, Context *context)
+    void run(std::unique_ptr<PortalStmt>& portal, QlManager *ql, txn_id_t *txn_id, Context *context)
     {
         switch (portal->tag)
         {
             case PORTAL_ONE_SELECT:
             {
-                ql->select_from(std::move(portal->root), std::move(portal->sel_cols), context);
+                ql->select_from(std::move(portal->root), portal->sel_cols, context);
                 break;
             }
 
@@ -178,13 +182,13 @@ public:
     // 清空资源
     void drop() {}
 
-    std::unique_ptr<AbstractExecutor> convert_plan_executor(std::shared_ptr<Plan> plan, Context *context)
+    std::unique_ptr<AbstractExecutor> convert_plan_executor(std::unique_ptr<Plan> &plan, Context *context)
     {
         switch (plan->tag)
         {
         case PlanTag::T_Projection:
         {
-            auto x = std::static_pointer_cast<ProjectionPlan>(plan);
+            auto x = static_cast<ProjectionPlan*>(plan.get());
             // 检查子计划是否是 ScanPlan，如果是，将条件下推到 ScanPlan
             auto child_physical_plan = convert_plan_executor(x->subplan_, context);
             if (child_physical_plan->type() == ExecutionType::IndexScan ||
@@ -197,7 +201,7 @@ public:
         }
         case PlanTag::T_SeqScan:
         {
-            auto x = std::static_pointer_cast<ScanPlan>(plan);
+            auto x = static_cast<ScanPlan*>(plan.get());
             if(context->hasJoinFlag()) {
                 return std::make_unique<SeqCacheScanExecutor>(sm_manager_, x->tab_name_, x->fed_conds_, context);
             }
@@ -205,7 +209,7 @@ public:
         }
         case PlanTag::T_IndexScan:
         {
-            auto x = std::static_pointer_cast<ScanPlan>(plan);
+            auto x = static_cast<ScanPlan*>(plan.get());
             if(context->hasJoinFlag()) {
                 std::make_unique<IndexCacheScanExecutor>(sm_manager_, x->tab_name_, x->fed_conds_, x->index_meta_,
                                                        x->max_match_col_count_, context);
@@ -215,7 +219,7 @@ public:
         }
         case PlanTag::T_NestLoop:
         {
-            auto x = std::static_pointer_cast<JoinPlan>(plan);
+            auto x = static_cast<JoinPlan*>(plan.get());
             context->setJoinFlag(true); // 设置 join 标志位
             std::unique_ptr<AbstractExecutor> left = convert_plan_executor(x->left_, context);
             std::unique_ptr<AbstractExecutor> right = convert_plan_executor(x->right_, context);
@@ -223,7 +227,7 @@ public:
         }
         case PlanTag::T_SortMerge:
         {
-            auto x = std::static_pointer_cast<JoinPlan>(plan);
+            auto x = static_cast<JoinPlan*>(plan.get());
             context->setJoinFlag(true); // 设置 join 标志位
             std::unique_ptr<AbstractExecutor> left = convert_plan_executor(x->left_, context);
             std::unique_ptr<AbstractExecutor> right = convert_plan_executor(x->right_, context);
@@ -231,7 +235,7 @@ public:
         }
         case PlanTag::T_SemiJoin:
         {
-            auto x = std::static_pointer_cast<JoinPlan>(plan);
+            auto x = static_cast<JoinPlan*>(plan.get());
             context->setJoinFlag(true); // 设置 join 标志位
             std::unique_ptr<AbstractExecutor> left = convert_plan_executor(x->left_, context);
             std::unique_ptr<AbstractExecutor> right = convert_plan_executor(x->right_, context);
@@ -239,13 +243,13 @@ public:
         }
         case PlanTag::T_Sort:
         {
-            auto x = std::static_pointer_cast<SortPlan>(plan);
+            auto x = static_cast<SortPlan*>(plan.get());
             return std::make_unique<SortExecutor>(convert_plan_executor(x->subplan_, context),
                                                   x->sort_cols_, x->is_desc_orders_, x->limit_, context);
         }
         case PlanTag::T_Agg:
         {
-            auto x = std::static_pointer_cast<AggPlan>(plan);
+            auto x = static_cast<AggPlan*>(plan.get());
             context->setAggFlag(true);
             return std::make_unique<AggExecutor>(convert_plan_executor(x->subplan_, context),
                                                  x->sel_cols_, x->groupby_cols_, x->having_conds_, x->order_by_cols_,
@@ -253,13 +257,13 @@ public:
         }
         case PlanTag::T_Filter:
         {
-            auto x = std::static_pointer_cast<FilterPlan>(plan);
+            auto x = static_cast<FilterPlan*>(plan.get());
 
             // 检查子计划是否是 ScanPlan，如果是，将条件下推到 ScanPlan
-            auto child_plan = x->subplan_;
+            auto& child_plan = x->subplan_;
             if (child_plan->tag == PlanTag::T_SeqScan || child_plan->tag == PlanTag::T_IndexScan)
             {
-                auto scan_plan = std::static_pointer_cast<ScanPlan>(child_plan);
+                auto scan_plan = static_cast<ScanPlan*>(child_plan.get());
 
                 // 将 FilterPlan 的条件合并到 ScanPlan 的条件中
                 std::vector<Condition> merged_conditions = scan_plan->fed_conds_;
@@ -267,7 +271,7 @@ public:
                                          x->conds_.begin(), x->conds_.end());
 
                 // 创建新的 ScanPlan，包含合并后的条件
-                auto new_scan_plan = std::make_shared<ScanPlan>(
+                std::unique_ptr<Plan> new_scan_plan = std::make_unique<ScanPlan>(
                     scan_plan->tag,
                     this->sm_manager_,
                     scan_plan->tab_name_,

@@ -21,7 +21,7 @@
 class ExplainExecutor : public AbstractExecutor
 {
 private:
-    std::shared_ptr<Plan> plan_;
+    Plan* plan_;
     std::string result_;
     bool done_;
 
@@ -58,16 +58,16 @@ private:
     // 子节点信息结构
     struct ChildNodeInfo
     {
-        std::shared_ptr<Plan> plan;
+        Plan* plan;
         NodePriority priority;
         std::string output;
 
-        ChildNodeInfo(std::shared_ptr<Plan> p, NodePriority prio, const std::string &out)
+        ChildNodeInfo(Plan* p, NodePriority prio, const std::string &out)
             : plan(p), priority(prio), output(out) {}
     };
 
     // 获取表的显示名称（处理别名）
-    std::string getTableDisplayName(const std::string &original_name, const std::shared_ptr<ast::SelectStmt> &stmt, bool use_alias = false, bool use_raw = false)
+    std::string getTableDisplayName(const std::string &original_name, ast::SelectStmt *stmt, bool use_alias = false, bool use_raw = false)
     {
         if (!stmt)
             return original_name;
@@ -88,14 +88,14 @@ private:
     }
 
     // 格式化列名（确保包含表名前缀）
-    std::string formatColumnName(const TabCol &col, const std::shared_ptr<ast::SelectStmt> &stmt, bool use_alias = false, bool use_raw = true)
+    std::string formatColumnName(const TabCol &col, ast::SelectStmt *stmt, bool use_alias = false, bool use_raw = true)
     {
         std::string table_name = getTableDisplayName(col.tab_name, stmt, use_alias, use_raw);
         return table_name + "." + col.col_name;
     }
 
     // 格式化条件字符串
-    std::string formatCondition(const Condition &cond, const std::shared_ptr<ast::SelectStmt> &stmt, bool use_alias = false, bool use_raw = true)
+    std::string formatCondition(const Condition &cond, ast::SelectStmt *stmt, bool use_alias = false, bool use_raw = true)
     {
         std::string result;
 
@@ -122,8 +122,8 @@ private:
     }
 
     // 收集计划树中的所有表名
-    void collectTableNames(const std::shared_ptr<Plan> &plan, std::set<std::string> &table_set, const std::shared_ptr<ast::SelectStmt> &stmt)
-    {
+        void collectTableNames(Plan *plan, std::set<std::string> &table_set, ast::SelectStmt *stmt)
+        {
         if (!plan)
             return;
 
@@ -132,35 +132,35 @@ private:
         case T_SeqScan:
         case T_IndexScan:
         {
-            auto scan_plan = std::static_pointer_cast<ScanPlan>(plan);
+            auto scan_plan = static_cast<ScanPlan*>(plan);
             std::string display_name = getTableDisplayName(scan_plan->tab_name_, stmt);
             table_set.insert(display_name);
             break;
         }
         case T_Projection:
         {
-            auto proj_plan = std::static_pointer_cast<ProjectionPlan>(plan);
-            collectTableNames(proj_plan->subplan_, table_set, stmt);
+            auto proj_plan = static_cast<ProjectionPlan*>(plan);
+            collectTableNames(proj_plan->subplan_.get(), table_set, stmt);
             break;
         }
         case T_NestLoop:
         case T_SortMerge:
         {
-            auto join_plan = std::static_pointer_cast<JoinPlan>(plan);
-            collectTableNames(join_plan->left_, table_set, stmt);
-            collectTableNames(join_plan->right_, table_set, stmt);
+            auto join_plan = static_cast<JoinPlan*>(plan);
+            collectTableNames(join_plan->left_.get(), table_set, stmt);
+            collectTableNames(join_plan->right_.get(), table_set, stmt);
             break;
         }
         case T_Filter:
         {
-            auto filter_plan = std::static_pointer_cast<FilterPlan>(plan);
-            collectTableNames(filter_plan->subplan_, table_set, stmt);
+            auto filter_plan = static_cast<FilterPlan*>(plan);
+            collectTableNames(filter_plan->subplan_.get(), table_set, stmt);
             break;
         }
         case T_Select:
         {
-            auto select_plan = std::static_pointer_cast<DMLPlan>(plan);
-            collectTableNames(select_plan->subplan_, table_set, stmt);
+            auto select_plan = static_cast<DMLPlan*>(plan);
+            collectTableNames(select_plan->subplan_.get(), table_set, stmt);
             break;
         }
         default:
@@ -185,7 +185,7 @@ private:
     }
 
     // 递归生成查询计划树的字符串表示
-    std::string explain_plan(const std::shared_ptr<Plan> &plan, int depth = 0, std::shared_ptr<ast::SelectStmt> stmt = nullptr)
+    std::string explain_plan(const std::unique_ptr<Plan> &plan, int depth = 0, ast::SelectStmt* stmt = nullptr)
     {
         if (!plan)
             return "";
@@ -197,7 +197,7 @@ private:
         {
         case T_Select:
         {
-            auto select_plan = std::static_pointer_cast<DMLPlan>(plan);
+            auto select_plan = static_cast<DMLPlan*>(plan.get());
             if (select_plan->subplan_)
             {
                 result += explain_plan(select_plan->subplan_, depth, stmt);
@@ -206,7 +206,7 @@ private:
         }
         case T_Projection:
         {
-            auto proj_plan = std::static_pointer_cast<ProjectionPlan>(plan);
+            auto proj_plan = static_cast<ProjectionPlan*>(plan.get());
 
             // 处理Project节点 - 严格按照要求格式化
             std::string proj_str = "Project(columns=";
@@ -225,6 +225,7 @@ private:
             {
                 std::vector<std::string> columns;
                 bool has_star = false;
+                columns.reserve(proj_plan->sel_cols_.size());
 
                 for (const auto &col : proj_plan->sel_cols_)
                 {
@@ -236,7 +237,7 @@ private:
                     else
                     {
                         // 确保列名包含表名前缀
-                        columns.push_back(formatColumnName(col, stmt, true, false));
+                        columns.emplace_back(formatColumnName(col, stmt, true, false));
                     }
                 }
 
@@ -263,7 +264,7 @@ private:
         case T_SeqScan:
         case T_IndexScan:
         {
-            auto scan_plan = std::static_pointer_cast<ScanPlan>(plan);
+            auto scan_plan = static_cast<ScanPlan*>(plan.get());
             std::string display_name = getTableDisplayName(scan_plan->tab_name_, stmt, false);
 
             // 如果有过滤条件，先添加Filter节点
@@ -293,7 +294,7 @@ private:
         case T_NestLoop:
         case T_SortMerge:
         {
-            auto join_plan = std::static_pointer_cast<JoinPlan>(plan);
+            auto join_plan = static_cast<JoinPlan*>(plan.get());
 
             // 收集所有涉及的表名
             std::set<std::string> table_set;
@@ -306,13 +307,13 @@ private:
             {
                 if (!cond.is_rhs_val) // 只处理列与列之间的连接条件
                 {
-                    conditions.push_back(formatCondition(cond, stmt, true, false));
+                    conditions.emplace_back(formatCondition(cond, stmt, true, false));
                 }
             }
 
             // Join节点 - 表名和条件都按字母顺序排序
             result += indent_str + "Join(tables=[" + formatSortedList(tables) + "]";
-            if (!conditions.empty())
+            if (conditions.size())
             {
                 result += ",condition=[" + formatSortedList(conditions) + "]";
             }
@@ -324,12 +325,12 @@ private:
             if (join_plan->left_)
             {
                 std::string left_output = explain_plan(join_plan->left_, depth + 1, stmt);
-                child_nodes.emplace_back(join_plan->left_, getNodePriority(join_plan->left_->tag), left_output);
+                child_nodes.emplace_back(join_plan->left_.get(), getNodePriority(join_plan->left_->tag), left_output);
             }
             if (join_plan->right_)
             {
                 std::string right_output = explain_plan(join_plan->right_, depth + 1, stmt);
-                child_nodes.emplace_back(join_plan->right_, getNodePriority(join_plan->right_->tag), right_output);
+                child_nodes.emplace_back(join_plan->right_.get(), getNodePriority(join_plan->right_->tag), right_output);
             }
 
             // 按优先级排序子节点（Filter < Join < Project < Scan）
@@ -348,7 +349,7 @@ private:
         }
         case T_Filter:
         {
-            auto filter_plan = std::static_pointer_cast<FilterPlan>(plan);
+            auto filter_plan = static_cast<FilterPlan*>(plan.get());
 
             // 收集过滤条件
             std::vector<std::string> conditions;
@@ -422,22 +423,23 @@ private:
     }
 
 public:
-    ExplainExecutor(std::shared_ptr<Plan> plan)
-        : plan_(std::move(plan)), done_(false) {}
+    ExplainExecutor(Plan* plan)
+        : plan_(plan), done_(false) {}
 
     void init()
     {
-        if (auto explain_plan = std::dynamic_pointer_cast<ExplainPlan>(plan_))
+        if (plan_->tag == T_Explain)
         {
+            auto explain_plan = static_cast<ExplainPlan *>(plan_);
             if (explain_plan->subplan_)
             {
                 // 获取SelectStmt
-                std::shared_ptr<ast::SelectStmt> select_stmt = nullptr;
-                if (auto dml_plan = std::dynamic_pointer_cast<DMLPlan>(explain_plan->subplan_))
+                ast::SelectStmt* select_stmt = nullptr;
+                if (auto dml_plan = dynamic_cast<DMLPlan*>(explain_plan->subplan_.get()))
                 {
-                    if (auto select_node = std::dynamic_pointer_cast<ast::SelectStmt>(dml_plan->parse))
+                    if (dml_plan->parse->Nodetype() == ast::TreeNodeType::SelectStmt)
                     {
-                        select_stmt = select_node;
+                        select_stmt = static_cast<ast::SelectStmt*>(dml_plan->parse.get());
                     }
                 }
                 result_ = this->explain_plan(explain_plan->subplan_, 0, select_stmt);
@@ -479,8 +481,8 @@ public:
         return col.tab_name + "." + col.col_name;
     }
 
-    void collect_tables(const std::shared_ptr<Plan> &plan, std::set<std::string> &table_set)
+    void collect_tables(const std::unique_ptr<Plan> &plan, std::set<std::string> &table_set)
     {
-        collectTableNames(plan, table_set, nullptr);
+        collectTableNames(plan.get(), table_set, nullptr);
     }
 };

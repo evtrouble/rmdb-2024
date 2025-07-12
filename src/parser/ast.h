@@ -128,9 +128,8 @@ namespace ast
     };
     struct ExplainStmt : public TreeNode
     {
-        std::shared_ptr<TreeNode> query;
+        std::unique_ptr<TreeNode> query;
 
-        ExplainStmt(std::shared_ptr<TreeNode>& query_) : query(std::move(query_)) {}
         ExplainStmt(TreeNode* query_) : query(query_) {}
         TreeNodeType Nodetype() const override { return TreeNodeType::ExplainStmt; }
     };
@@ -605,7 +604,7 @@ namespace ast
         virtual TreeNodeType Nodetype() const override { return TreeNodeType::CreateStaticCheckpoint; }
     };
 
-    extern std::shared_ptr<ast::TreeNode> parse_tree;
+    extern std::unique_ptr<ast::TreeNode> parse_tree;
 
 }
 #define YYSTYPE ast::SemValue

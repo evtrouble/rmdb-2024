@@ -24,7 +24,7 @@ See the Mulan PSL v2 for more details. */
 class Query
 {
 public:
-    std::shared_ptr<ast::TreeNode> parse;
+    std::unique_ptr<ast::TreeNode> parse;
     // where条件
     std::vector<Condition> conds;
     // 按表分组的条件
@@ -50,7 +50,7 @@ public:
     int limit = -1;
     std::unordered_map<std::string, std::string> table_alias_map; // 将表的别名映射到实际的表名
 
-    std::shared_ptr<Query> sub_query;
+    std::unique_ptr<Query> sub_query;
     Query() {}
 };
 
@@ -63,7 +63,7 @@ public:
     Analyze(SmManager *sm_manager) : sm_manager_(sm_manager) {}
     ~Analyze() {}
 
-    std::shared_ptr<Query> do_analyze(std::shared_ptr<ast::TreeNode> root, Context *context);
+    std::unique_ptr<Query> do_analyze(std::unique_ptr<ast::TreeNode>& root, Context *context);
 
 private:
     TabCol check_column(const std::vector<ColMeta> &all_cols, TabCol target, bool is_semijoin, std::unordered_map<std::string, std::string> &table_alias_map_);

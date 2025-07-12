@@ -49,22 +49,22 @@ bool is_valid_datetime_format(const std::string &datetime_str)
  * @param {shared_ptr<ast::TreeNode>} parse parser生成的结果集
  * @return {shared_ptr<Query>} Query
  */
-std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse, Context *context)
+// 在 do_analyze 函数中修复所有 check_column 调用
+std::unique_ptr<Query> Analyze::do_analyze(std::unique_ptr<ast::TreeNode>& parse, Context *context)
 {
-    std::shared_ptr<Query> query = std::make_shared<Query>();
+    auto query = std::make_unique<Query>();
     std::unordered_map<std::string, TabCol> alias_to_col;
+    auto &table_alias_map = query->table_alias_map;
 
-    auto& table_alias_map = query->table_alias_map;
     switch (parse->Nodetype())
     {
     case ast::TreeNodeType::SelectStmt:
     {
-        auto x = std::static_pointer_cast<ast::SelectStmt>(parse);
-        // 处理表名
-        //!!!!这里不能move，后面会用到
+        auto x = static_cast<ast::SelectStmt*>(parse.get());
         query->tables = x->tabs;
 
         // 建立表别名映射关系,别名->实际表名
+        table_alias_map.reserve(query->tables.size());
         for (size_t i = 0; i < query->tables.size(); ++i)
         {
             std::string &table_name = query->tables[i];
@@ -75,8 +75,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
             }
             if (x->tab_aliases.size() > i && !x->tab_aliases[i].empty())
             {
-                std::string &alias = x->tab_aliases[i];
-                table_alias_map.emplace(alias, table_name);
+                table_alias_map.emplace(x->tab_aliases[i], table_name);
             }
             // 表名也可以作为自己的别名
             table_alias_map.emplace(table_name, table_name);
@@ -88,14 +87,10 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
         {
             TabCol col(sv_sel_col.tab_name, sv_sel_col.col_name, sv_sel_col.agg_type, sv_sel_col.alias);
             query->cols.emplace_back(col);
-            if (ast::AggFuncType::NO_TYPE != sv_sel_col.agg_type)
-            {
-                x->has_agg = true;
-            }
             // 记录别名映射
             if (sv_sel_col.alias.size())
             {
-                alias_to_col[sv_sel_col.alias] = col;
+                alias_to_col.emplace(sv_sel_col.alias, std::move(col));
             }
         }
 
@@ -308,7 +303,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
     break;
     case ast::TreeNodeType::UpdateStmt:
     {
-        auto x = std::static_pointer_cast<ast::UpdateStmt>(parse);
+        auto x = static_cast<ast::UpdateStmt*>(parse.get());
         if (!sm_manager_->db_.is_table(x->tab_name))
         {
             throw TableNotFoundError(x->tab_name);
@@ -361,19 +356,17 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
     break;
     case ast::TreeNodeType::DeleteStmt:
     {
-        auto x = std::static_pointer_cast<ast::DeleteStmt>(parse);
-        // query->tables = {x->tab_name};
-        // 处理where条件
+        auto x = static_cast<ast::DeleteStmt*>(parse.get());
+        get_clause(x->conds, query->conds);
         std::vector<ColMeta> all_cols;
         std::vector<std::string> tab_names{x->tab_name};
         get_all_cols(tab_names, all_cols, context);
-        get_clause(x->conds, query->conds);
         check_clause(tab_names, all_cols, query->conds, false, context, table_alias_map);
     }
     break;
     case ast::TreeNodeType::InsertStmt:
     {
-        auto x = std::static_pointer_cast<ast::InsertStmt>(parse);
+        auto x = static_cast<ast::InsertStmt*>(parse.get());
         // query->tables = {x->tab_name};
 
         if (!sm_manager_->db_.is_table(x->tab_name))
@@ -418,7 +411,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
     break;
     case ast::TreeNodeType::ExplainStmt:
     {
-        auto x = std::static_pointer_cast<ast::ExplainStmt>(parse);
+        auto x = static_cast<ast::ExplainStmt*>(parse.get());
         query->sub_query = do_analyze(x->query, context);
     }
     break;

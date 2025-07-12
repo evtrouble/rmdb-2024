@@ -44,48 +44,48 @@ public:
         }
     }
 
-    std::shared_ptr<Plan> plan_query(std::shared_ptr<Query> query, Context *context)
+    std::unique_ptr<Plan> plan_query(std::unique_ptr<Query>& query, Context *context)
     {
         switch (query->parse->Nodetype())
         {
         case ast::TreeNodeType::Help:
-            return std::make_shared<OtherPlan>(T_Help);
+            return std::make_unique<OtherPlan>(T_Help);
         case ast::TreeNodeType::ShowTables:
-            return std::make_shared<OtherPlan>(T_ShowTable);
+            return std::make_unique<OtherPlan>(T_ShowTable);
         case ast::TreeNodeType::DescTable:
         {
-            auto x = std::static_pointer_cast<ast::DescTable>(query->parse);
-            return std::make_shared<OtherPlan>(T_DescTable, x->tab_name);
+            auto x = static_cast<ast::DescTable*>(query->parse.get());
+            return std::make_unique<OtherPlan>(T_DescTable, x->tab_name);
         }
         case ast::TreeNodeType::TxnBegin:
-            return std::make_shared<OtherPlan>(T_Transaction_begin);
+            return std::make_unique<OtherPlan>(T_Transaction_begin);
         case ast::TreeNodeType::TxnAbort:
-            return std::make_shared<OtherPlan>(T_Transaction_abort);
+            return std::make_unique<OtherPlan>(T_Transaction_abort);
         case ast::TreeNodeType::TxnCommit:
-            return std::make_shared<OtherPlan>(T_Transaction_commit);
+            return std::make_unique<OtherPlan>(T_Transaction_commit);
         case ast::TreeNodeType::TxnRollback:
-            return std::make_shared<OtherPlan>(T_Transaction_rollback);
+            return std::make_unique<OtherPlan>(T_Transaction_rollback);
         case ast::TreeNodeType::CreateStaticCheckpoint:
-            return std::make_shared<OtherPlan>(T_Create_StaticCheckPoint);
+            return std::make_unique<OtherPlan>(T_Create_StaticCheckPoint);
         case ast::TreeNodeType::SetStmt:
         {
-            auto x = std::static_pointer_cast<ast::SetStmt>(query->parse);
-            return std::make_shared<SetKnobPlan>(x->set_knob_type_, x->bool_val_);
+            auto x = static_cast<ast::SetStmt*>(query->parse.get());
+            return std::make_unique<SetKnobPlan>(x->set_knob_type_, x->bool_val_);
         }
         case ast::TreeNodeType::ExplainStmt:
         {
             auto subplan = plan_query(query->sub_query, context);
-            return std::make_shared<ExplainPlan>(T_Explain, subplan);
+            return std::make_unique<ExplainPlan>(T_Explain, subplan);
         }
         case ast::TreeNodeType::LoadStmt:
         {
-            auto x = std::static_pointer_cast<ast::LoadStmt>(query->parse);
-            return std::make_shared<OtherPlan>(T_LoadData, x->tab_name, x->file_name);
+            auto x = static_cast<ast::LoadStmt*>(query->parse.get());
+            return std::make_unique<OtherPlan>(T_LoadData, x->tab_name, x->file_name);
         }
         case ast::TreeNodeType::IoEnable:
         {
-            auto x = std::static_pointer_cast<ast::IoEnable>(query->parse);
-            return std::make_shared<OtherPlan>(T_IoEnable, x->set_io_enable);
+            auto x = static_cast<ast::IoEnable*>(query->parse.get());
+            return std::make_unique<OtherPlan>(T_IoEnable, x->set_io_enable);
         }
         default:
             return planner_->do_planner(query, context);

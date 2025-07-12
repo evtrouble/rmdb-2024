@@ -20,7 +20,7 @@ namespace ast
     class TreePrinter
     {
     public:
-        static void print(const std::shared_ptr<TreeNode> &node)
+        static void print(const std::unique_ptr<TreeNode> &node)
         {
             print_node(node.get(), 0);
         }

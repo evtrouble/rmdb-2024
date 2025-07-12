@@ -46,69 +46,73 @@ const char *help_info = "Supported SQL syntax:\n"
                         "  {* | column [, column ...]}\n";
 
 // 主要负责执行DDL语句
-void QlManager::run_mutli_query(std::shared_ptr<Plan> plan, Context *context)
+void QlManager::run_mutli_query(std::unique_ptr<Plan>& plan, Context *context)
 {
-    if (auto x = std::dynamic_pointer_cast<ExplainPlan>(plan))
+    switch (plan->tag)
     {
-        // 创建ExplainExecutor来处理EXPLAIN语句
-        ExplainExecutor executor(x);
-        executor.init();
-
-        // 获取执行计划的字符串表示
-        std::string result = executor.get_result();
-
-        // 将结果写入context
-        memcpy(context->data_send_ + *(context->offset_), result.c_str(), result.length());
-        *(context->offset_) += result.length();
-
-        // 将结果写入output.txt文件
-        int fd = ::open("output.txt", O_WRONLY | O_CREAT | O_APPEND, 0644);
-        if (fd != -1)
+        case T_Explain:
         {
-            std::string buffer = result;
-            [[maybe_unused]] ssize_t discard = ::write(fd, buffer.data(), buffer.size());
-            close(fd);
+            auto x = static_cast<ExplainPlan *>(plan.get());
+            // 创建ExplainExecutor来处理EXPLAIN语句
+            ExplainExecutor executor(x);
+            executor.init();
+
+            // 获取执行计划的字符串表示
+            std::string result = executor.get_result();
+
+            // 将结果写入context
+            memcpy(context->data_send_ + *(context->offset_), result.c_str(), result.length());
+            *(context->offset_) += result.length();
+
+            // 将结果写入output.txt文件
+            int fd = ::open("output.txt", O_WRONLY | O_CREAT | O_APPEND, 0644);
+            if (fd != -1)
+            {
+                std::string buffer = result;
+                [[maybe_unused]] ssize_t discard = ::write(fd, buffer.data(), buffer.size());
+                close(fd);
+            }
+            break;
         }
-    }
-    else if (auto x = std::dynamic_pointer_cast<DDLPlan>(plan))
-    {
-        switch (x->tag)
-        {
         case T_CreateTable:
         {
+            auto x = static_cast<DDLPlan *>(plan.get());
             sm_manager_->create_table(x->tab_name_, x->cols_, context);
             break;
         }
         case T_DropTable:
         {
+            auto x = static_cast<DDLPlan *>(plan.get());
             sm_manager_->drop_table(x->tab_name_, context);
             break;
         }
         case T_CreateIndex:
         {
+            auto x = static_cast<DDLPlan *>(plan.get());
             sm_manager_->create_index(x->tab_name_, x->tab_col_names_, context);
             break;
         }
         case T_DropIndex:
         {
+            auto x = static_cast<DDLPlan *>(plan.get());
             sm_manager_->drop_index(x->tab_name_, x->tab_col_names_, context);
             break;
         }
         case T_ShowIndex:
         {
+            auto x = static_cast<DDLPlan *>(plan.get());
             sm_manager_->show_index(x->tab_name_, context);
             break;
         }
         default:
             throw InternalError("Unexpected field type");
             break;
-        }
     }
 }
 
 // 执行help; show tables; desc table; begin; commit; abort;语句
 // 执行help; show tables; desc table; begin; commit; abort;语句
-void QlManager::run_cmd_utility(std::shared_ptr<Plan> plan, txn_id_t *txn_id, Context *context)
+void QlManager::run_cmd_utility(std::unique_ptr<Plan>& plan, txn_id_t *txn_id, Context *context)
 {
     switch (plan->tag)
     {
@@ -131,7 +135,7 @@ void QlManager::run_cmd_utility(std::shared_ptr<Plan> plan, txn_id_t *txn_id, Co
     }
     case T_DescTable:
     {
-        auto x = std::static_pointer_cast<OtherPlan>(plan);
+        auto x = static_cast<OtherPlan*>(plan.get());
         sm_manager_->desc_table(x->tab_name_, context);
         break;
     }
@@ -166,7 +170,7 @@ void QlManager::run_cmd_utility(std::shared_ptr<Plan> plan, txn_id_t *txn_id, Co
     }
     case T_SetKnob:
     {
-        auto x = std::static_pointer_cast<SetKnobPlan>(plan);
+        auto x = static_cast<SetKnobPlan*>(plan.get());
         switch (x->set_knob_type_)
         {
         case ast::SetKnobType::EnableNestLoop:
@@ -189,13 +193,14 @@ void QlManager::run_cmd_utility(std::shared_ptr<Plan> plan, txn_id_t *txn_id, Co
     }
     case T_LoadData:
     {
-        auto x = std::static_pointer_cast<OtherPlan>(plan);
+        auto x = static_cast<OtherPlan*>(plan.get());
+        // 使用双缓冲 + 页级批量插入的优化版本
         sm_manager_->load_csv_data_threaded_batch(x->file_name_, x->tab_name_, context);
         break;
     }
     case T_IoEnable:
     {
-        auto x = std::static_pointer_cast<OtherPlan>(plan);
+        auto x = static_cast<OtherPlan*>(plan.get());
         sm_manager_->io_enabled_ = x->io_enable_;
         break;
     }
@@ -225,7 +230,7 @@ std::string makeAggFuncCaptions(const TabCol &sel_col)
 
 // 执行select语句，select语句的输出除了需要返回客户端外，还需要写入output.txt文件中
 // 执行select语句，select语句的输出除了需要返回客户端外，还需要写入output.txt文件中
-void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, const std::vector<TabCol> &sel_cols,
+void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, std::vector<TabCol> &sel_cols,
                             Context *context)
 {
     std::vector<std::string> captions;

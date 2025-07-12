@@ -103,7 +103,7 @@ private:
 public:
     Planner(SmManager *sm_manager) : sm_manager_(sm_manager) {}
 
-    std::shared_ptr<Plan> do_planner(std::shared_ptr<Query> query, Context *context);
+    std::unique_ptr<Plan> do_planner(std::unique_ptr<Query>& query, Context *context);
 
     void set_enable_nestedloop_join(bool set_val) { enable_nestedloop_join = set_val; }
 
@@ -111,19 +111,19 @@ public:
 
 private:
     // 查询优化相关函数
-    std::shared_ptr<Query> logical_optimization(std::shared_ptr<Query> query, Context *context);
-    std::shared_ptr<Plan> physical_optimization(std::shared_ptr<Query> query, Context *context);
+    void logical_optimization(std::unique_ptr<Query> &query, Context *context);
+    std::unique_ptr<Plan> physical_optimization(std::unique_ptr<Query> &query, Context *context);
 
     // 生成执行计划相关函数
-    std::shared_ptr<Plan> make_one_rel(std::shared_ptr<Query> query, Context *context, const QueryColumnRequirement &column_requirements);
-    std::shared_ptr<Plan> generate_agg_plan(const std::shared_ptr<Query> &query, std::shared_ptr<Plan> plan);
-    std::shared_ptr<Plan> generate_sort_plan(std::shared_ptr<Query> query, std::shared_ptr<Plan> plan);
-    std::shared_ptr<Plan> generate_select_plan(std::shared_ptr<Query> query, Context *context);
+    std::unique_ptr<Plan> make_one_rel(std::unique_ptr<Query> &query, Context *context, QueryColumnRequirement &column_requirements);
+    std::unique_ptr<Plan> generate_agg_plan(std::unique_ptr<Query> &query, std::unique_ptr<Plan> &plan);
+    std::unique_ptr<Plan> generate_sort_plan(std::unique_ptr<Query> &query, std::unique_ptr<Plan> &plan);
+    std::unique_ptr<Plan> generate_select_plan(std::unique_ptr<Query> &query, Context *context);
 
     // 移除这一行：QueryColumnRequirement column_requirements_;
 
     // 列需求分析函数
-    void analyze_column_requirements(std::shared_ptr<Query> query, Context *context, QueryColumnRequirement &requirements);
+    void analyze_column_requirements(std::unique_ptr<Query> &query, Context *context, QueryColumnRequirement &requirements);
 
     // 获取索引信息
     std::pair<IndexMeta *, int> get_index_cols(const std::string &tab_name,
