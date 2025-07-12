@@ -9,6 +9,9 @@
     /* enable location */
 %option bison-bridge
 %option bison-locations
+%option 8bit
+%option full
+%option nodefault
 
 %{
 #include "ast.h"
@@ -113,7 +116,6 @@ value_path [\.|\/][^ \t]+\.csv
 "ENABLE_SORTMERGE" { return ENABLE_SORTMERGE; }
 "LOAD" { return LOAD; }
 "OUTPUT_FILE" {return OUTPUT_FILE;}
-"ON" {return ON;}
 "OFF" {return OFF;}
 "TRUE" {
     yylval->sv_bool = true;
@@ -135,7 +137,8 @@ value_path [\.|\/][^ \t]+\.csv
 }
     /* literals */
 {value_int} {
-    yylval->sv_int = atoi(yytext);
+    char* end;
+    yylval->sv_int = strtol(yytext, &end, 10);
     return VALUE_INT;
 }
 {value_float} {
@@ -145,7 +148,7 @@ value_path [\.|\/][^ \t]+\.csv
     return VALUE_FLOAT;
 }
 {value_string} {
-    yylval->sv_str = new std::string(yytext + 1, strlen(yytext) - 2);
+    yylval->sv_str = new std::string(yytext + 1, yyleng - 2);
     return VALUE_STRING;
 }
 {value_path} {
