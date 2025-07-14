@@ -336,7 +336,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
             ColType target_type = col_meta->type;
 
             // 设置新值并进行类型转换
-            Value val = convert_sv_value(&sv_set_clause.val);
+            Value val = convert_sv_value(sv_set_clause.val.get());
 
             // 如果类型不匹配，尝试进行类型转换
             if (val.type != target_type)
@@ -514,18 +514,18 @@ void Analyze::get_clause(const std::vector<ast::BinaryExpr> &sv_conds, std::vect
         Condition cond;
         cond.lhs_col = TabCol(expr.lhs.tab_name, expr.lhs.col_name, expr.lhs.agg_type);
         cond.op = convert_sv_comp_op(expr.op);
-        if (expr.rhs.Nodetype() == ast::TreeNodeType::IntLit ||
-                                     expr.rhs.Nodetype() == ast::TreeNodeType::FloatLit ||
-                                     expr.rhs.Nodetype() == ast::TreeNodeType::BoolLit ||
-                                     expr.rhs.Nodetype() == ast::TreeNodeType::StringLit)
+        if (expr.rhs && (expr.rhs->Nodetype() == ast::TreeNodeType::IntLit ||
+                                     expr.rhs->Nodetype() == ast::TreeNodeType::FloatLit ||
+                                     expr.rhs->Nodetype() == ast::TreeNodeType::BoolLit ||
+                                     expr.rhs->Nodetype() == ast::TreeNodeType::StringLit))
         {
-            auto rhs_val = static_cast<const ast::Value*>(&expr.rhs);
+            auto rhs_val = static_cast<const ast::Value*>(expr.rhs.get());
             cond.is_rhs_val = true;
             cond.rhs_val = convert_sv_value(rhs_val);
         }
-        else if (expr.rhs.Nodetype() == ast::TreeNodeType::Col)
+        else if (expr.rhs && expr.rhs->Nodetype() == ast::TreeNodeType::Col)
         {
-            auto rhs_col = static_cast<const ast::Col*>(&expr.rhs);
+            auto rhs_col = static_cast<const ast::Col*>(expr.rhs.get());
             cond.is_rhs_val = false;
             cond.rhs_col = TabCol(rhs_col->tab_name, rhs_col->col_name, expr.lhs.agg_type);
         }

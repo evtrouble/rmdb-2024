@@ -375,9 +375,8 @@ value:
 condition:
         col op expr
     {
-        $$ = new BinaryExpr(*$1, $2, *$3);
+        $$ = new BinaryExpr(*$1, $2, $3);
         delete $1;
-        delete $3;
     }
     ;
 
@@ -446,6 +445,10 @@ col:
         $$ = $1;
         $$->alias = std::move(*$3);
         delete $3;
+    }
+    |   aggCol
+    {
+        $$ = $1;
     }
     ;
 
@@ -560,51 +563,45 @@ setClauses:
 setClause:
         colName '=' value
     {
-        $$ = new SetClause(*$1, *$3, UpdateOp::ASSINGMENT);
+        $$ = new SetClause(*$1, $3, UpdateOp::ASSINGMENT);
         delete $1;
-        delete $3;
     }
     |   colName '=' colName value
     {
-        $$ = new SetClause(*$1, *$4, UpdateOp::SELF_ADD);
+        $$ = new SetClause(*$1, $4, UpdateOp::SELF_ADD);
         delete $1;
         delete $3;
-        delete $4;
     }
     |   colName '=' colName '+' value
     {
-        $$ = new SetClause(*$1, *$5, UpdateOp::SELF_ADD);
+        $$ = new SetClause(*$1, $5, UpdateOp::SELF_ADD);
         delete $1;
         delete $3;
-        delete $5;
     }
     |   colName '=' colName '-' value
     {
-        $$ = new SetClause(*$1, *$5, UpdateOp::SELF_SUB);
+        $$ = new SetClause(*$1, $5, UpdateOp::SELF_SUB);
         delete $1;
         delete $3;
-        delete $5;
     }
     |   colName '=' colName '*' value
     {
-        $$ = new SetClause(*$1, *$5, UpdateOp::SELF_MUT);
+        $$ = new SetClause(*$1, $5, UpdateOp::SELF_MUT);
         delete $1;
         delete $3;
-        delete $5;
     }
     |   colName '=' colName DIV value
     {
-        $$ = new SetClause(*$1, *$5, UpdateOp::SELF_DIV);
+        $$ = new SetClause(*$1, $5, UpdateOp::SELF_DIV);
         delete $1;
         delete $3;
-        delete $5;
     }
     ;
 
 selector:
         '*'
     {
-        $$ = {};
+        $$ = new std::vector<Col>();
     }
     |   colList
     ;
@@ -747,6 +744,7 @@ order_item:
       col opt_asc_desc
     {
         $$ = new std::pair<Col, OrderByDir>(std::move(*$1), $2);
+        delete $1;
     }
     ;
 

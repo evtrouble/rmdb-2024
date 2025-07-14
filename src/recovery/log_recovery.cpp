@@ -38,101 +38,116 @@ void RecoveryManager::redo()
             break;
         }
         offset += log_record->log_tot_len_;
-        switch(log_record->log_type_){
-            case BEGIN:{
-                BeginLogRecord* begin_log_record = static_cast<BeginLogRecord*>(log_record); 
-                auto txn = std::make_unique<Transaction>(begin_log_record->log_tid_, txn_manager_);
-                max_txn_id = std::max(max_txn_id, begin_log_record->log_tid_);
-                temp_txns_[begin_log_record->log_tid_] = std::move(txn);
-                break;
+        switch (log_record->log_type_)
+        {
+        case BEGIN:
+        {
+            BeginLogRecord *begin_log_record = static_cast<BeginLogRecord *>(log_record);
+            auto txn = std::make_unique<Transaction>(begin_log_record->log_tid_, txn_manager_);
+            max_txn_id = std::max(max_txn_id, begin_log_record->log_tid_);
+            temp_txns_[begin_log_record->log_tid_] = std::move(txn);
+            break;
+        }
+        case COMMIT:
+        {
+            CommitLogRecord *commit_log_record = static_cast<CommitLogRecord *>(log_record);
+            auto it = temp_txns_.find(commit_log_record->log_tid_);
+            if (it == temp_txns_.end())
+            {
+                break; // 事务不存在，可能是日志损坏，跳过
             }
-            case COMMIT :{
-                CommitLogRecord* commit_log_record = static_cast<CommitLogRecord*>(log_record);
-                auto it = temp_txns_.find(commit_log_record->log_tid_);
-                if(it == temp_txns_.end()) {
-                    break;  // 事务不存在，可能是日志损坏，跳过
-                }
-                auto &txn = it->second;
-                auto write_set = txn->get_write_set();
-                for(auto write_record : *write_set){
-                    delete write_record; // 清理写集中的记录
-                }
-                temp_txns_.erase(it);
-                break;
+            auto &txn = it->second;
+            auto &write_set = txn->get_write_set();
+            for (auto write_record : *write_set)
+            {
+                delete write_record; // 清理写集中的记录
             }
-            case ABORT:{
-                AbortLogRecord* abort_log_record = static_cast<AbortLogRecord*>(log_record);
-                auto it = temp_txns_.find(abort_log_record->log_tid_);
-                if(it == temp_txns_.end()) {
-                    break;  // 事务不存在，跳过
-                }
-                auto &txn = it->second;
-                auto write_set = txn->get_write_set();
-                while (write_set->size())
+            temp_txns_.erase(it);
+            break;
+        }
+        case ABORT:
+        {
+            AbortLogRecord *abort_log_record = static_cast<AbortLogRecord *>(log_record);
+            auto it = temp_txns_.find(abort_log_record->log_tid_);
+            if (it == temp_txns_.end())
+            {
+                break; // 事务不存在，跳过
+            }
+            auto &txn = it->second;
+            auto &write_set = txn->get_write_set();
+            while (write_set->size())
+            {
+                auto write_record = write_set->back();
+                write_set->pop_back();
+                Rid rid = write_record->GetRid();
+                // 根据写操作类型进行回滚
+                switch (write_record->GetWriteType())
                 {
-                    auto write_record = write_set->back();
-                    write_set->pop_back();
-                    Rid rid = write_record->GetRid();
-                    // 根据写操作类型进行回滚
-                    switch (write_record->GetWriteType())
-                    {
-                        case WType::INSERT_TUPLE:
-                            sm_manager_->get_table_handle(write_record->GetTableName())
-                                ->abort_insert_record(rid);
-                            break;
-                        case WType::DELETE_TUPLE: {
-                            auto fh = sm_manager_->get_table_handle(write_record->GetTableName());
-                            fh->abort_delete_record(rid, write_record->GetRecord().data);
-                            break;
-                        }
-                        case WType::UPDATE_TUPLE:{
-                            auto fh = sm_manager_->get_table_handle(write_record->GetTableName());
-                            fh->abort_update_record(rid, write_record->GetRecord().data);
-                            break;
-                        }
-                        default:
-                            break;
-                    }
-                    delete write_record;
+                case WType::INSERT_TUPLE:
+                    sm_manager_->get_table_handle(write_record->GetTableName())
+                        ->abort_insert_record(rid);
+                    break;
+                case WType::DELETE_TUPLE:
+                {
+                    auto fh = sm_manager_->get_table_handle(write_record->GetTableName());
+                    fh->abort_delete_record(rid, write_record->GetRecord().data);
+                    break;
                 }
-                temp_txns_.erase(it);
-                break;
+                case WType::UPDATE_TUPLE:
+                {
+                    auto fh = sm_manager_->get_table_handle(write_record->GetTableName());
+                    fh->abort_update_record(rid, write_record->GetRecord().data);
+                    break;
+                }
+                default:
+                    break;
+                }
+                delete write_record;
             }
-            case UPDATE:{
-                UpdateLogRecord* update_log_record = static_cast<UpdateLogRecord*>(log_record);
-                std::string table_name(update_log_record->table_name_, update_log_record->table_name_size_);
-                
-                // 检查表是否存在
-                auto fh_ = sm_manager_->get_table_handle(table_name);
-                if(fh_ == nullptr) {
-                    break;  // 表不存在，跳过
-                }
-                while(fh_->file_hdr_.num_pages <= update_log_record->rid_.page_no) {
-                    RmPageHandle page_handle = fh_->create_new_page_handle();
-                    buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), false);
-                }
-                
-                // 检查事务是否存在
-                auto txn_it = temp_txns_.find(update_log_record->log_tid_);
-                if(txn_it == temp_txns_.end()) {
-                    break;  // 事务不存在，跳过
-                }
-                auto &txn = txn_it->second;
-                
-                fh_->recovery_insert_record(update_log_record->rid_, update_log_record->after_value_.data);
-                txn->append_write_record(new WriteRecord(WType::UPDATE_TUPLE,
-                            table_name, update_log_record->rid_, update_log_record->before_value_));
-                break;
-            }  
-            case INSERT:{
-                InsertLogRecord* insert_log_record = static_cast<InsertLogRecord*>(log_record);
-                std::string table_name(insert_log_record->table_name_, insert_log_record->table_name_size_);
-                
-                // 检查表是否存在
-                auto fh_ = sm_manager_->get_table_handle(table_name);
-                if(fh_ == nullptr) {
-                    break;  // 表不存在，跳过
-                }
+            temp_txns_.erase(it);
+            break;
+        }
+        case UPDATE:
+        {
+            UpdateLogRecord *update_log_record = static_cast<UpdateLogRecord *>(log_record);
+            std::string table_name(update_log_record->table_name_, update_log_record->table_name_size_);
+
+            // 检查表是否存在
+            auto fh_ = sm_manager_->get_table_handle(table_name);
+            if (fh_ == nullptr)
+            {
+                break; // 表不存在，跳过
+            }
+            while (fh_->file_hdr_.num_pages <= update_log_record->rid_.page_no)
+            {
+                RmPageHandle page_handle = fh_->create_new_page_handle();
+                buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), false);
+            }
+
+            // 检查事务是否存在
+            auto txn_it = temp_txns_.find(update_log_record->log_tid_);
+            if (txn_it == temp_txns_.end())
+            {
+                break; // 事务不存在，跳过
+            }
+            auto &txn = txn_it->second;
+
+            fh_->recovery_insert_record(update_log_record->rid_, update_log_record->after_value_.data);
+            txn->append_write_record(new WriteRecord(WType::UPDATE_TUPLE,
+                                                     table_name, update_log_record->rid_, update_log_record->before_value_));
+            break;
+        }
+        case INSERT:
+        {
+            InsertLogRecord *insert_log_record = static_cast<InsertLogRecord *>(log_record);
+            std::string table_name(insert_log_record->table_name_, insert_log_record->table_name_size_);
+
+            // 检查表是否存在
+            auto fh_ = sm_manager_->get_table_handle(table_name);
+            if (fh_ == nullptr)
+            {
+                break; // 表不存在，跳过
+            }
 
                 while(fh_->file_hdr_.num_pages <= insert_log_record->rid_.page_no) {
                     RmPageHandle page_handle = fh_->create_new_page_handle();
@@ -188,9 +203,11 @@ void RecoveryManager::redo()
 /**
  * @description: 回滚未完成的事务
  */
-void RecoveryManager::undo() {
-    for(auto& [txn_id, txn] : temp_txns_){
-        auto write_set = txn->get_write_set();
+void RecoveryManager::undo()
+{
+    for (auto &[txn_id, txn] : temp_txns_)
+    {
+        auto& write_set = txn->get_write_set();
         while (write_set->size())
         {
             auto write_record = write_set->back();

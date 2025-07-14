@@ -506,7 +506,7 @@ bool IxIndexHandle::delete_entry(const char *key, const Rid &value, Transaction 
         }
     }
     release_all_xlock(transaction->get_index_latch_page_set(), true);
-    auto page_set = transaction->get_index_deleted_page_set();
+    auto& page_set = transaction->get_index_deleted_page_set();
     while (page_set->size())
     {
         auto node = page_set->front();
@@ -933,7 +933,8 @@ void IxIndexHandle::maintain_child(IxNodeHandle &node, int child_idx)
         ix_manager_->buffer_pool_manager_->unpin_page(child.get_page_id(), true);
     }
 }
-void IxIndexHandle::release_all_xlock(std::shared_ptr<std::deque<Page *>> page_set, bool dirty)
+
+void IxIndexHandle::release_all_xlock(std::unique_ptr<std::deque<Page *>> &page_set, bool dirty)
 {
     BufferPoolManager *buffer_pool_manager_ = ix_manager_->buffer_pool_manager_;
     while (page_set->size())

@@ -244,7 +244,7 @@ private:
 
     void maintain_child(IxNodeHandle &node, int child_idx);
 
-    void release_all_xlock(std::shared_ptr<std::deque<Page*>> page_set, bool dirty);
+    void release_all_xlock(std::unique_ptr<std::deque<Page *>>& page_set, bool dirty);
 
     // for index test
     Rid get_rid(const Iid &iid) const;

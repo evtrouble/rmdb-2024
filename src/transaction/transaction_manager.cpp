@@ -68,15 +68,15 @@ void TransactionManager::commit(Context *context, LogManager *log_manager)
     // 4. 把事务日志刷入磁盘中
     // 5. 更新事务状态
     // 如果需要支持MVCC请在上述过程中添加代码
-    auto write_set = txn->get_write_set();
-    for(auto write : *write_set)
+    auto &write_set = txn->get_write_set();
+    for (auto write : *write_set)
     {
         delete write;
     }
     write_set->clear(); // 清空写集
 
-    auto write_index_set = txn->get_write_index_set();
-    for(auto write : *write_index_set)
+    auto &write_index_set = txn->get_write_index_set();
+    for (auto write : *write_index_set)
     {
         delete write;
     }
@@ -85,7 +85,7 @@ void TransactionManager::commit(Context *context, LogManager *log_manager)
     txn->set_commit_ts(++next_timestamp_); // 设置提交时间戳
 
     // 2. 释放所有锁
-    auto lock_set = txn->get_lock_set();
+    auto &lock_set = txn->get_lock_set();
     for (auto &lock_data_id : *lock_set)
     {
         lock_manager_->unlock_key(txn, lock_data_id);
@@ -126,7 +126,7 @@ void TransactionManager::abort(Context *context, LogManager *log_manager)
     // 如果需要支持MVCC请在上述过程中添加代码
 
     // 1. 回滚所有写操作
-    auto write_set = txn->get_write_set();
+    auto &write_set = txn->get_write_set();
     while (write_set->size())
     {
         auto write_record = write_set->front(); // 获取最后一个写记录
@@ -176,7 +176,7 @@ void TransactionManager::abort(Context *context, LogManager *log_manager)
         delete write_record;
     }
 
-    auto write_index_set = txn->get_write_index_set();
+    auto &write_index_set = txn->get_write_index_set();
     while (write_index_set->size())
     {
         auto write_record = write_index_set->back(); // 获取最后一个写记录
@@ -200,7 +200,7 @@ void TransactionManager::abort(Context *context, LogManager *log_manager)
     }
     
     // 2. 释放所有锁
-    auto lock_set = txn->get_lock_set();
+    auto &lock_set = txn->get_lock_set();
     for (auto &lock_data_id : *lock_set)
     {
         lock_manager_->unlock_key(txn, lock_data_id);

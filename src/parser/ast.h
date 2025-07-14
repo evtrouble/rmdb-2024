@@ -297,10 +297,11 @@ namespace ast
     struct SetClause : public TreeNode
     {
         std::string col_name;
-        Value val;
+        std::unique_ptr<Value> val;
         UpdateOp op;
-
-        SetClause(std::string &col_name_, Value& val_, UpdateOp op) : col_name(std::move(col_name_)), val(std::move(val_)), op(op) {}
+        // 构造函数
+        SetClause(std::string &col_name_, Value* val_, UpdateOp op) 
+            : col_name(std::move(col_name_)), val(val_), op(op) {}
         TreeNodeType Nodetype() const override { return TreeNodeType::SetClause; }
     };
 
@@ -308,9 +309,9 @@ namespace ast
     {
         Col lhs;
         SvCompOp op;
-        Expr rhs;
+        std::unique_ptr<Expr> rhs;
 
-        BinaryExpr(Col& lhs_, SvCompOp op_, Expr& rhs_) : lhs(std::move(lhs_)), op(op_), rhs(std::move(rhs_)) {}
+        BinaryExpr(Col& lhs_, SvCompOp op_, Expr* rhs_) : lhs(std::move(lhs_)), op(op_), rhs(rhs_) {}
         TreeNodeType Nodetype() const override { return TreeNodeType::BinaryExpr; }
     };
 

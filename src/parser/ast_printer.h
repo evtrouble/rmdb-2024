@@ -214,7 +214,7 @@ namespace ast
                 auto x = static_cast<SetClause*>(node);
                 std::cout << "SET_CLAUSE\n";
                 print_val(x->col_name, offset);
-                print_node(&x->val, offset);
+                print_node(x->val.get(), offset);
                 break;
             }
             case TreeNodeType::BinaryExpr:
@@ -223,7 +223,7 @@ namespace ast
                 std::cout << "BINARY_EXPR\n";
                 print_node(&x->lhs, offset);
                 print_val(op2str(x->op), offset);
-                print_node(&x->rhs, offset);
+                print_node(x->rhs.get(), offset);
                 break;
             }
             case TreeNodeType::InsertStmt:

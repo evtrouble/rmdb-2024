@@ -1107,7 +1107,6 @@ void SmManager::update_indexes_for_record(const RmRecord &rec, const Rid &rid,
 void SmManager::load_csv_data_threaded(std::string &file_name, std::string &tab_name, Context *context)
 {
     const size_t BUFFER_SIZE = 1024 * 1024; // 1MB缓冲区
-    const size_t MAX_QUEUE_SIZE = 5;        // 最大队列长度，控制内存使用
 
     // 创建线程安全队列
     ThreadSafeQueue data_queue;
@@ -1184,7 +1183,6 @@ void SmManager::reader_thread_func(const std::string &file_name, ThreadSafeQueue
 void SmManager::processor_thread_func(ThreadSafeQueue &queue, const std::string &tab_name, Context *context)
 {
     auto tab_ = db_.get_table(tab_name);
-    auto fh_ = fhs_[tab_name].get();
     TransactionManager *txn_mgr = context->txn_->get_txn_manager();
     int hidden_column_count = txn_mgr->get_hidden_column_count();
 
