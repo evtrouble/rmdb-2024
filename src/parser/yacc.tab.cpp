@@ -648,9 +648,9 @@ static const yytype_int16 yyrline[] =
      443,   449,   456,   461,   466,   471,   476,   481,   488,   494,
      503,   507,   511,   515,   519,   523,   527,   531,   538,   542,
      549,   555,   564,   569,   575,   581,   587,   593,   602,   606,
-     610,   617,   625,   632,   640,   654,   670,   684,   703,   707,
-     711,   716,   722,   726,   730,   735,   744,   752,   753,   754,
-     758,   759,   762,   763,   764,   765
+     610,   617,   625,   632,   640,   653,   667,   680,   697,   701,
+     705,   710,   716,   720,   724,   729,   738,   746,   747,   748,
+     752,   753,   756,   757,   758,   759
 };
 #endif
 
@@ -2740,8 +2740,7 @@ yyreduce:
     {
         (yyval.sv_table_list) = (yyvsp[-3].sv_table_list);
 
-        (yyval.sv_table_list)->jointree.emplace_back(std::string((yyvsp[-3].sv_table_list)->tables.back()), std::string(*(yyvsp[-1].sv_str)), 
-            INNER_JOIN);
+        (yyval.sv_table_list)->jointree.emplace_back((yyvsp[-3].sv_table_list)->tables.back(), *(yyvsp[-1].sv_str), INNER_JOIN);
         (yyval.sv_table_list)->tables.emplace_back(std::move(*(yyvsp[-1].sv_str)));
         (yyval.sv_table_list)->aliases.emplace_back("");
         delete (yyvsp[-1].sv_str);
@@ -2750,17 +2749,15 @@ yyreduce:
             delete (yyvsp[0].sv_conds);
         }
     }
-#line 2754 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
+#line 2753 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 95: /* tableList: tableList JOIN tbName ALIAS optJoinClause  */
-#line 655 "/home/gyl/cpp/db2025/src/parser/yacc.y"
+#line 654 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_table_list) = (yyvsp[-4].sv_table_list);
 
-        (yyval.sv_table_list)->jointree.emplace_back(std::string((yyvsp[-4].sv_table_list)->tables.back()), std::string(*(yyvsp[-2].sv_str)), 
-            INNER_JOIN);
-        (yyval.sv_table_list)->jointree.back().right_alias = *(yyvsp[-1].sv_str);
+        (yyval.sv_table_list)->jointree.emplace_back((yyvsp[-4].sv_table_list)->tables.back(), *(yyvsp[-2].sv_str), INNER_JOIN);
         (yyval.sv_table_list)->tables.emplace_back(std::move(*(yyvsp[-2].sv_str)));
         (yyval.sv_table_list)->aliases.emplace_back(std::move(*(yyvsp[-1].sv_str)));
         delete (yyvsp[-2].sv_str);
@@ -2770,16 +2767,15 @@ yyreduce:
             delete (yyvsp[0].sv_conds);
         }
     }
-#line 2774 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
+#line 2771 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 96: /* tableList: tableList SEMI JOIN tbName optJoinClause  */
-#line 671 "/home/gyl/cpp/db2025/src/parser/yacc.y"
+#line 668 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_table_list) = (yyvsp[-4].sv_table_list);
 
-        (yyval.sv_table_list)->jointree.emplace_back(std::string((yyvsp[-4].sv_table_list)->tables.back()), std::string(*(yyvsp[-1].sv_str)), 
-            SEMI_JOIN);
+        (yyval.sv_table_list)->jointree.emplace_back((yyvsp[-4].sv_table_list)->tables.back(), *(yyvsp[-1].sv_str), SEMI_JOIN);
         (yyval.sv_table_list)->tables.emplace_back(std::move(*(yyvsp[-1].sv_str)));
         (yyval.sv_table_list)->aliases.emplace_back("");
         delete (yyvsp[-1].sv_str);
@@ -2788,17 +2784,15 @@ yyreduce:
             delete (yyvsp[0].sv_conds);
         }
     }
-#line 2792 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
+#line 2788 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 97: /* tableList: tableList SEMI JOIN tbName ALIAS optJoinClause  */
-#line 685 "/home/gyl/cpp/db2025/src/parser/yacc.y"
+#line 681 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_table_list) = (yyvsp[-5].sv_table_list);
 
-        (yyval.sv_table_list)->jointree.emplace_back(std::string((yyvsp[-5].sv_table_list)->tables.back()), std::string(*(yyvsp[-2].sv_str)), 
-            INNER_JOIN);
-        (yyval.sv_table_list)->jointree.back().right_alias = *(yyvsp[-1].sv_str);
+        (yyval.sv_table_list)->jointree.emplace_back((yyvsp[-5].sv_table_list)->tables.back(), *(yyvsp[-2].sv_str), SEMI_JOIN);
         (yyval.sv_table_list)->tables.emplace_back(std::move(*(yyvsp[-2].sv_str)));
         (yyval.sv_table_list)->aliases.emplace_back(std::move(*(yyvsp[-1].sv_str)));
         delete (yyvsp[-2].sv_str);
@@ -2808,137 +2802,137 @@ yyreduce:
             delete (yyvsp[0].sv_conds);
         }
     }
-#line 2812 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
+#line 2806 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 98: /* opt_order_clause: ORDER BY order_clause  */
-#line 704 "/home/gyl/cpp/db2025/src/parser/yacc.y"
+#line 698 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_orderby) = (yyvsp[0].sv_orderby);
     }
-#line 2820 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
+#line 2814 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 99: /* opt_order_clause: %empty  */
-#line 707 "/home/gyl/cpp/db2025/src/parser/yacc.y"
+#line 701 "/home/gyl/cpp/db2025/src/parser/yacc.y"
                       { (yyval.sv_orderby)=nullptr; }
-#line 2826 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
+#line 2820 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 100: /* opt_limit_clause: LIMIT VALUE_INT  */
-#line 712 "/home/gyl/cpp/db2025/src/parser/yacc.y"
+#line 706 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_int) = (yyvsp[0].sv_int);
     }
-#line 2834 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
+#line 2828 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 101: /* opt_limit_clause: %empty  */
-#line 716 "/home/gyl/cpp/db2025/src/parser/yacc.y"
+#line 710 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_int) = -1;
     }
-#line 2842 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
+#line 2836 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 102: /* opt_groupby_clause: GROUP BY colList  */
-#line 723 "/home/gyl/cpp/db2025/src/parser/yacc.y"
+#line 717 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_cols) = (yyvsp[0].sv_cols);
     }
-#line 2850 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
+#line 2844 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 103: /* opt_groupby_clause: %empty  */
-#line 726 "/home/gyl/cpp/db2025/src/parser/yacc.y"
+#line 720 "/home/gyl/cpp/db2025/src/parser/yacc.y"
                       { (yyval.sv_cols)=nullptr; }
-#line 2856 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
+#line 2850 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 104: /* order_clause: order_item  */
-#line 731 "/home/gyl/cpp/db2025/src/parser/yacc.y"
+#line 725 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_orderby) = new OrderBy((yyvsp[0].sv_order_item)->first, (yyvsp[0].sv_order_item)->second);
         delete (yyvsp[0].sv_order_item);
     }
-#line 2865 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
+#line 2859 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 105: /* order_clause: order_clause ',' order_item  */
-#line 736 "/home/gyl/cpp/db2025/src/parser/yacc.y"
+#line 730 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyvsp[-2].sv_orderby)->addItem((yyvsp[0].sv_order_item)->first, (yyvsp[0].sv_order_item)->second);
         (yyval.sv_orderby) = (yyvsp[-2].sv_orderby);  // 使用 move
         delete (yyvsp[0].sv_order_item);
     }
-#line 2875 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
+#line 2869 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 106: /* order_item: col opt_asc_desc  */
-#line 745 "/home/gyl/cpp/db2025/src/parser/yacc.y"
+#line 739 "/home/gyl/cpp/db2025/src/parser/yacc.y"
     {
         (yyval.sv_order_item) = new std::pair<Col, OrderByDir>(std::move(*(yyvsp[-1].sv_col)), (yyvsp[0].sv_orderby_dir));
         delete (yyvsp[-1].sv_col);
     }
-#line 2884 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
+#line 2878 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 107: /* opt_asc_desc: ASC  */
-#line 752 "/home/gyl/cpp/db2025/src/parser/yacc.y"
+#line 746 "/home/gyl/cpp/db2025/src/parser/yacc.y"
                  { (yyval.sv_orderby_dir) = OrderBy_ASC;     }
-#line 2890 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
+#line 2884 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 108: /* opt_asc_desc: DESC  */
-#line 753 "/home/gyl/cpp/db2025/src/parser/yacc.y"
+#line 747 "/home/gyl/cpp/db2025/src/parser/yacc.y"
                  { (yyval.sv_orderby_dir) = OrderBy_DESC;    }
-#line 2896 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
+#line 2890 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 109: /* opt_asc_desc: %empty  */
-#line 754 "/home/gyl/cpp/db2025/src/parser/yacc.y"
+#line 748 "/home/gyl/cpp/db2025/src/parser/yacc.y"
             { (yyval.sv_orderby_dir) = OrderBy_DEFAULT; }
-#line 2902 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
+#line 2896 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 110: /* set_knob_type: ENABLE_NESTLOOP  */
-#line 758 "/home/gyl/cpp/db2025/src/parser/yacc.y"
+#line 752 "/home/gyl/cpp/db2025/src/parser/yacc.y"
                     { (yyval.sv_setKnobType) = ast::SetKnobType::EnableNestLoop; }
-#line 2908 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
+#line 2902 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 111: /* set_knob_type: ENABLE_SORTMERGE  */
-#line 759 "/home/gyl/cpp/db2025/src/parser/yacc.y"
+#line 753 "/home/gyl/cpp/db2025/src/parser/yacc.y"
                          { (yyval.sv_setKnobType) = ast::SetKnobType::EnableSortMerge; }
-#line 2914 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
+#line 2908 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 112: /* tbName: IDENTIFIER  */
-#line 762 "/home/gyl/cpp/db2025/src/parser/yacc.y"
+#line 756 "/home/gyl/cpp/db2025/src/parser/yacc.y"
                    { (yyval.sv_str) = (yyvsp[0].sv_str); }
-#line 2920 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
+#line 2914 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 113: /* colName: IDENTIFIER  */
-#line 763 "/home/gyl/cpp/db2025/src/parser/yacc.y"
+#line 757 "/home/gyl/cpp/db2025/src/parser/yacc.y"
                     { (yyval.sv_str) = (yyvsp[0].sv_str); }
-#line 2926 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
+#line 2920 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 114: /* ALIAS: IDENTIFIER  */
-#line 764 "/home/gyl/cpp/db2025/src/parser/yacc.y"
+#line 758 "/home/gyl/cpp/db2025/src/parser/yacc.y"
                   { (yyval.sv_str) = (yyvsp[0].sv_str); }
-#line 2932 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
+#line 2926 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
   case 115: /* fileName: VALUE_PATH  */
-#line 765 "/home/gyl/cpp/db2025/src/parser/yacc.y"
+#line 759 "/home/gyl/cpp/db2025/src/parser/yacc.y"
                      { (yyval.sv_str) = (yyvsp[0].sv_str); }
-#line 2938 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
+#line 2932 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
     break;
 
 
-#line 2942 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
+#line 2936 "/home/gyl/cpp/db2025/src/parser/yacc.tab.cpp"
 
       default: break;
     }
@@ -3167,4 +3161,4 @@ yyreturnlab:
   return yyresult;
 }
 
-#line 767 "/home/gyl/cpp/db2025/src/parser/yacc.y"
+#line 761 "/home/gyl/cpp/db2025/src/parser/yacc.y"

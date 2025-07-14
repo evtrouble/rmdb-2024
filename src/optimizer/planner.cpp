@@ -25,7 +25,6 @@ See the Mulan PSL v2 for more details. */
 #include "index/ix.h"
 #include "record_printer.h"
 #include "execution/executor_explain.h"
-std::unordered_map<std::string, std::string> Planner::empty_map_;
 
 // 辅助函数：将操作符转换为字符串
 std::string get_op_string(CompOp op)

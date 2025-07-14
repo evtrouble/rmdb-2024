@@ -641,8 +641,7 @@ tableList:
     {
         $$ = $1;
 
-        $$->jointree.emplace_back(std::string($1->tables.back()), std::string(*$3), 
-            INNER_JOIN);
+        $$->jointree.emplace_back($1->tables.back(), *$3, INNER_JOIN);
         $$->tables.emplace_back(std::move(*$3));
         $$->aliases.emplace_back("");
         delete $3;
@@ -655,9 +654,7 @@ tableList:
     {
         $$ = $1;
 
-        $$->jointree.emplace_back(std::string($1->tables.back()), std::string(*$3), 
-            INNER_JOIN);
-        $$->jointree.back().right_alias = *$4;
+        $$->jointree.emplace_back($1->tables.back(), *$3, INNER_JOIN);
         $$->tables.emplace_back(std::move(*$3));
         $$->aliases.emplace_back(std::move(*$4));
         delete $3;
@@ -671,8 +668,7 @@ tableList:
     {
         $$ = $1;
 
-        $$->jointree.emplace_back(std::string($1->tables.back()), std::string(*$4), 
-            SEMI_JOIN);
+        $$->jointree.emplace_back($1->tables.back(), *$4, SEMI_JOIN);
         $$->tables.emplace_back(std::move(*$4));
         $$->aliases.emplace_back("");
         delete $4;
@@ -685,9 +681,7 @@ tableList:
     {
         $$ = $1;
 
-        $$->jointree.emplace_back(std::string($1->tables.back()), std::string(*$4), 
-            INNER_JOIN);
-        $$->jointree.back().right_alias = *$5;
+        $$->jointree.emplace_back($1->tables.back(), *$4, SEMI_JOIN);
         $$->tables.emplace_back(std::move(*$4));
         $$->aliases.emplace_back(std::move(*$5));
         delete $4;

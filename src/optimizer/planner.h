@@ -108,8 +108,6 @@ private:
 
     bool enable_nestedloop_join = true;
     bool enable_sortmerge_join = false;
-    std::unordered_map<std::string, std::string> *tab_to_alias = &empty_map_;
-    static std::unordered_map<std::string, std::string> empty_map_;
 
     std::vector<TabCol> get_table_all_cols(const std::string &table_name, std::vector<TabCol> &table_cols, Context *context);
 

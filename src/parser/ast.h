@@ -392,8 +392,6 @@ namespace ast
     {
         std::string left;
         std::string right;
-        std::string left_alias;  // 左表别名
-        std::string right_alias; // 右表别名
         std::vector<BinaryExpr> conds;
         JoinType type;
 
@@ -403,12 +401,6 @@ namespace ast
         JoinExpr(std::string left_, std::string right_, JoinType type_)
             : left(std::move(left_)), right(std::move(right_)),
               type(type_) {}
-
-        // 获取左表实际使用的名称（如果有别名则返回别名，否则返回原表名）
-        std::string get_left_name() const { return left_alias.empty() ? left : left_alias; }
-
-        // 获取右表实际使用的名称（如果有别名则返回别名，否则返回原表名）
-        std::string get_right_name() const { return right_alias.empty() ? right : right_alias; }
 
         TreeNodeType Nodetype() const override { return TreeNodeType::JoinExpr; }
     };
@@ -424,7 +416,6 @@ namespace ast
         OrderBy order;
         int limit = -1;
         std::vector<std::string> tab_aliases;
-        std::unordered_map<std::string, std::string> *tab_to_alias;
 
         bool has_agg = false;
 
