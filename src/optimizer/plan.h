@@ -77,7 +77,7 @@ public:
     }
 
     ScanPlan(PlanTag tag, SmManager *sm_manager, const std::string &tab_name, const std::vector<Condition> &conds,
-             const IndexMeta &index_meta, int max_match_col_count)
+            IndexMeta &index_meta, int max_match_col_count)
         : Plan(tag), tab_name_(std::move(tab_name)), fed_conds_(std::move(conds)), index_meta_(index_meta),
           max_match_col_count_(max_match_col_count)
     {
@@ -120,7 +120,7 @@ public:
 class ProjectionPlan : public Plan
 {
 public:
-    ProjectionPlan(PlanTag tag, std::shared_ptr<Plan> subplan, const std::vector<TabCol> &sel_cols)
+    ProjectionPlan(PlanTag tag, std::shared_ptr<Plan> subplan, std::vector<TabCol> &sel_cols)
         : Plan(tag), subplan_(std::move(subplan)), sel_cols_(std::move(sel_cols)) {}
     ~ProjectionPlan() {}
     std::shared_ptr<Plan> subplan_;
@@ -130,7 +130,7 @@ public:
 class SortPlan : public Plan
 {
 public:
-    SortPlan(PlanTag tag, std::shared_ptr<Plan> subplan, const TabCol &sort_col, bool is_desc, int limit = -1)
+    SortPlan(PlanTag tag, std::shared_ptr<Plan> subplan, TabCol &sort_col, bool is_desc, int limit = -1)
         : Plan(tag), subplan_(std::move(subplan)), limit_(limit)
     {
         sort_cols_.emplace_back(sort_col);
@@ -138,8 +138,8 @@ public:
     }
     // 多列排序构造函数（支持每列独立排序方向）
     SortPlan(PlanTag tag, std::shared_ptr<Plan> subplan,
-             const std::vector<TabCol> &sort_cols,
-             const std::vector<bool> &is_desc_orders,
+            std::vector<TabCol> &sort_cols,
+            std::vector<bool> &is_desc_orders,
              int limit = -1)
         : Plan(tag),
           subplan_(std::move(subplan)),
@@ -182,7 +182,7 @@ public:
 class DDLPlan : public Plan
 {
 public:
-    DDLPlan(PlanTag tag, const std::string &tab_name, const std::vector<std::string> &col_names,
+    DDLPlan(PlanTag tag, std::string &tab_name, const std::vector<std::string> &col_names,
             const std::vector<ColDef> &cols)
         : Plan(tag), tab_name_(std::move(tab_name)), tab_col_names_(std::move(col_names)),
           cols_(std::move(cols)) {}
@@ -196,7 +196,7 @@ public:
 class OtherPlan : public Plan
 {
 public:
-    OtherPlan(PlanTag tag, const std::string &tab_name)
+    OtherPlan(PlanTag tag, std::string &tab_name)
         : Plan(tag), tab_name_(std::move(tab_name)) {}
     OtherPlan(PlanTag tag)
         : Plan(tag) {}
@@ -269,7 +269,7 @@ public:
     std::shared_ptr<Plan> subplan_; // 子计划
     std::vector<Condition> conds_;  // 过滤条件
 
-    FilterPlan(PlanTag tag, std::shared_ptr<Plan> subplan, std::vector<Condition> conds)
+    FilterPlan(PlanTag tag, std::shared_ptr<Plan> subplan, std::vector<Condition>& conds)
         : Plan(tag), subplan_(std::move(subplan)), conds_(std::move(conds)) {}
 
     ~FilterPlan() override = default;
@@ -287,15 +287,3 @@ public:
 
 //     ~SubqueryPlan() override = default;
 // };
-
-class plannerInfo
-{
-public:
-    std::shared_ptr<ast::SelectStmt> parse;
-    std::vector<Condition> where_conds;
-    std::vector<TabCol> sel_cols;
-    std::shared_ptr<Plan> plan;
-    std::vector<std::shared_ptr<Plan>> table_scan_executors;
-    std::vector<SetClause> set_clauses;
-    plannerInfo(std::shared_ptr<ast::SelectStmt> parse_) : parse(std::move(parse_)) {}
-};
