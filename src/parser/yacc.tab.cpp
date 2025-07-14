@@ -2760,9 +2760,9 @@ yyreduce:
 
         (yyval.sv_table_list)->jointree.emplace_back(std::string((yyvsp[-4].sv_table_list)->tables.back()), std::string(*(yyvsp[-2].sv_str)), 
             INNER_JOIN);
-        (yyval.sv_table_list)->jointree.back().right_alias = std::move(*(yyvsp[-1].sv_str));
+        (yyval.sv_table_list)->jointree.back().right_alias = *(yyvsp[-1].sv_str);
         (yyval.sv_table_list)->tables.emplace_back(std::move(*(yyvsp[-2].sv_str)));
-        (yyval.sv_table_list)->aliases.emplace_back("");
+        (yyval.sv_table_list)->aliases.emplace_back(std::move(*(yyvsp[-1].sv_str)));
         delete (yyvsp[-2].sv_str);
         delete (yyvsp[-1].sv_str);
         if((yyvsp[0].sv_conds) != nullptr) {
@@ -2798,9 +2798,9 @@ yyreduce:
 
         (yyval.sv_table_list)->jointree.emplace_back(std::string((yyvsp[-5].sv_table_list)->tables.back()), std::string(*(yyvsp[-2].sv_str)), 
             INNER_JOIN);
-        (yyval.sv_table_list)->jointree.back().right_alias = std::move(*(yyvsp[-1].sv_str));
+        (yyval.sv_table_list)->jointree.back().right_alias = *(yyvsp[-1].sv_str);
         (yyval.sv_table_list)->tables.emplace_back(std::move(*(yyvsp[-2].sv_str)));
-        (yyval.sv_table_list)->aliases.emplace_back("");
+        (yyval.sv_table_list)->aliases.emplace_back(std::move(*(yyvsp[-1].sv_str)));
         delete (yyvsp[-2].sv_str);
         delete (yyvsp[-1].sv_str);
         if((yyvsp[0].sv_conds) != nullptr) {

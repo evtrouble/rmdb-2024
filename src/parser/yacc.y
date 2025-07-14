@@ -657,9 +657,9 @@ tableList:
 
         $$->jointree.emplace_back(std::string($1->tables.back()), std::string(*$3), 
             INNER_JOIN);
-        $$->jointree.back().right_alias = std::move(*$4);
+        $$->jointree.back().right_alias = *$4;
         $$->tables.emplace_back(std::move(*$3));
-        $$->aliases.emplace_back("");
+        $$->aliases.emplace_back(std::move(*$4));
         delete $3;
         delete $4;
         if($5 != nullptr) {
@@ -687,9 +687,9 @@ tableList:
 
         $$->jointree.emplace_back(std::string($1->tables.back()), std::string(*$4), 
             INNER_JOIN);
-        $$->jointree.back().right_alias = std::move(*$5);
+        $$->jointree.back().right_alias = *$5;
         $$->tables.emplace_back(std::move(*$4));
-        $$->aliases.emplace_back("");
+        $$->aliases.emplace_back(std::move(*$5));
         delete $4;
         delete $5;
         if($6 != nullptr) {
