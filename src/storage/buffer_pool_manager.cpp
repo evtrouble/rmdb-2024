@@ -12,7 +12,7 @@ BufferPoolManager::BufferPoolManager(size_t pool_size, DiskManager *disk_manager
         : pages_(pool_size), disk_manager_(disk_manager),
           dirty_page_count_(0)
 {
-    // REPLACER_TYPE = "CLOCK";
+    REPLACER_TYPE = "CLOCK";
     // 可以被Replacer改变
     if (REPLACER_TYPE.compare("LRU") == 0)
         replacer_ = new LRUReplacer(pool_size);
