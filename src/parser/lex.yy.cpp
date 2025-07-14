@@ -1374,17 +1374,16 @@ case 68:
 YY_RULE_SETUP
 #line 142 "lex.l"
 {
-    double  raw_val = atof(yytext);
+    double raw_val = atof(yytext);
     // 对浮点数进行精度处理
     yylval->sv_float = std::round(raw_val * FLOAT_PRECISION_MULTIPLIER) / FLOAT_PRECISION_MULTIPLIER;
-    yylval->sv_str = new std::string(yytext);  // 保存原始文本
     return VALUE_FLOAT;
 }
 	YY_BREAK
 case 69:
 /* rule 69 can match eol */
 YY_RULE_SETUP
-#line 149 "lex.l"
+#line 148 "lex.l"
 {
     yylval->sv_str = new std::string(yytext + 1, strlen(yytext) - 2);
     return VALUE_STRING;
@@ -1393,7 +1392,7 @@ YY_RULE_SETUP
 case 70:
 /* rule 70 can match eol */
 YY_RULE_SETUP
-#line 153 "lex.l"
+#line 152 "lex.l"
 {
     yylval->sv_str = new std::string(yytext);
     return VALUE_PATH;
@@ -1401,27 +1400,27 @@ YY_RULE_SETUP
 	YY_BREAK
 case 71:
 YY_RULE_SETUP
-#line 157 "lex.l"
+#line 156 "lex.l"
 { return DIV; }
 	YY_BREAK
 /* EOF */
 case YY_STATE_EOF(INITIAL):
 case YY_STATE_EOF(STATE_COMMENT):
-#line 160 "lex.l"
+#line 159 "lex.l"
 { return T_EOF; }
 	YY_BREAK
 /* unexpected char */
 case 72:
 YY_RULE_SETUP
-#line 162 "lex.l"
+#line 161 "lex.l"
 { std::cerr << "Lexer Error: unexpected character " << yytext[0] << std::endl; }
 	YY_BREAK
 case 73:
 YY_RULE_SETUP
-#line 163 "lex.l"
+#line 162 "lex.l"
 ECHO;
 	YY_BREAK
-#line 1425 "/home/gyl/cpp/db2025/src/parser/lex.yy.cpp"
+#line 1424 "/home/gyl/cpp/db2025/src/parser/lex.yy.cpp"
 
 	case YY_END_OF_BUFFER:
 		{
@@ -2387,5 +2386,5 @@ void yyfree (void * ptr )
 
 #define YYTABLES_NAME "yytables"
 
-#line 163 "lex.l"
+#line 162 "lex.l"
 

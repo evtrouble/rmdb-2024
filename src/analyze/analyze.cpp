@@ -680,7 +680,6 @@ Value Analyze::convert_sv_value(const ast::Value *sv_val)
     {
         auto float_lit = static_cast<const ast::FloatLit*>(sv_val);
         val.set_float(float_lit->val);
-        val.str_val = float_lit->original_text; // 保存原始文本
     }
     break;
     case ast::TreeNodeType::StringLit:

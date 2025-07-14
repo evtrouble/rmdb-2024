@@ -256,7 +256,6 @@ namespace ast
     struct FloatLit : public Value
     {
         float val;
-        std::string original_text;
 
         FloatLit(float val_) : val(val_) {}
         TreeNodeType Nodetype() const override { return TreeNodeType::FloatLit; }

@@ -139,10 +139,9 @@ value_path [\.|\/][^ \t]+\.csv
     return VALUE_INT;
 }
 {value_float} {
-    double  raw_val = atof(yytext);
+    double raw_val = atof(yytext);
     // 对浮点数进行精度处理
     yylval->sv_float = std::round(raw_val * FLOAT_PRECISION_MULTIPLIER) / FLOAT_PRECISION_MULTIPLIER;
-    yylval->sv_str = new std::string(yytext);  // 保存原始文本
     return VALUE_FLOAT;
 }
 {value_string} {

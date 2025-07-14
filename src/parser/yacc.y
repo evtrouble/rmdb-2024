@@ -365,6 +365,7 @@ value:
     |   VALUE_STRING
     {
         $$ = new StringLit(*$1);
+        delete $1;
     }
     |   VALUE_BOOL
     {
