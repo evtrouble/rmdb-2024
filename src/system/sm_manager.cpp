@@ -920,7 +920,7 @@ void SmManager::load_csv_data_threaded(std::string &file_name, std::string &tab_
     // 创建线程安全队列
     ThreadSafeQueue data_queue;
 
-    // auto start_time = std::chrono::high_resolution_clock::now();
+    auto start_time = std::chrono::high_resolution_clock::now();
 
     // 启动读取线程
     std::thread reader_thread([this, &file_name, &data_queue, BUFFER_SIZE]()
@@ -944,8 +944,8 @@ void SmManager::load_csv_data_threaded(std::string &file_name, std::string &tab_
     reader_thread.join();
     processor_thread.join();
 
-    // auto end_time = std::chrono::high_resolution_clock::now();
-    // auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 }
 
 void SmManager::reader_thread_func(const std::string &file_name, ThreadSafeQueue &queue, const size_t buffer_size)
