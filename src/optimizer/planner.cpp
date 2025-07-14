@@ -882,22 +882,20 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query, Contex
 std::shared_ptr<Plan> Planner::generate_agg_plan(const std::shared_ptr<Query> &query, std::shared_ptr<Plan> plan)
 {
     auto x = std::static_pointer_cast<ast::SelectStmt>(query->parse);
-    if (!x->has_agg && !x->has_groupby)
+    if (!x->has_agg && x->groupby.empty())
     {
         return plan;
     }
 
     // 准备 ORDER BY 列
     std::vector<TabCol> order_by_cols;
-    if (x->has_sort)
+    for (size_t i = 0; i < x->order.cols.size(); ++i)
     {
-        for (size_t i = 0; i < x->order->cols.size(); ++i)
-        {
-            auto &order_col = x->order->cols[i];
-            if (order_col->tab_name.empty())
-                order_col->tab_name = query->tables[0];
-            order_by_cols.emplace_back(order_col->tab_name, order_col->col_name, order_col->agg_type);
-        }
+        auto &order_col = x->order.cols[i];
+        if (order_col.tab_name.empty())
+            order_col.tab_name = query->tables[0];
+        order_by_cols.emplace_back(order_col.tab_name, 
+            order_col.col_name, order_col.agg_type);
     }
 
     // 生成聚合计划，增加 ORDER BY 列参数
@@ -906,10 +904,9 @@ std::shared_ptr<Plan> Planner::generate_agg_plan(const std::shared_ptr<Query> &q
 }
 std::shared_ptr<Plan> Planner::generate_sort_plan(std::shared_ptr<Query> query, std::shared_ptr<Plan> plan)
 {
-    int limit = -1;
     auto x = std::static_pointer_cast<ast::SelectStmt>(query->parse);
     std::vector<std::string> &tables = query->tables;
-    if (!x->has_sort)
+    if (x->order.cols.empty())
     {
         return plan;
     }
@@ -919,23 +916,19 @@ std::shared_ptr<Plan> Planner::generate_sort_plan(std::shared_ptr<Query> query, 
     std::vector<bool> is_desc_orders; // 每列对应的排序方向
 
     // 遍历所有排序列及其排序方向
-    for (size_t i = 0; i < x->order->cols.size(); ++i)
+    for (size_t i = 0; i < x->order.cols.size(); ++i)
     {
-        auto &order_col = x->order->cols[i];
-        auto &order_dir = x->order->dirs[i];
+        auto &order_col = x->order.cols[i];
+        auto &order_dir = x->order.dirs[i];
         is_desc_orders.emplace_back(order_dir == ast::OrderByDir::OrderBy_DESC);
-        if (order_col->tab_name.empty())
-            order_col->tab_name = tables[0];
-        sort_cols.emplace_back(order_col->tab_name, order_col->col_name,
-                               order_col->agg_type);
+        if (order_col.tab_name.empty())
+            order_col.tab_name = tables[0];
+        sort_cols.emplace_back(std::move(order_col.tab_name), 
+            std::move(order_col.col_name), std::move(order_col.agg_type));
     }
 
-    if (x->has_limit)
-    {
-        limit = x->limit;
-    }
     // 创建排序计划
-    return std::make_shared<SortPlan>(T_Sort, std::move(plan), sort_cols, is_desc_orders, limit);
+    return std::make_shared<SortPlan>(T_Sort, std::move(plan), sort_cols, is_desc_orders, x->limit);
 }
 
 /**
@@ -988,12 +981,12 @@ std::shared_ptr<Plan> Planner::do_planner(std::shared_ptr<Query> query, Context 
         col_defs.reserve(x->fields.size());
         for (auto &field : x->fields)
         {
-            if (field->Nodetype() == ast::TreeNodeType::ColDef)
+            if (field.Nodetype() == ast::TreeNodeType::ColDef)
             {
-                auto sv_col_def = std::static_pointer_cast<ast::ColDef>(field);
+                auto sv_col_def = static_cast<ast::ColDef*>(&field);
                 ColDef col_def = {.name = std::move(sv_col_def->col_name),
-                                  .type = interp_sv_type(sv_col_def->type_len->type),
-                                  .len = sv_col_def->type_len->len};
+                                  .type = interp_sv_type(sv_col_def->type_len.type),
+                                  .len = sv_col_def->type_len.len};
                 col_defs.emplace_back(std::move(col_def));
             }
             else
@@ -1125,10 +1118,7 @@ void Planner::analyze_column_requirements(std::shared_ptr<Query> query, Context 
     }
 
     // 4. 分析GROUP BY子句中需要的列
-    if (select_stmt->has_groupby)
-    {
-        requirements.groupby_cols.insert(query->groupby.begin(), query->groupby.end());
-    }
+    requirements.groupby_cols.insert(query->groupby.begin(), query->groupby.end());
 
     // 5. 分析HAVING子句中需要的列
     for (const auto &cond : query->having_conds)
@@ -1141,13 +1131,9 @@ void Planner::analyze_column_requirements(std::shared_ptr<Query> query, Context 
     }
 
     // 6. 分析ORDER BY子句中需要的列
-    if (select_stmt->has_sort)
+    for (const auto &order_col : select_stmt->order.cols)
     {
-        for (const auto &order_col : select_stmt->order->cols)
-        {
-            TabCol tab_col(order_col->tab_name, order_col->col_name);
-            requirements.orderby_cols.emplace(std::move(tab_col));
-        }
+        requirements.orderby_cols.emplace(order_col.tab_name, order_col.col_name);
     }
 
     // 合并所有中间分析数据到最终结果

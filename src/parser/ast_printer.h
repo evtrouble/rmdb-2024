@@ -22,7 +22,7 @@ namespace ast
     public:
         static void print(const std::shared_ptr<TreeNode> &node)
         {
-            print_node(node, 0);
+            print_node(node.get(), 0);
         }
 
     private:
@@ -79,148 +79,176 @@ namespace ast
             std::cout << "LIST\n";
             for (auto &node : nodes)
             {
-                print_node(node, offset);
+                print_node(&node, offset);
             }
         }
 
-        static void print_node(const std::shared_ptr<TreeNode> &node, int offset)
+        static void print_node(TreeNode *node, int offset)
         {
             std::cout << offset2string(offset);
             offset += 2;
-            if (auto x = std::dynamic_pointer_cast<Help>(node))
+            switch (node->Nodetype())
             {
+            case TreeNodeType::Help:
                 std::cout << "HELP\n";
-            }
-            else if (auto x = std::dynamic_pointer_cast<ShowTables>(node))
-            {
+                break;
+            case TreeNodeType::ShowTables:
                 std::cout << "SHOW_TABLES\n";
-            }
-            else if (auto x = std::dynamic_pointer_cast<CreateTable>(node))
+                break;
+            case TreeNodeType::TxnBegin:
+                std::cout << "BEGIN\n";
+                break;
+            case TreeNodeType::TxnCommit:
+                std::cout << "COMMIT\n";
+                break;
+            case TreeNodeType::TxnAbort:
+                std::cout << "ABORT\n";
+                break;
+            case TreeNodeType::TxnRollback: 
+                std::cout << "ROLLBACK\n";
+                break;
+            case TreeNodeType::CreateStaticCheckpoint:
+                std::cout << "CREATE_STATIC_CHECKPOINT\n";
+                break;
+            case TreeNodeType::TypeLen:
             {
-                std::cout << "CREATE_TABLE\n";
-                print_val(x->tab_name, offset);
-                print_node_list(x->fields, offset);
-            }
-            else if (auto x = std::dynamic_pointer_cast<DropTable>(node))
-            {
-                std::cout << "DROP_TABLE\n";
-                print_val(x->tab_name, offset);
-            }
-            else if (auto x = std::dynamic_pointer_cast<DescTable>(node))
-            {
-                std::cout << "DESC_TABLE\n";
-                print_val(x->tab_name, offset);
-            }
-            else if (auto x = std::dynamic_pointer_cast<CreateIndex>(node))
-            {
-                std::cout << "CREATE_INDEX\n";
-                print_val(x->tab_name, offset);
-                // print_val(x->col_name, offset);
-                for (auto col_name : x->col_names)
-                    print_val(col_name, offset);
-            }
-            else if (auto x = std::dynamic_pointer_cast<DropIndex>(node))
-            {
-                std::cout << "DROP_INDEX\n";
-                print_val(x->tab_name, offset);
-                // print_val(x->col_name, offset);
-                for (auto col_name : x->col_names)
-                    print_val(col_name, offset);
-            }
-            else if (auto x = std::dynamic_pointer_cast<ColDef>(node))
-            {
-                std::cout << "COL_DEF\n";
-                print_val(x->col_name, offset);
-                print_node(x->type_len, offset);
-            }
-            else if (auto x = std::dynamic_pointer_cast<Col>(node))
-            {
-                std::cout << "COL\n";
-                print_val(x->tab_name, offset);
-                print_val(x->col_name, offset);
-            }
-            else if (auto x = std::dynamic_pointer_cast<TypeLen>(node))
-            {
+                auto x = static_cast<TypeLen*>(node);
                 std::cout << "TYPE_LEN\n";
                 print_val(type2str(x->type), offset);
                 print_val(x->len, offset);
+                break;
             }
-            else if (auto x = std::dynamic_pointer_cast<IntLit>(node))
+            case TreeNodeType::ColDef:
             {
+                auto x = static_cast<ColDef*>(node);
+                std::cout << "COL_DEF\n";
+                print_val(x->col_name, offset);
+                print_node(&x->type_len, offset);
+                break;
+            }
+            case TreeNodeType::CreateTable:
+            {
+                auto x = static_cast<CreateTable*>(node);
+                std::cout << "CREATE_TABLE\n";
+                print_val(x->tab_name, offset);
+                print_node_list(x->fields, offset);
+                break;
+            }
+            case TreeNodeType::DropTable:
+            {
+                auto x = static_cast<DropTable*>(node);
+                std::cout << "DROP_TABLE\n";    
+                print_val(x->tab_name, offset);
+                break;
+            }
+            case TreeNodeType::DescTable:
+            {
+                auto x = static_cast<DescTable*>(node);
+                std::cout << "DESC_TABLE\n";
+                print_val(x->tab_name, offset);
+                break;
+            }
+            case TreeNodeType::CreateIndex:
+            {
+                auto x = static_cast<CreateIndex*>(node);
+                std::cout << "CREATE_INDEX\n";
+                print_val(x->tab_name, offset);
+                // print_val(x->col_name, offset);
+                for (auto &col_name : x->col_names)
+                    print_val(col_name, offset);
+                break;
+            }
+            case TreeNodeType::DropIndex:
+            {
+                auto x = static_cast<DropIndex*>(node);
+                std::cout << "DROP_INDEX\n";
+                print_val(x->tab_name, offset);
+                // print_val(x->col_name, offset);
+                for (auto &col_name : x->col_names)
+                    print_val(col_name, offset);
+                break;
+            }
+            case TreeNodeType::Col:
+            {
+                auto x = static_cast<Col*>(node);
+                std::cout << "COL\n";
+                print_val(x->tab_name, offset);
+                print_val(x->col_name, offset); 
+                break;
+            }
+            case TreeNodeType::IntLit:
+            {
+                auto x = static_cast<IntLit*>(node);
                 std::cout << "INT_LIT\n";
                 print_val(x->val, offset);
+                break;
             }
-            else if (auto x = std::dynamic_pointer_cast<FloatLit>(node))
+            case TreeNodeType::FloatLit:
             {
+                auto x = static_cast<FloatLit*>(node);
                 std::cout << "FLOAT_LIT\n";
                 print_val(x->val, offset);
+                break;
             }
-            else if (auto x = std::dynamic_pointer_cast<StringLit>(node))
+            case TreeNodeType::StringLit:
             {
+                auto x = static_cast<StringLit*>(node);    
                 std::cout << "STRING_LIT\n";
                 print_val(x->val, offset);
+                break;
             }
-            else if (auto x = std::dynamic_pointer_cast<SetClause>(node))
+            case TreeNodeType::SetClause:
             {
+                auto x = static_cast<SetClause*>(node);
                 std::cout << "SET_CLAUSE\n";
                 print_val(x->col_name, offset);
-                print_node(x->val, offset);
+                print_node(&x->val, offset);
+                break;
             }
-            else if (auto x = std::dynamic_pointer_cast<BinaryExpr>(node))
+            case TreeNodeType::BinaryExpr:
             {
+                auto x = static_cast<BinaryExpr*>(node);
                 std::cout << "BINARY_EXPR\n";
-                print_node(x->lhs, offset);
+                print_node(&x->lhs, offset);
                 print_val(op2str(x->op), offset);
-                print_node(x->rhs, offset);
+                print_node(&x->rhs, offset);
+                break;
             }
-            else if (auto x = std::dynamic_pointer_cast<InsertStmt>(node))
+            case TreeNodeType::InsertStmt:
             {
+                auto x = static_cast<InsertStmt*>(node);
                 std::cout << "INSERT\n";
                 print_val(x->tab_name, offset);
                 print_node_list(x->vals, offset);
+                break;
             }
-            else if (auto x = std::dynamic_pointer_cast<DeleteStmt>(node))
+            case TreeNodeType::DeleteStmt:
             {
+                auto x = static_cast<DeleteStmt*>(node);
                 std::cout << "DELETE\n";
                 print_val(x->tab_name, offset);
                 print_node_list(x->conds, offset);
+                break;
             }
-            else if (auto x = std::dynamic_pointer_cast<UpdateStmt>(node))
+            case TreeNodeType::UpdateStmt:
             {
+                auto x = static_cast<UpdateStmt*>(node);
                 std::cout << "UPDATE\n";
                 print_val(x->tab_name, offset);
                 print_node_list(x->set_clauses, offset);
                 print_node_list(x->conds, offset);
+                break;
             }
-            else if (auto x = std::dynamic_pointer_cast<SelectStmt>(node))
+            case TreeNodeType::SelectStmt:
             {
+                auto x = static_cast<SelectStmt*>(node);
                 std::cout << "SELECT\n";
                 print_node_list(x->cols, offset);
                 print_val_list(x->tabs, offset);
                 print_node_list(x->conds, offset);
+                break;
             }
-            else if (auto x = std::dynamic_pointer_cast<TxnBegin>(node))
-            {
-                std::cout << "BEGIN\n";
-            }
-            else if (auto x = std::dynamic_pointer_cast<TxnCommit>(node))
-            {
-                std::cout << "COMMIT\n";
-            }
-            else if (auto x = std::dynamic_pointer_cast<TxnAbort>(node))
-            {
-                std::cout << "ABORT\n";
-            }
-            else if (auto x = std::dynamic_pointer_cast<TxnRollback>(node))
-            {
-                std::cout << "ROLLBACK\n";
-            }
-            else if (auto x = std::dynamic_pointer_cast<CreateStaticCheckpoint>(node))
-            {
-                std::cout << "CREATE_STATIC_CHECKPOINT\n";
-            }
-            else
-            {
+            default:
                 assert(0);
             }
         }

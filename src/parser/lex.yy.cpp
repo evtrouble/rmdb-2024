@@ -1,6 +1,6 @@
-#line 2 "/home/nero/diff/db2025/src/parser/lex.yy.cpp"
+#line 2 "/home/gyl/cpp/db2025/src/parser/lex.yy.cpp"
 
-#line 4 "/home/nero/diff/db2025/src/parser/lex.yy.cpp"
+#line 4 "/home/gyl/cpp/db2025/src/parser/lex.yy.cpp"
 
 #define  YY_INT_ALIGNED short int
 
@@ -718,9 +718,9 @@ char *yytext;
 const int FLOAT_PRECISION = 6;
 const float FLOAT_PRECISION_MULTIPLIER = std::pow(10, FLOAT_PRECISION);
 
-#line 722 "/home/nero/diff/db2025/src/parser/lex.yy.cpp"
+#line 722 "/home/gyl/cpp/db2025/src/parser/lex.yy.cpp"
 
-#line 724 "/home/nero/diff/db2025/src/parser/lex.yy.cpp"
+#line 724 "/home/gyl/cpp/db2025/src/parser/lex.yy.cpp"
 
 #define INITIAL 0
 #define STATE_COMMENT 1
@@ -958,7 +958,7 @@ YY_DECL
 
 #line 56 "lex.l"
     /* block comment */
-#line 962 "/home/nero/diff/db2025/src/parser/lex.yy.cpp"
+#line 962 "/home/gyl/cpp/db2025/src/parser/lex.yy.cpp"
 
 	while ( /*CONSTCOND*/1 )		/* loops until end-of-file is reached */
 		{
@@ -1357,7 +1357,7 @@ case 66:
 YY_RULE_SETUP
 #line 133 "lex.l"
 {
-    yylval->sv_str = yytext;
+    yylval->sv_str = new std::string(yytext);
     return IDENTIFIER;
 }
 	YY_BREAK
@@ -1377,7 +1377,7 @@ YY_RULE_SETUP
     double  raw_val = atof(yytext);
     // 对浮点数进行精度处理
     yylval->sv_float = std::round(raw_val * FLOAT_PRECISION_MULTIPLIER) / FLOAT_PRECISION_MULTIPLIER;
-    yylval->sv_str = yytext;  // 保存原始文本
+    yylval->sv_str = new std::string(yytext);  // 保存原始文本
     return VALUE_FLOAT;
 }
 	YY_BREAK
@@ -1386,7 +1386,7 @@ case 69:
 YY_RULE_SETUP
 #line 149 "lex.l"
 {
-    yylval->sv_str = std::string(yytext + 1, strlen(yytext) - 2);
+    yylval->sv_str = new std::string(yytext + 1, strlen(yytext) - 2);
     return VALUE_STRING;
 }
 	YY_BREAK
@@ -1395,7 +1395,7 @@ case 70:
 YY_RULE_SETUP
 #line 153 "lex.l"
 {
-    yylval->sv_str = yytext;
+    yylval->sv_str = new std::string(yytext);
     return VALUE_PATH;
 }
 	YY_BREAK
@@ -1421,7 +1421,7 @@ YY_RULE_SETUP
 #line 163 "lex.l"
 ECHO;
 	YY_BREAK
-#line 1425 "/home/nero/diff/db2025/src/parser/lex.yy.cpp"
+#line 1425 "/home/gyl/cpp/db2025/src/parser/lex.yy.cpp"
 
 	case YY_END_OF_BUFFER:
 		{

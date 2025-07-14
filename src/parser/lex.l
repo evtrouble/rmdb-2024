@@ -130,7 +130,7 @@ value_path [\.|\/][^ \t]+\.csv
 {single_op} { return yytext[0]; }
     /* id */
 {identifier} {
-    yylval->sv_str = yytext;
+    yylval->sv_str = new std::string(yytext);
     return IDENTIFIER;
 }
     /* literals */
@@ -142,15 +142,15 @@ value_path [\.|\/][^ \t]+\.csv
     double  raw_val = atof(yytext);
     // 对浮点数进行精度处理
     yylval->sv_float = std::round(raw_val * FLOAT_PRECISION_MULTIPLIER) / FLOAT_PRECISION_MULTIPLIER;
-    yylval->sv_str = yytext;  // 保存原始文本
+    yylval->sv_str = new std::string(yytext);  // 保存原始文本
     return VALUE_FLOAT;
 }
 {value_string} {
-    yylval->sv_str = std::string(yytext + 1, strlen(yytext) - 2);
+    yylval->sv_str = new std::string(yytext + 1, strlen(yytext) - 2);
     return VALUE_STRING;
 }
 {value_path} {
-    yylval->sv_str = yytext;
+    yylval->sv_str = new std::string(yytext);
     return VALUE_PATH;
 }
 "\/" { return DIV; }
