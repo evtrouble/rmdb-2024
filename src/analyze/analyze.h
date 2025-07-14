@@ -58,7 +58,6 @@ class Analyze
 {
 private:
     SmManager *sm_manager_;
-    std::unordered_map<std::string, std::string> table_alias_map_;
 
 public:
     Analyze(SmManager *sm_manager) : sm_manager_(sm_manager) {}
@@ -67,12 +66,12 @@ public:
     std::shared_ptr<Query> do_analyze(std::shared_ptr<ast::TreeNode> root, Context *context);
 
 private:
-    TabCol check_column(const std::vector<ColMeta> &all_cols, TabCol target, bool is_semijoin);
+    TabCol check_column(const std::vector<ColMeta> &all_cols, TabCol target, bool is_semijoin, std::unordered_map<std::string, std::string> &table_alias_map_);
     void get_all_cols(const std::vector<std::string> &tab_names,
                       std::vector<ColMeta> &all_cols, Context *context);
     void get_clause(const std::vector<std::shared_ptr<ast::BinaryExpr>> &sv_conds, std::vector<Condition> &conds);
     void check_clause(const std::vector<std::string> &tab_names,
-                      std::vector<Condition> &conds, bool is_having, Context *context);
+                      std::vector<Condition> &conds, bool is_having, Context *context, std::unordered_map<std::string, std::string> &table_alias_map_);
     Value convert_sv_value(const std::shared_ptr<ast::Value> &sv_val);
     CompOp convert_sv_comp_op(ast::SvCompOp op);
     Value convert_value_type(const Value &value, ColType target_type);

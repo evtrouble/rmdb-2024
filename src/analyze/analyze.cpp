@@ -54,7 +54,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
     std::shared_ptr<Query> query = std::make_shared<Query>();
     std::unordered_map<std::string, TabCol> alias_to_col;
 
-    table_alias_map_.clear();
+    auto& table_alias_map = query->table_alias_map;
     switch (parse->Nodetype())
     {
     case ast::TreeNodeType::SelectStmt:
@@ -76,12 +76,11 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
             if (x->tab_aliases.size() > i && !x->tab_aliases[i].empty())
             {
                 std::string &alias = x->tab_aliases[i];
-                table_alias_map_.emplace(alias, table_name);
+                table_alias_map.emplace(alias, table_name);
             }
             // 表名也可以作为自己的别名
-            table_alias_map_.emplace(table_name, table_name);
+            table_alias_map.emplace(table_name, table_name);
         }
-        query->table_alias_map = table_alias_map_;
 
         // 处理target list，在target list中添加上表名，例如 a.id
         query->cols.reserve(x->cols.size());
@@ -118,7 +117,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
             for (auto &sel_col : query->cols)
             {
                 if (sel_col.col_name != "*")                                // 避免count(*)检查
-                    sel_col = check_column(all_cols, sel_col, x->has_join); // 列元数据校验
+                    sel_col = check_column(all_cols, sel_col, x->has_join, table_alias_map); // 列元数据校验
             }
 
             // 检查是否为"全选"
@@ -191,7 +190,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
             for (auto &g : x->groupby)
             {
                 TabCol group_col = {g->tab_name, g->col_name};
-                group_col = check_column(all_cols, group_col, false);
+                group_col = check_column(all_cols, group_col, false, table_alias_map);
                 query->groupby.emplace_back(group_col);
             }
         }
@@ -215,7 +214,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
                 join.right = joinclause->right;
                 join.type = joinclause->type;
                 get_clause(joinclause->conds, join.conds);
-                check_clause(query->tables, join.conds, false, context);
+                check_clause(query->tables, join.conds, false, context, table_alias_map);
                 query->jointree.emplace_back(join);
             }
         }
@@ -251,7 +250,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
 
             // 处理 HAVING 条件
             get_clause(x->having_conds, query->having_conds);
-            check_clause(query->tables, query->having_conds, true, context);
+            check_clause(query->tables, query->having_conds, true, context, table_alias_map);
         }
         // 处理ORDER BY
         if (x->order)
@@ -269,7 +268,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
                 }
                 // 检查ORDER BY列是否有效
                 TabCol order_col = {col->tab_name, col->col_name};
-                order_col = check_column(all_cols, order_col, false);
+                order_col = check_column(all_cols, order_col, false, table_alias_map);
                 bool is_agg = false;
                 if (ast::AggFuncType::NO_TYPE != col->agg_type)
                 {
@@ -313,7 +312,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
         }
         // 处理where条件
         get_clause(x->conds, query->conds);
-        check_clause(query->tables, query->conds, false, context);
+        check_clause(query->tables, query->conds, false, context, table_alias_map);
     }
     break;
     case ast::TreeNodeType::UpdateStmt:
@@ -337,7 +336,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
             // 设置要更新的列
             TabCol col(x->tab_name, sv_set_clause->col_name);
             // 验证列是否存在
-            col = check_column(all_cols, col, false);
+            col = check_column(all_cols, col, false, table_alias_map);
             set_clause.lhs = col;
 
             // 获取列的类型信息
@@ -366,7 +365,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
 
         // 处理where条件
         get_clause(x->conds, query->conds);
-        check_clause({x->tab_name}, query->conds, false, context);
+        check_clause({x->tab_name}, query->conds, false, context, table_alias_map);
     }
     break;
     case ast::TreeNodeType::DeleteStmt:
@@ -375,7 +374,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
         // query->tables = {x->tab_name};
         // 处理where条件
         get_clause(x->conds, query->conds);
-        check_clause({x->tab_name}, query->conds, false, context);
+        check_clause({x->tab_name}, query->conds, false, context, table_alias_map);
     }
     break;
     case ast::TreeNodeType::InsertStmt:
@@ -436,7 +435,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
     return query;
 }
 
-TabCol Analyze::check_column(const std::vector<ColMeta> &all_cols, TabCol target, bool is_semijoin)
+TabCol Analyze::check_column(const std::vector<ColMeta> &all_cols, TabCol target, bool is_semijoin, std::unordered_map<std::string, std::string> &table_alias_map_)
 {
     // 如果是通配符 '*'，直接返回，不需要验证
     if (target.col_name == "*")
@@ -568,7 +567,7 @@ void Analyze::get_clause(const std::vector<std::shared_ptr<ast::BinaryExpr>> &sv
 }
 
 void Analyze::check_clause(const std::vector<std::string> &tab_names,
-                           std::vector<Condition> &conds, bool is_having, Context *context)
+                           std::vector<Condition> &conds, bool is_having, Context *context, std::unordered_map<std::string, std::string> &table_alias_map_)
 {
     std::vector<ColMeta> all_cols;
     get_all_cols(tab_names, all_cols, context);
@@ -585,11 +584,11 @@ void Analyze::check_clause(const std::vector<std::string> &tab_names,
         // Infer table name from column name
         if (cond.lhs_col.col_name != "*")
         {
-            cond.lhs_col = check_column(all_cols, cond.lhs_col, false);
+            cond.lhs_col = check_column(all_cols, cond.lhs_col, false, table_alias_map_);
         }
         if (!cond.is_rhs_val && /* !cond.is_subquery &&*/ cond.rhs_col.col_name != "*")
         {
-            cond.rhs_col = check_column(all_cols, cond.rhs_col, false);
+            cond.rhs_col = check_column(all_cols, cond.rhs_col, false, table_alias_map_);
         }
         if ((is_having && cond.lhs_col.col_name != "*") || !is_having)
         {
