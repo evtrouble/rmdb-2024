@@ -55,6 +55,10 @@ using namespace ast;
 // enable verbose syntax error message
 %define parse.error verbose
 
+%define lr.default-reduction most
+%define lr.keep-unreachable-state false
+%define lr.type ielr
+
 // keywords
 %token SHOW TABLES CREATE TABLE DROP DESC INSERT INTO VALUES DELETE FROM ASC ORDER GROUP BY HAVING LIMIT
 WHERE UPDATE SET SELECT INT CHAR FLOAT DATETIME INDEX AND SEMI JOIN ON IN NOT EXIT HELP DIV EXPLAIN
