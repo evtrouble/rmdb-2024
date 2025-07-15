@@ -67,18 +67,7 @@ struct QueryColumnRequirement
         auto it = post_filter_cols.find(table_name);
         return it != post_filter_cols.end() ? it->second : std::set<TabCol>{};
     }
-    // 判断某列是否只在WHERE中使用
-    bool is_where_only_column(const TabCol &col) const
-    {
-        bool in_where = where_cols.count(col) > 0;
-        bool in_select = select_cols.count(col) > 0;
-        bool in_join = join_cols.count(col) > 0;
-        bool in_groupby = groupby_cols.count(col) > 0;
-        bool in_having = having_cols.count(col) > 0;
-        bool in_orderby = orderby_cols.count(col) > 0;
 
-        return in_where && !in_select && !in_join && !in_groupby && !in_having && !in_orderby;
-    }
     void calculate_layered_requirements();
     QueryColumnRequirement(const QueryColumnRequirement &) = delete;
     QueryColumnRequirement &operator=(const QueryColumnRequirement &) = delete;
