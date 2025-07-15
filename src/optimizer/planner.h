@@ -34,32 +34,19 @@ See the Mulan PSL v2 for more details. */
 // 整个查询的列需求分析结果
 struct QueryColumnRequirement
 {
-    // 每个表需要扫描的列（这是最终结果）
-    std::map<std::string, std::set<TabCol>> table_required_cols;
-
-    std::map<std::string, std::set<TabCol>> scan_level_cols;  // 扫描层需要的列
     std::map<std::string, std::set<TabCol>> post_filter_cols; // 过滤后需要的列
-    // std::map<std::string, std::set<TabCol>> post_join_cols;   // 连接后需要的列
-    std::map<std::string, std::set<TabCol>> final_cols; // 最终输出列
-    // 中间分析数据（用于调试和优化）
-    std::set<TabCol> select_cols;  // SELECT子句需要的列
-    std::set<TabCol> join_cols;    // JOIN条件需要的列
-    std::set<TabCol> where_cols;   // WHERE条件需要的列
-    std::set<TabCol> groupby_cols; // GROUP BY需要的列
-    std::set<TabCol> having_cols;  // HAVING条件需要的列
-    std::set<TabCol> orderby_cols; // ORDER BY需要的列
 
-    // 获取某个表需要的列
-    std::set<TabCol> get_table_cols(const std::string &table_name) const
+    void insert(const std::vector<TabCol> &cols)
     {
-        auto it = table_required_cols.find(table_name);
-        return it != table_required_cols.end() ? it->second : std::set<TabCol>{};
+        for (const auto &col : cols)
+        {
+            post_filter_cols[col.tab_name].emplace(col);
+        }
     }
-    // 获取不同层级的列需求
-    std::set<TabCol> get_scan_cols(const std::string &table_name) const
+
+    void insert(const TabCol &col)
     {
-        auto it = scan_level_cols.find(table_name);
-        return it != scan_level_cols.end() ? it->second : std::set<TabCol>{};
+        post_filter_cols[col.tab_name].emplace(col);
     }
 
     std::set<TabCol> get_post_filter_cols(const std::string &table_name) const
@@ -68,7 +55,6 @@ struct QueryColumnRequirement
         return it != post_filter_cols.end() ? it->second : std::set<TabCol>{};
     }
 
-    void calculate_layered_requirements();
     QueryColumnRequirement(const QueryColumnRequirement &) = delete;
     QueryColumnRequirement &operator=(const QueryColumnRequirement &) = delete;
 
@@ -76,19 +62,6 @@ struct QueryColumnRequirement
     QueryColumnRequirement() = default;
     QueryColumnRequirement(QueryColumnRequirement &&) = default;
     QueryColumnRequirement &operator=(QueryColumnRequirement &&) = default;
-    void clear()
-    {
-        table_required_cols.clear();
-        scan_level_cols.clear();
-        post_filter_cols.clear();
-        final_cols.clear();
-        select_cols.clear();
-        join_cols.clear();
-        where_cols.clear();
-        groupby_cols.clear();
-        having_cols.clear();
-        orderby_cols.clear();
-    }
 };
 class Planner
 {

@@ -316,41 +316,7 @@ std::unique_ptr<Plan> create_ordered_join(
         return std::make_unique<JoinPlan>(join_type, plan2, plan1, join_conds);
     }
 }
-void QueryColumnRequirement::calculate_layered_requirements()
-{
-    // 1. 扫描层：需要所有涉及的列
-    // 按表分组扫描层需要的列
-    for(auto &col : select_cols)scan_level_cols[col.tab_name].emplace(col);
-    for(auto &col : join_cols)scan_level_cols[col.tab_name].emplace(col);
-    for(auto &col : where_cols)scan_level_cols[col.tab_name].emplace(std::move(col));
-    for(auto &col : groupby_cols)scan_level_cols[col.tab_name].emplace(col);
-    for(auto &col : having_cols)scan_level_cols[col.tab_name].emplace(col);
-    for(auto &col : orderby_cols)scan_level_cols[col.tab_name].emplace(col);
 
-    // 2. 过滤后层：去掉只在WHERE中使用的列
-    for(auto &col : select_cols)post_filter_cols[col.tab_name].emplace(col);
-    for(auto &col : join_cols)post_filter_cols[col.tab_name].emplace(std::move(col));
-    for(auto &col : groupby_cols)post_filter_cols[col.tab_name].emplace(col);
-    for(auto &col : having_cols)post_filter_cols[col.tab_name].emplace(col);
-    for(auto &col : orderby_cols)post_filter_cols[col.tab_name].emplace(col);
-
-    // 3. 连接后层：当前与过滤后相同（可以后续扩展）
-    // post_join_cols = post_filter_cols;
-
-    // 4. 最终层：只保留SELECT、GROUP BY、HAVING、ORDER BY需要的列
-    for(auto &col : select_cols)final_cols[col.tab_name].emplace(std::move(col));
-    for(auto &col : groupby_cols)final_cols[col.tab_name].emplace(std::move(col));
-    for(auto &col : having_cols)final_cols[col.tab_name].emplace(std::move(col));
-    for(auto &col : orderby_cols)final_cols[col.tab_name].emplace(std::move(col));
-}
-static const std::map<CompOp, CompOp> swap_op = {
-    {OP_EQ, OP_EQ},
-    {OP_NE, OP_NE},
-    {OP_LT, OP_GT},
-    {OP_GT, OP_LT},
-    {OP_LE, OP_GE},
-    {OP_GE, OP_LE},
-};
 // 目前的索引匹配规则为：完全匹配索引字段，且全部为单点查询，不会自动调整where条件的顺序
 std::pair<IndexMeta *, int> Planner::get_index_cols(const std::string &tab_name, const std::vector<Condition> &curr_conds)
 {
@@ -1051,9 +1017,6 @@ std::unique_ptr<Plan> Planner::do_planner(std::unique_ptr<Query>& query, Context
 
 void Planner::analyze_column_requirements(std::unique_ptr<Query> &query, Context *context, QueryColumnRequirement &requirements)
 {
-    // 清空输入的requirements（如果需要）
-    requirements.clear();
-
     // 如果不是SELECT语句，直接返回
     if (!query || !query->parse || query->parse->Nodetype() != ast::TreeNodeType::SelectStmt)
     {
@@ -1062,13 +1025,13 @@ void Planner::analyze_column_requirements(std::unique_ptr<Query> &query, Context
 
     auto select_stmt = static_cast<ast::SelectStmt*>(query->parse.get());
 
-    requirements.select_cols.insert(query->cols.begin(), query->cols.end());
+    requirements.insert(query->cols);
 
     // 2. 分析JOIN条件中需要的列
     for (const auto &cond : query->join_conds)
     {
-        requirements.join_cols.emplace(cond.lhs_col);
-        requirements.join_cols.emplace(cond.rhs_col);
+        requirements.insert(cond.lhs_col);
+        requirements.insert(cond.rhs_col);
     }
 
     // 3. 分析WHERE条件中需要的列
@@ -1076,31 +1039,28 @@ void Planner::analyze_column_requirements(std::unique_ptr<Query> &query, Context
     {
         for (const auto &cond : conds)
         {
-            requirements.where_cols.emplace(cond.lhs_col);
+            requirements.insert(cond.lhs_col);
         }
     }
 
     // 4. 分析GROUP BY子句中需要的列
-    requirements.groupby_cols.insert(query->groupby.begin(), query->groupby.end());
+    requirements.insert(query->groupby);
 
     // 5. 分析HAVING子句中需要的列
     for (const auto &cond : query->having_conds)
     {
-        requirements.having_cols.insert(cond.lhs_col);
+        requirements.insert(cond.lhs_col);
         if (!cond.is_rhs_val)
         {
-            requirements.having_cols.insert(cond.rhs_col);
+            requirements.insert(cond.rhs_col);
         }
     }
 
     // 6. 分析ORDER BY子句中需要的列
     for (const auto &order_col : select_stmt->order.cols)
     {
-        requirements.orderby_cols.emplace(order_col.tab_name, order_col.col_name);
+        requirements.insert({order_col.tab_name, order_col.col_name});
     }
-
-    // 合并所有中间分析数据到最终结果
-    requirements.calculate_layered_requirements();
 }
 
 std::vector<TabCol> Planner::get_table_all_cols(const std::string &table_name, std::vector<TabCol> &table_cols, Context *context)

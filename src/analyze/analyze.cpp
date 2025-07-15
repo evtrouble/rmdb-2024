@@ -53,13 +53,13 @@ bool is_valid_datetime_format(const std::string &datetime_str)
 std::unique_ptr<Query> Analyze::do_analyze(std::unique_ptr<ast::TreeNode>& parse, Context *context)
 {
     auto query = std::make_unique<Query>();
-    std::unordered_map<std::string, TabCol> alias_to_col;
     auto &table_alias_map = query->table_alias_map;
 
     switch (parse->Nodetype())
     {
     case ast::TreeNodeType::SelectStmt:
     {
+        std::unordered_map<std::string, TabCol> alias_to_col;
         auto x = static_cast<ast::SelectStmt*>(parse.get());
         query->tables = x->tabs;
 
@@ -251,10 +251,11 @@ std::unique_ptr<Query> Analyze::do_analyze(std::unique_ptr<ast::TreeNode>& parse
         for (auto &col : x->order.cols)
         {
             // 检查是否是别名
-            if (alias_to_col.find(col.col_name) != alias_to_col.end())
+            auto iter = alias_to_col.find(col.tab_name);
+            if (iter != alias_to_col.end())
             {
                 // 如果是别名，替换为真实列
-                TabCol &real_col = alias_to_col[col.col_name];
+                TabCol &real_col = iter->second;
                 col.tab_name = real_col.tab_name;
                 col.col_name = real_col.col_name;
                 col.agg_type = real_col.aggFuncType;
@@ -688,17 +689,20 @@ Value Analyze::convert_sv_value(const ast::Value *sv_val)
 
 CompOp Analyze::convert_sv_comp_op(ast::SvCompOp op)
 {
-    static std::map<ast::SvCompOp, CompOp> m = {
-        {ast::SV_OP_EQ, OP_EQ},
-        {ast::SV_OP_NE, OP_NE},
-        {ast::SV_OP_LT, OP_LT},
-        {ast::SV_OP_GT, OP_GT},
-        {ast::SV_OP_LE, OP_LE},
-        {ast::SV_OP_GE, OP_GE},
-        // {ast::SV_OP_IN, OP_IN},
-        // {ast::SV_OP_NOT_IN, OP_NOT_IN},
+    static std::array<CompOp, 6> comp_ops = {
+        OP_EQ, OP_NE, OP_LT, OP_GT, OP_LE, OP_GE
     };
-    return m.at(op);
+    // static std::map<ast::SvCompOp, CompOp> m = {
+    //     {ast::SV_OP_EQ, OP_EQ},
+    //     {ast::SV_OP_NE, OP_NE},
+    //     {ast::SV_OP_LT, OP_LT},
+    //     {ast::SV_OP_GT, OP_GT},
+    //     {ast::SV_OP_LE, OP_LE},
+    //     {ast::SV_OP_GE, OP_GE},
+    //     // {ast::SV_OP_IN, OP_IN},
+    //     // {ast::SV_OP_NOT_IN, OP_NOT_IN},
+    // };
+    return comp_ops.at(static_cast<size_t>(op));
 }
 
 // 实现类型转换函数
