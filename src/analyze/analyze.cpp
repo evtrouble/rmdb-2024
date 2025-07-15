@@ -214,7 +214,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
                 join.right = joinclause.right;
                 join.type = joinclause.type;
                 get_clause(joinclause.conds, join.conds);
-                check_clause(query->tables, join.conds, false, context, table_alias_map);
+                check_clause(query->tables, all_cols, join.conds, false, context, table_alias_map);
                 query->jointree.emplace_back(join);
             }
         }
@@ -250,7 +250,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
 
             // 处理 HAVING 条件
             get_clause(x->having_conds, query->having_conds);
-            check_clause(query->tables, query->having_conds, true, context, table_alias_map);
+            check_clause(query->tables, all_cols, query->having_conds, true, context, table_alias_map);
         }
         // 处理ORDER BY
         for (auto &col : x->order.cols)
@@ -303,7 +303,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
         }
         // 处理where条件
         get_clause(x->conds, query->conds);
-        check_clause(query->tables, query->conds, false, context, table_alias_map);
+        check_clause(query->tables, all_cols, query->conds, false, context, table_alias_map);
     }
     break;
     case ast::TreeNodeType::UpdateStmt:
@@ -356,7 +356,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
 
         // 处理where条件
         get_clause(x->conds, query->conds);
-        check_clause({x->tab_name}, query->conds, false, context, table_alias_map);
+        check_clause({x->tab_name}, all_cols, query->conds, false, context, table_alias_map);
     }
     break;
     case ast::TreeNodeType::DeleteStmt:
@@ -364,8 +364,11 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse,
         auto x = std::static_pointer_cast<ast::DeleteStmt>(parse);
         // query->tables = {x->tab_name};
         // 处理where条件
+        std::vector<ColMeta> all_cols;
+        std::vector<std::string> tab_names{x->tab_name};
+        get_all_cols(tab_names, all_cols, context);
         get_clause(x->conds, query->conds);
-        check_clause({x->tab_name}, query->conds, false, context, table_alias_map);
+        check_clause(tab_names, all_cols, query->conds, false, context, table_alias_map);
     }
     break;
     case ast::TreeNodeType::InsertStmt:
@@ -508,7 +511,6 @@ void Analyze::get_all_cols(const std::vector<std::string> &tab_names,
 
 void Analyze::get_clause(const std::vector<ast::BinaryExpr> &sv_conds, std::vector<Condition> &conds)
 {
-    conds.clear();
     for (auto &expr : sv_conds)
     {
         Condition cond;
@@ -557,12 +559,9 @@ void Analyze::get_clause(const std::vector<ast::BinaryExpr> &sv_conds, std::vect
     }
 }
 
-void Analyze::check_clause(const std::vector<std::string> &tab_names,
+void Analyze::check_clause(const std::vector<std::string> &tab_names, const std::vector<ColMeta> &all_cols, 
                            std::vector<Condition> &conds, bool is_having, Context *context, std::unordered_map<std::string, std::string> &table_alias_map_)
 {
-    std::vector<ColMeta> all_cols;
-    get_all_cols(tab_names, all_cols, context);
-
     for (auto &cond : conds)
     {
         // 检查 WHERE、ON 子句中是否包含聚合函数
