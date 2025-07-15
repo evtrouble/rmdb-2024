@@ -653,7 +653,7 @@ std::vector<Rid> RmFileHandle::batch_insert_records(const std::vector<std::uniqu
     }
 
     RmPageHandle page_handle = create_page_handle();
-    std::lock_guard lock(page_handle.page->latch_);
+    std::unique_lock lock(page_handle.page->latch_);
 
     for (const auto &record : records)
     {
@@ -663,6 +663,7 @@ std::vector<Rid> RmFileHandle::batch_insert_records(const std::vector<std::uniqu
             // 当前页面已满，释放并创建新页面
             rm_manager_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);
             page_handle = create_page_handle();
+            lock = std::unique_lock(page_handle.page->latch_);
             // 注意：这里需要重新获取锁，但由于是新的page_handle，会自动获取新的锁
         }
 

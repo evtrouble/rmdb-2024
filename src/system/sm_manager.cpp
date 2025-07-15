@@ -1450,6 +1450,7 @@ void SmManager::batch_update_indexes(const std::vector<std::unique_ptr<char[]>> 
     // 批量构造索引键并插入
     for (size_t i = 0; i < records.size() && i < rids.size(); ++i)
     {
+        auto record = records[i].get();
         // 构造索引键
         for (size_t id = 0; id < tab_.indexes.size(); id++) {
             auto &index = tab_.indexes[id];
@@ -1457,7 +1458,7 @@ void SmManager::batch_update_indexes(const std::vector<std::unique_ptr<char[]>> 
             auto key = queue.records_[id].get();
             int offset = 0;
             for (int i = 0; i < index.col_num; ++i) {
-                memcpy(key + offset, key + queue.index_col_offsets_[id][i], index.cols[i].len);
+                memcpy(key + offset, record + queue.index_col_offsets_[id][i], index.cols[i].len);
                 offset += index.cols[i].len;
             }
             try
