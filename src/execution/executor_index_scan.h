@@ -20,7 +20,7 @@ class IndexScanExecutor : public AbstractExecutor {
 private:
     SmManager *sm_manager_;
     std::string tab_name_;                      // 表名称
-    TabMeta tab_;                               // 表的元数据
+    TabMeta &tab_;                               // 表的元数据
     std::vector<Condition> fed_conds_;          // 扫描条件
     std::shared_ptr<RmFileHandle> fh_;          // 表的数据文件句柄
     std::vector<ColMeta> cols_;                 // 需要读取的字段
@@ -34,17 +34,10 @@ private:
 
 public:
     IndexScanExecutor(SmManager *sm_manager, std::string &tab_name, std::vector<Condition> &conds, IndexMeta &index_meta,
-                      int max_match_col_count, Context *context) : AbstractExecutor(context), sm_manager_(sm_manager),
-                                                                   tab_name_(std::move(tab_name)), fed_conds_(std::move(conds)), index_meta_(std::move(index_meta)), max_match_col_count_(max_match_col_count)
+                      int max_match_col_count, Context *context) 
+                      : AbstractExecutor(context), sm_manager_(sm_manager),
+                        tab_name_(std::move(tab_name)), tab_(sm_manager_->db_.get_table(tab_name_)), fed_conds_(std::move(conds)), index_meta_(std::move(index_meta)), max_match_col_count_(max_match_col_count)
     {
-
-        // 增加错误检查
-        try {
-            tab_ = sm_manager_->db_.get_table(tab_name_);
-        } catch (const std::exception &e) {
-            throw InternalError("Failed to get table metadata: " + std::string(e.what()));
-        }
-
         // 增加错误检查
         fh_ = sm_manager_->get_table_handle(tab_name_);
 

@@ -23,11 +23,11 @@ private:
     std::shared_ptr<RmFileHandle> fh_; // 表的数据文件句柄 
     size_t len_;                       // scan后生成的每条记录的长度
     std::vector<Condition> fed_conds_; // scan后生成的记录的字段
-    TabMeta tab_;                      // 表的元数据
     std::vector<ColMeta> cols_;        // scan后生成的记录的字段
 
     std::unique_ptr<RmScan> scan_; // table_iterator
     SmManager *sm_manager_;
+    TabMeta &tab_;                      // 表的元数据
     std::vector<size_t> col_indices_;  // 在原始记录中的列索引
 
     // 获取指定列的值
@@ -73,9 +73,8 @@ private:
 public:
     SeqScanExecutor(SmManager *sm_manager, std::string &tab_name, std::vector<Condition> &conds,
                     Context *context) : AbstractExecutor(context), tab_name_(std::move(tab_name)),
-                                        fed_conds_(std::move(conds)), sm_manager_(sm_manager)
+                    fed_conds_(std::move(conds)), sm_manager_(sm_manager), tab_(sm_manager_->db_.get_table(tab_name_))
     {
-        tab_ = sm_manager_->db_.get_table(tab_name_);
         fh_ = sm_manager_->get_table_handle(tab_name_);
         len_ = tab_.cols.back().offset + tab_.cols.back().len;
         std::sort(fed_conds_.begin(), fed_conds_.end());

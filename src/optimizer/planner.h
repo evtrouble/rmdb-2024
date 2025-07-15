@@ -52,7 +52,7 @@ struct QueryColumnRequirement
     std::set<TabCol> get_post_filter_cols(const std::string &table_name) const
     {
         auto it = post_filter_cols.find(table_name);
-        return it != post_filter_cols.end() ? it->second : std::set<TabCol>{};
+        return it != post_filter_cols.end() ? std::move(it->second) : std::set<TabCol>{};
     }
 
     QueryColumnRequirement(const QueryColumnRequirement &) = delete;
