@@ -58,7 +58,11 @@ public:
         std::mutex mtx;
         std::condition_variable cv;
         bool finished = false;
+        
         std::exception_ptr exception_ptr = nullptr;
+        std::vector<std::shared_ptr<IxIndexHandle>> ihs_;
+        std::vector<std::vector<int>> index_col_offsets_; // 每个索引的列偏移量
+        std::vector<std::unique_ptr<char[]>> records_; // 用于存储批量插入的记录
 
         void push(std::shared_ptr<BatchDataChunk> chunk)
         {
@@ -196,14 +200,14 @@ private:
 
     void update_indexes_for_record_threaded(const RmRecord &rec, const Rid &rid,
                                             const TabMeta &tab, Context *context);
-    void load_csv_data_page_batch(std::string &file_name, std::string &tab_name, Context *context);
+
     void batch_insert_records(const std::vector<std::unique_ptr<char[]>> &records,
                               std::vector<Rid> &rids,
                               const TabMeta &tab,
                               Context *context);
     void batch_update_indexes(const std::vector<std::unique_ptr<char[]>> &records,
                               const std::vector<Rid> &rids,
-                              const TabMeta &tab,
+                              ThreadSafeBatchQueue &queue, TabMeta &tab_, 
                               Context *context);
     std::unique_ptr<char[]> parse_csv_to_record(const std::string &line,
                                                 const TabMeta &tab,

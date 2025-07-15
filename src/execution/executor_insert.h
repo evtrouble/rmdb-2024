@@ -43,7 +43,7 @@ public:
             for (auto &col : index.cols) {
                 offsets.emplace_back(col.offset);
             }
-            index_col_offsets_.emplace_back(offsets);
+            index_col_offsets_.emplace_back(std::move(offsets));
         }
     };
 

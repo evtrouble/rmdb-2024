@@ -1280,71 +1280,6 @@ void SmManager::update_indexes_for_record_threaded(const RmRecord &rec, const Ri
     }
 }
 
-// 在SmManager类中添加页级批量插入方法
-void SmManager::load_csv_data_page_batch(std::string &file_name, std::string &tab_name, Context *context)
-{
-    std::ifstream file(file_name);
-    if (!file.is_open())
-    {
-        throw RMDBError("Failed to open file: " + file_name);
-    }
-
-    auto tab_ = db_.get_table(tab_name);
-    auto fh_ = fhs_[tab_name].get();
-    TransactionManager *txn_mgr = context->txn_->get_txn_manager();
-    int hidden_column_count = txn_mgr->get_hidden_column_count();
-
-    // 计算每页可容纳的记录数
-    int records_per_page = fh_->get_file_hdr().num_records_per_page;
-
-    // 批量记录缓冲区
-    std::vector<std::unique_ptr<char[]>> record_batch;
-    std::vector<Rid> batch_rids;
-    record_batch.reserve(records_per_page);
-    batch_rids.reserve(records_per_page);
-
-    // 跳过表头
-    std::string line;
-    std::getline(file, line, '\n');
-
-    size_t total_records = 0;
-    auto start_time = std::chrono::high_resolution_clock::now();
-
-    while (std::getline(file, line, '\n'))
-    {
-        if (line.empty())
-            continue;
-
-        // 解析并创建记录
-        auto record = parse_csv_to_record(line, tab_, hidden_column_count, context);
-        record_batch.push_back(std::move(record));
-
-        // 当批次达到页面容量时，执行批量插入
-        if ((int)record_batch.size() >= records_per_page)
-        {
-            batch_insert_records(record_batch, batch_rids, tab_, context);
-            batch_update_indexes(record_batch, batch_rids, tab_, context);
-
-            total_records += record_batch.size();
-            record_batch.clear();
-            batch_rids.clear();
-        }
-    }
-
-    // 处理剩余记录
-    if (!record_batch.empty())
-    {
-        batch_insert_records(record_batch, batch_rids, tab_, context);
-        batch_update_indexes(record_batch, batch_rids, tab_, context);
-        total_records += record_batch.size();
-    }
-
-    auto end_time = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-
-    file.close();
-}
-
 // 双缓冲 + 页级批量插入的优化实现
 void SmManager::load_csv_data_threaded_batch(std::string &file_name, std::string &tab_name, Context *context)
 {
@@ -1356,8 +1291,20 @@ void SmManager::load_csv_data_threaded_batch(std::string &file_name, std::string
     
     // 创建批量处理队列
     ThreadSafeBatchQueue batch_queue;
+    batch_queue.ihs_.reserve(tab_.indexes.size());
+    batch_queue.index_col_offsets_.reserve(tab_.indexes.size());
+    batch_queue.records_.reserve(tab_.indexes.size());
+    for (auto &index : tab_.indexes) {
+        batch_queue.ihs_.emplace_back(get_index_handle(get_ix_manager()->get_index_name(tab_name, index.cols)));
+        std::vector<int> offsets;
+        for (auto &col : index.cols) {
+            offsets.emplace_back(col.offset);
+        }
+        batch_queue.index_col_offsets_.emplace_back(std::move(offsets));
+        batch_queue.records_.emplace_back(new char[index.col_tot_len]);
+    }
     
-    auto start_time = std::chrono::high_resolution_clock::now();
+    // auto start_time = std::chrono::high_resolution_clock::now();
     
     // 启动批量读取和解析线程
     std::thread batch_reader([this, &file_name, &batch_queue, &tab_, hidden_column_count, context, BATCH_SIZE]() {
@@ -1381,8 +1328,8 @@ void SmManager::load_csv_data_threaded_batch(std::string &file_name, std::string
     batch_reader.join();
     batch_processor.join();
     
-    auto end_time = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+    // auto end_time = std::chrono::high_resolution_clock::now();
+    // auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 }
 
 // 批量读取和解析线程
@@ -1407,8 +1354,8 @@ void SmManager::batch_reader_thread_func(const std::string &file_name, ThreadSaf
         try {
             // 解析CSV行为记录
             auto record = parse_csv_to_record(line, tab, hidden_column_count, context);
-            current_batch->records.push_back(std::move(record));
-            current_batch->raw_lines.push_back(line);
+            current_batch->records.emplace_back(std::move(record));
+            current_batch->raw_lines.emplace_back(std::move(line));
             
             // 当批次达到指定大小时，发送到处理队列
             if (current_batch->records.size() >= BATCH_SIZE) {
@@ -1445,14 +1392,10 @@ void SmManager::batch_processor_thread_func(ThreadSafeBatchQueue &queue, const s
     while (true) {
         auto batch = queue.pop();
         
-        if (!batch) {
+        if (!batch || batch->is_final) {// 收到结束标志
             break; // 队列已空且读取线程已完成
         }
-        
-        if (batch->is_final) {
-            break; // 收到结束标志
-        }
-        
+
         if (batch->records.empty()) {
             continue;
         }
@@ -1463,7 +1406,7 @@ void SmManager::batch_processor_thread_func(ThreadSafeBatchQueue &queue, const s
             batch_insert_records(batch->records, batch_rids, tab_, context);
             
             // 批量更新索引
-            batch_update_indexes(batch->records, batch_rids, tab_, context);
+            batch_update_indexes(batch->records, batch_rids, queue, tab_, context);
             
             total_records += batch->records.size();
             
@@ -1497,38 +1440,29 @@ void SmManager::batch_insert_records(const std::vector<std::unique_ptr<char[]>> 
 // 批量索引更新
 void SmManager::batch_update_indexes(const std::vector<std::unique_ptr<char[]>> &records,
                                      const std::vector<Rid> &rids,
-                                     const TabMeta &tab,
+                                     ThreadSafeBatchQueue &queue, TabMeta &tab_, 
                                      Context *context)
 {
-    if (tab.indexes.empty())
-        return;
-
     // 为每个索引准备批量插入数据
-    for (const auto &index : tab.indexes)
+    assert(queue.ihs_.size() == queue.index_col_offsets_.size());
+    assert(queue.ihs_.size() == queue.records_.size());
+    
+    // 批量构造索引键并插入
+    for (size_t i = 0; i < records.size() && i < rids.size(); ++i)
     {
-        auto ih = get_index_handle(ix_manager_->get_index_name(tab.name, index.cols));
-
-        // 批量构造索引键并插入
-        for (size_t i = 0; i < records.size() && i < rids.size(); ++i)
-        {
-            std::unique_ptr<char[]> key(new char[index.col_tot_len]);
+        // 构造索引键
+        for (size_t id = 0; id < tab_.indexes.size(); id++) {
+            auto &index = tab_.indexes[id];
+            auto& ih = queue.ihs_[id];
+            auto key = queue.records_[id].get();
             int offset = 0;
-
-            // 构造索引键
-            for (int j = 0; j < index.col_num; ++j)
-            {
-                auto col_iter = tab.cols_map.find(index.cols[j].name);
-                if (col_iter != tab.cols_map.end())
-                {
-                    const auto &col = tab.cols[col_iter->second];
-                    memcpy(key.get() + offset, records[i].get() + col.offset, index.cols[j].len);
-                }
-                offset += index.cols[j].len;
+            for (int i = 0; i < index.col_num; ++i) {
+                memcpy(key + offset, key + queue.index_col_offsets_[id][i], index.cols[i].len);
+                offset += index.cols[i].len;
             }
-
             try
             {
-                ih->insert_entry(key.get(), rids[i], context->txn_, true);
+                ih->insert_entry(key, rids[i], context->txn_, true);
             }
             catch (IndexEntryAlreadyExistError &)
             {
