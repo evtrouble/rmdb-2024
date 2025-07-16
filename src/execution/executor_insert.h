@@ -19,32 +19,19 @@ See the Mulan PSL v2 for more details. */
 
 class InsertExecutor : public AbstractExecutor {
 private:
-    TabMeta tab_;               // 表的元数据
     std::vector<Value> values_; // 需要插入的数据
     std::shared_ptr<RmFileHandle> fh_;          // 表的数据文件句柄
     std::string tab_name_;      // 表名称
     Rid rid_;                   // 插入的位置，由于系统默认插入时不指定位置，因此当前rid_在插入后才赋值
     SmManager *sm_manager_;
-    std::vector<std::shared_ptr<IxIndexHandle>> ihs_;
-    std::vector<std::vector<int>> index_col_offsets_; // 每个索引的列偏移量
+    TabMeta &tab_;               // 表的元数据
 
 public:
     InsertExecutor(SmManager *sm_manager, std::string &tab_name, std::vector<Value> &values, Context *context)
         : AbstractExecutor(context), values_(std::move(values)),
-          tab_name_(std::move(tab_name)), sm_manager_(sm_manager) {
-        tab_ = sm_manager_->db_.get_table(tab_name_);
+          tab_name_(std::move(tab_name)), sm_manager_(sm_manager), tab_(sm_manager_->db_.get_table(tab_name_))
+    {
         fh_ = sm_manager_->get_table_handle(tab_name_);
-
-        ihs_.reserve(tab_.indexes.size());
-        index_col_offsets_.reserve(tab_.indexes.size());
-        for (auto &index : tab_.indexes) {
-            ihs_.emplace_back(sm_manager_->get_index_handle(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)));
-            std::vector<int> offsets;
-            for (auto &col : index.cols) {
-                offsets.emplace_back(col.offset);
-            }
-            index_col_offsets_.emplace_back(std::move(offsets));
-        }
     };
 
     std::vector<std::unique_ptr<RmRecord>> next_batch(size_t batch_size = BATCH_SIZE) override {
@@ -80,10 +67,11 @@ public:
             std::unique_ptr<char[]> key(new char[index.col_tot_len]);
             int offset = 0;
             for (int i = 0; i < index.col_num; ++i) {
-                memcpy(key.get() + offset, rec.data + index_col_offsets_[id][i], index.cols[i].len);
+                memcpy(key.get() + offset, rec.data + index.cols[i].offset, index.cols[i].len);
                 offset += index.cols[i].len;
             }
-            ihs_[id]->insert_entry(key.get(), rid_, context_->txn_);
+            sm_manager_->get_index_handle(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols))
+                ->insert_entry(key.get(), rid_, context_->txn_);
         }
 
         //记录日志

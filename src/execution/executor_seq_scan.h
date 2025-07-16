@@ -170,4 +170,10 @@ public:
     }
     size_t tupleLen() const override { return len_; }
     ExecutionType type() const override { return ExecutionType::SeqScan; }
+    TabMeta &get_tab_meta() {
+        return tab_;
+    }
+    std::shared_ptr<RmFileHandle> get_file_handle() {
+        return fh_;
+    }
 };

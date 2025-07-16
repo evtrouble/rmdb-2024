@@ -347,4 +347,12 @@ public:
 
         return projected_record;
     }
+
+    TabMeta &get_tab_meta() {
+        return tab_;
+    }
+
+    std::shared_ptr<RmFileHandle> get_file_handle() {
+        return fh_;
+    }
 };

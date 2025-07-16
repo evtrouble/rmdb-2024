@@ -18,8 +18,6 @@ See the Mulan PSL v2 for more details. */
 class UpdateExecutor : public AbstractExecutor
 {
 private:
-    TabMeta tab_;
-    std::shared_ptr<RmFileHandle> fh_;
     std::vector<Rid> rids_;
     std::string tab_name_;
     std::vector<SetClause> set_clauses_;
@@ -28,6 +26,8 @@ private:
     std::vector<ColMeta *> set_col_metas;                                    // 缓存set_clauses对应的列元数据
     std::vector<std::pair<std::shared_ptr<IxIndexHandle>, IndexMeta &>> ihs; // 缓存需要更新的索引信息
     std::vector<std::unique_ptr<char[]>> datas;                              // 缓存索引键数据
+    TabMeta& tab_;
+    std::shared_ptr<RmFileHandle> fh_;
 
     // 初始化需要更新的索引信息和列元数据
     void init()
@@ -88,10 +88,50 @@ public:
                 std::vector<Rid> &rids, Context *context)
         : AbstractExecutor(context), rids_(std::move(rids)),
           tab_name_(std::move(tab_name)), set_clauses_(std::move(set_clauses)),
-          sm_manager_(sm_manager)
+          sm_manager_(sm_manager), tab_(sm_manager_->db_.get_table(tab_name_))
     {
-        tab_ = sm_manager_->db_.get_table(tab_name_);
         fh_ = sm_manager_->get_table_handle(tab_name_);
+        for (auto &set_clause : set_clauses_)
+        {
+            // 找到要更新的列的元数据
+            auto col = tab_.get_col(set_clause.lhs.col_name);
+            // 检查类型是否匹配
+            bool type_compatible = false;
+            if (col->type == set_clause.rhs.type)
+            {
+                type_compatible = true;
+            }
+            else if (col->type == TYPE_DATETIME && set_clause.rhs.type == TYPE_STRING)
+            {
+                // 允许 STRING 赋值给 DATETIME
+                type_compatible = true;
+                // 可以在这里添加日期格式验证
+                if (!is_valid_datetime_format(set_clause.rhs.str_val))
+                {
+                    throw InvalidDatetimeFormatError(set_clause.rhs.str_val);
+                }
+            }
+            else if (col->type == TYPE_STRING && set_clause.rhs.type == TYPE_DATETIME)
+            {
+                // 允许 DATETIME 赋值给 STRING
+                type_compatible = true;
+            }
+
+            if (!type_compatible)
+            {
+                throw IncompatibleTypeError(coltype2str(col->type), coltype2str(set_clause.rhs.type));
+            }
+            changes.insert(col->offset);
+        }
+        init(); // 初始化需要更新的索引信息和列元数据
+    }
+
+    UpdateExecutor(SmManager *sm_manager, std::string &tab_name, std::vector<SetClause> &set_clauses,
+                std::vector<Rid> &rids, Context *context, TabMeta &tab, std::shared_ptr<RmFileHandle> fh)
+        : AbstractExecutor(context), rids_(std::move(rids)),
+          tab_name_(std::move(tab_name)), set_clauses_(std::move(set_clauses)),
+          sm_manager_(sm_manager), tab_(tab), fh_(fh)
+    {
         for (auto &set_clause : set_clauses_)
         {
             // 找到要更新的列的元数据

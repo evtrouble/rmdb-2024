@@ -106,8 +106,30 @@ public:
                 rids.insert(rids.end(), batch.begin(), batch.end());
                 batch = scan->rid_batch();
             }
-            std::unique_ptr<AbstractExecutor> root = std::make_unique<UpdateExecutor>(sm_manager_,
+
+            std::unique_ptr<AbstractExecutor> root;
+            if (scan->type() == ExecutionType::IndexScan)
+            {
+                auto index_scan = static_cast<IndexScanExecutor*>(scan.get());
+                // 如果是索引扫描，使用更新执行器
+                root = std::make_unique<UpdateExecutor>(sm_manager_,
+                                            x->tab_name_, x->set_clauses_, rids,
+                                            context, index_scan->get_tab_meta(), index_scan->get_file_handle());
+            }
+            else if(scan->type() == ExecutionType::SeqScan) {
+                // 如果是索引扫描或顺序扫描，直接使用更新执行器
+                auto seq_scan = static_cast<SeqScanExecutor*>(scan.get());
+                // 如果是索引扫描，使用更新执行器
+                root = std::make_unique<UpdateExecutor>(sm_manager_,
+                                            x->tab_name_, x->set_clauses_, rids,
+                                            context, seq_scan->get_tab_meta(), seq_scan->get_file_handle());
+            }
+            else 
+            {
+                // 如果是其他类型的扫描，使用普通更新执行器
+                root = std::make_unique<UpdateExecutor>(sm_manager_,
                                             x->tab_name_, x->set_clauses_, rids, context);
+            }
             return std::make_unique<PortalStmt>(PORTAL_DML_WITHOUT_SELECT, root, plan);
         }
         case T_Delete:
@@ -121,9 +143,30 @@ public:
                 rids.insert(rids.end(), batch.begin(), batch.end());
                 batch = scan->rid_batch();
             }
-            std::unique_ptr<AbstractExecutor> root =
-                std::make_unique<DeleteExecutor>(sm_manager_, x->tab_name_, rids, context);
 
+            std::unique_ptr<AbstractExecutor> root;
+            if (scan->type() == ExecutionType::IndexScan)
+            {
+                auto index_scan = static_cast<IndexScanExecutor*>(scan.get());
+                // 如果是索引扫描，使用更新执行器
+                root = std::make_unique<DeleteExecutor>(sm_manager_,
+                                            x->tab_name_, rids,
+                                            context, index_scan->get_tab_meta(), index_scan->get_file_handle());
+            }
+            else if(scan->type() == ExecutionType::SeqScan) {
+                // 如果是索引扫描或顺序扫描，直接使用更新执行器
+                auto seq_scan = static_cast<SeqScanExecutor*>(scan.get());
+                // 如果是索引扫描，使用更新执行器
+                root = std::make_unique<DeleteExecutor>(sm_manager_,
+                                            x->tab_name_, rids,
+                                            context, seq_scan->get_tab_meta(), seq_scan->get_file_handle());
+            }
+            else 
+            {
+                // 如果是其他类型的扫描，使用普通更新执行器
+                root = std::make_unique<DeleteExecutor>(sm_manager_,
+                                            x->tab_name_, rids, context);
+            }
             return std::make_unique<PortalStmt>(PORTAL_DML_WITHOUT_SELECT, root, plan);
         }
         case T_Insert:

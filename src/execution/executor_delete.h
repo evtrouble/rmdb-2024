@@ -22,13 +22,13 @@ See the Mulan PSL v2 for more details. */
 class DeleteExecutor : public AbstractExecutor
 {
 private:
-    TabMeta tab_;                  // 表的元数据
     std::vector<Condition> conds_; // delete的条件
-    std::shared_ptr<RmFileHandle> fh_;             // 表的数据文件句柄
     std::vector<Rid> rids_;        // 需要删除的记录的位置
     std::string tab_name_;         // 表名称
     SmManager *sm_manager_;
     std::vector<std::shared_ptr<IxIndexHandle>> ihs_; // 缓存索引句柄
+    TabMeta &tab_;                  // 表的元数据
+    std::shared_ptr<RmFileHandle> fh_;             // 表的数据文件句柄
 
     // 构建索引键的辅助函数
     std::unique_ptr<char[]> build_index_key(const IndexMeta &index, const RmRecord &rec)
@@ -47,11 +47,24 @@ public:
     DeleteExecutor(SmManager *sm_manager, std::string &tab_name,
                 std::vector<Rid> &rids, Context *context)
         : AbstractExecutor(context), rids_(std::move(rids)),
-          tab_name_(std::move(tab_name)), sm_manager_(sm_manager)
+          tab_name_(std::move(tab_name)), sm_manager_(sm_manager), tab_(sm_manager_->db_.get_table(tab_name_))
     {
-        tab_ = sm_manager_->db_.get_table(tab_name_);
         fh_ = sm_manager_->get_table_handle(tab_name_);
 
+        ihs_.reserve(tab_.indexes.size());
+        for (auto &index : tab_.indexes)
+        {
+            ihs_.emplace_back(sm_manager_->get_index_handle(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)));
+        }
+    }
+
+    DeleteExecutor(SmManager *sm_manager, std::string &tab_name,
+                std::vector<Rid> &rids, Context *context, TabMeta &tab,
+                std::shared_ptr<RmFileHandle> fh)
+        : AbstractExecutor(context), rids_(std::move(rids)),
+          tab_name_(std::move(tab_name)), sm_manager_(sm_manager), 
+          tab_(tab), fh_(fh)
+    {
         ihs_.reserve(tab_.indexes.size());
         for (auto &index : tab_.indexes)
         {

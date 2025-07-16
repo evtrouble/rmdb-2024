@@ -25,7 +25,8 @@ from sql_client import SQLClient
 
 class TPCCPerformanceTest:
     def __init__(self, host: str = "localhost", port: int = 5432,
-                 num_warehouses: int = 10, output_dir: str = "sqls", dbname: str = "testdb"):
+                 num_warehouses: int = 10, output_dir: str = "sqls", dbname: str = "testdb",
+                 external_server: bool = False):
         """
         初始化TPC-C性能测试
 
@@ -35,6 +36,7 @@ class TPCCPerformanceTest:
             num_warehouses: 仓库数量
             output_dir: SQL文件输出目录
             dbname: 数据库名称
+            external_server: 是否使用外部服务器（用户手动启动）
         """
         self.host = host
         self.port = port
@@ -42,13 +44,14 @@ class TPCCPerformanceTest:
         self.output_dir = output_dir
         self.test_dir = output_dir
         self.dbname = dbname
-        
+        self.external_server = external_server
+
         # 数据库服务器相关
         self.db_server_process = None
         self.perf_process = None
-        self.db_path = f"/home/nero/diff/db2025/build/{dbname}"
-        self.db_binary = "/home/nero/diff/db2025/build/bin/rmdb"
-        
+        self.db_path = f"/home/gyl/cpp/db2025/{dbname}"
+        self.db_binary = "/home/gyl/cpp/db2025/bin/rmdb"
+
         # 创建perf输出目录
         self.perf_dir = "./perf"
         os.makedirs(self.perf_dir, exist_ok=True)
@@ -102,19 +105,19 @@ class TPCCPerformanceTest:
         """启动数据库服务器"""
         try:
             print(f"🚀 启动数据库服务器: {self.db_binary} {self.dbname}")
-            
+
             # 启动数据库服务器
             self.db_server_process = subprocess.Popen(
                 [self.db_binary, self.dbname],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                cwd="/home/nero/diff/db2025/build"
+                cwd="/home/gyl/cpp/db2025"
             )
-            
+
             # 等待服务器启动
             print("⏳ 等待数据库服务器启动...")
             time.sleep(3)
-            
+
             # 检查进程是否还在运行
             if self.db_server_process.poll() is None:
                 print("✅ 数据库服务器启动成功")
@@ -125,7 +128,7 @@ class TPCCPerformanceTest:
                 print(f"stdout: {stdout.decode()}")
                 print(f"stderr: {stderr.decode()}")
                 return False
-                
+
         except Exception as e:
             print(f"❌ 启动数据库服务器时出错: {e}")
             return False
@@ -133,23 +136,39 @@ class TPCCPerformanceTest:
     def start_perf_monitoring(self) -> bool:
         """启动perf监控"""
         try:
-            if self.db_server_process is None:
-                print("❌ 数据库服务器未启动，无法开始perf监控")
-                return False
-                
-            db_pid = self.db_server_process.pid
+            if self.external_server:
+                # 外部服务器模式：通过进程名查找数据库服务器PID
+                try:
+                    result = subprocess.run(['pgrep', '-f', 'rmdb'], capture_output=True, text=True)
+                    if result.returncode == 0 and result.stdout.strip():
+                        db_pid = int(result.stdout.strip().split('\n')[0])
+                        print(f"📊 找到外部数据库服务器，PID: {db_pid}")
+                    else:
+                        print("❌ 未找到运行中的数据库服务器进程")
+                        print("请确保数据库服务器已启动并且进程名包含 'rmdb'")
+                        return False
+                except (ValueError, subprocess.SubprocessError) as e:
+                    print(f"❌ 查找数据库服务器进程失败: {e}")
+                    return False
+            else:
+                # 内部服务器模式：使用启动的进程PID
+                if self.db_server_process is None:
+                    print("❌ 数据库服务器未启动，无法开始perf监控")
+                    return False
+                db_pid = self.db_server_process.pid
+
             perf_output = os.path.join(self.perf_dir, f"perf_data_{self.run_id}.data")
-            
+
             print(f"📊 开始perf监控，PID: {db_pid}")
-            
+
             # 启动perf record
             self.perf_process = subprocess.Popen([
-                "perf", "record", "-g", "-p", str(db_pid), "-o", perf_output
+                "perf", "record", "-F", "4000", "-g", "-p", str(db_pid), "-o", perf_output
             ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            
+
             # 等待perf启动
             time.sleep(1)
-            
+
             if self.perf_process.poll() is None:
                 print(f"✅ perf监控启动成功，输出文件: {perf_output}")
                 return True
@@ -158,7 +177,7 @@ class TPCCPerformanceTest:
                 print(f"❌ perf监控启动失败")
                 print(f"stderr: {stderr.decode()}")
                 return False
-                
+
         except Exception as e:
             print(f"❌ 启动perf监控时出错: {e}")
             return False
@@ -180,41 +199,43 @@ class TPCCPerformanceTest:
         try:
             perf_data = os.path.join(self.perf_dir, f"perf_data_{self.run_id}.data")
             flame_graph_svg = os.path.join(self.perf_dir, f"flame_graph_{self.run_id}.svg")
-            
+
             if not os.path.exists(perf_data):
                 print(f"❌ perf数据文件不存在: {perf_data}")
                 return False
-            
+
             print("🔥 生成火焰图...")
-            
+
             # 使用perf script生成调用栈数据
             perf_script_output = os.path.join(self.perf_dir, f"perf_script_{self.run_id}.txt")
-            
+
             with open(perf_script_output, 'w') as f:
                 result = subprocess.run([
                     "perf", "script", "-i", perf_data
                 ], stdout=f, stderr=subprocess.PIPE)
-            
+
             if result.returncode != 0:
                 print(f"❌ perf script执行失败: {result.stderr.decode()}")
                 return False
-            
+
             # 检查是否安装了FlameGraph工具
             flamegraph_path = "/opt/FlameGraph"  # 常见安装路径
             if not os.path.exists(flamegraph_path):
                 # 尝试其他可能的路径
                 possible_paths = [
                     "/usr/local/FlameGraph",
+                    "~/FlameGraph",
+                    "/home/nero/FlameGraph",
                     "./FlameGraph",
                     os.path.expanduser("~/FlameGraph")
                 ]
-                
+
                 flamegraph_path = None
                 for path in possible_paths:
                     if os.path.exists(os.path.join(path, "stackcollapse-perf.pl")):
                         flamegraph_path = path
                         break
-                
+
                 if flamegraph_path is None:
                     print("⚠️ 未找到FlameGraph工具，尝试简单的文本报告...")
                     # 生成简单的perf报告
@@ -225,30 +246,30 @@ class TPCCPerformanceTest:
                         ], stdout=f, stderr=subprocess.PIPE)
                     print(f"📊 perf报告已生成: {report_file}")
                     return True
-            
+
             # 使用FlameGraph生成火焰图
             stackcollapse = os.path.join(flamegraph_path, "stackcollapse-perf.pl")
             flamegraph_pl = os.path.join(flamegraph_path, "flamegraph.pl")
-            
+
             # 处理调用栈数据
             collapsed_file = os.path.join(self.perf_dir, f"collapsed_{self.run_id}.txt")
-            
+
             with open(perf_script_output, 'r') as input_f, open(collapsed_file, 'w') as output_f:
                 subprocess.run(["perl", stackcollapse], stdin=input_f, stdout=output_f)
-            
+
             # 生成火焰图
             with open(collapsed_file, 'r') as input_f, open(flame_graph_svg, 'w') as output_f:
                 subprocess.run(["perl", flamegraph_pl], stdin=input_f, stdout=output_f)
-            
+
             print(f"🔥 火焰图已生成: {flame_graph_svg}")
-            
+
             # 清理临时文件
             for temp_file in [perf_script_output, collapsed_file]:
                 if os.path.exists(temp_file):
                     os.remove(temp_file)
-            
+
             return True
-            
+
         except Exception as e:
             print(f"❌ 生成火焰图时出错: {e}")
             return False
@@ -269,7 +290,10 @@ class TPCCPerformanceTest:
         """清理资源"""
         print("🧹 清理资源...")
         self.stop_perf_monitoring()
-        self.stop_database_server()
+        if not self.external_server:
+            self.stop_database_server()
+        else:
+            print("🔗 外部服务器模式：数据库服务器由用户管理，不自动停止")
 
     def check_server_connection(self) -> bool:
         """检查服务器连接"""
@@ -277,7 +301,7 @@ class TPCCPerformanceTest:
             # 初始化客户端连接
             if self.client is None:
                 self.client = SQLClient(self.host, self.port, run_id=self.run_id)
-            
+
             success, response = self.client.send_sql("SELECT 1;")
             if success:
                 print("✅ 服务器连接正常")
@@ -376,11 +400,15 @@ ol_i_id int, ol_supply_w_id int, ol_delivery_d char(30), ol_quantity int, ol_amo
         return True
 
     def execute_transaction_file(self, file_path: str, file_index: int) -> Tuple[int, int, float]:
-        """执行单个事务文件"""
         start_time = time.time()
 
         # 创建独立的客户端连接
         client = SQLClient(self.host, self.port, run_id=self.run_id)
+
+        # 建立连接
+        if not client.connect():
+            print(f"❌ 事务文件 {file_index} 连接失败")
+            return 0, 0, 0
 
         success_count = 0
         total_count = 0
@@ -417,18 +445,30 @@ ol_i_id int, ol_supply_w_id int, ol_delivery_d char(30), ol_quantity int, ol_amo
 
                 # 逐条发送事务中的每个SQL语句
                 for sql in transaction_sqls:
-                    success, response = client.send_sql(sql)
+                    success, response = client.send_sql(sql, timeout=30)  # 增加超时时间
                     if not success:
                         transaction_success = False
                         print(f"❌ SQL执行失败: {sql[:50]}... - {response}")
-                        break  # 如果事务中任何一条SQL失败，跳出当前事务
+                        # 如果连接断开，尝试重连
+                        if "timed out" in response.lower() or "connection" in response.lower():
+                            print(f"🔄 尝试重新连接...")
+                            if client.connect():
+                                # 重试一次
+                                success, response = client.send_sql(sql, timeout=120)
+                                if success:
+                                    transaction_success = True
+                                    continue
+                        break
 
-                    # 只有整个事务成功时才增加成功计数（移到SQL循环外部）
                 if transaction_success:
                     success_count += 1
 
         except Exception as e:
             print(f"❌ 执行事务文件 {file_index} 时出错: {e}")
+
+        finally:
+            # 确保关闭连接
+            client.disconnect()
 
         end_time = time.time()
         execution_time = end_time - start_time
@@ -525,12 +565,17 @@ ol_i_id int, ol_supply_w_id int, ol_delivery_d char(30), ol_quantity int, ol_amo
         print("="*80)
 
         try:
-            # 1. 清理数据库目录
-            self.cleanup_database()
+            # 1. 清理数据库目录（仅在非外部服务器模式下）
+            if not self.external_server:
+                self.cleanup_database()
 
-            # 2. 启动数据库服务器
-            if not self.start_database_server():
-                return False
+            # 2. 启动数据库服务器（仅在非外部服务器模式下）
+            if not self.external_server:
+                if not self.start_database_server():
+                    return False
+            else:
+                print("🔗 使用外部数据库服务器模式")
+                print("请确保数据库服务器已手动启动")
 
             # 3. 检查服务器连接
             if not self.check_server_connection():
@@ -596,6 +641,7 @@ def main():
     parser.add_argument('--threads', type=int, default=4, help='并发线程数')
     parser.add_argument('--dbname', '-d', default='testdb', help='数据库名称')
     parser.add_argument('--generate-only', action='store_true', help='只生成文件，不执行测试')
+    parser.add_argument('--external-server', action='store_true', help='使用外部服务器（用户手动启动数据库服务器）')
 
     args = parser.parse_args()
 
@@ -608,7 +654,8 @@ def main():
         port=args.port,
         num_warehouses=args.warehouses,
         output_dir=args.output_dir,
-        dbname=args.dbname
+        dbname=args.dbname,
+        external_server=args.external_server
     )
 
     try:
