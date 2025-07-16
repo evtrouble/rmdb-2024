@@ -69,7 +69,7 @@ private:
     TabCol check_column(const std::vector<ColMeta> &all_cols, TabCol target, bool is_semijoin, std::unordered_map<std::string, std::string> &table_alias_map_);
     void get_all_cols(const std::vector<std::string> &tab_names,
                       std::vector<ColMeta> &all_cols, Context *context);
-    void get_clause(const std::vector<ast::BinaryExpr> &sv_conds, std::vector<Condition> &conds);
+    void get_clause(std::vector<ast::BinaryExpr> &sv_conds, std::vector<Condition> &conds);
     void check_clause(const std::vector<std::string> &tab_names, const std::vector<ColMeta> &all_cols, 
                       std::vector<Condition> &conds, bool is_having, Context *context, std::unordered_map<std::string, std::string> &table_alias_map_);
     Value convert_sv_value(const ast::Value *sv_val);

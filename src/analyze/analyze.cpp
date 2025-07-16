@@ -61,7 +61,7 @@ std::unique_ptr<Query> Analyze::do_analyze(std::unique_ptr<ast::TreeNode>& parse
     {
         std::unordered_map<std::string, TabCol> alias_to_col;
         auto x = static_cast<ast::SelectStmt*>(parse.get());
-        query->tables = x->tabs;
+        query->tables = std::move(x->tabs);
 
         // 建立表别名映射关系,别名->实际表名
         table_alias_map.reserve(query->tables.size());
@@ -117,6 +117,7 @@ std::unique_ptr<Query> Analyze::do_analyze(std::unique_ptr<ast::TreeNode>& parse
 
             // 检查是否为"全选"
             std::unordered_set<std::string> all_sel_col;
+            all_sel_col.reserve(query->cols.size());
             for (const auto &query_col : query->cols)
             {
                 all_sel_col.insert(query_col.tab_name + "." + query_col.col_name);
@@ -358,6 +359,10 @@ std::unique_ptr<Query> Analyze::do_analyze(std::unique_ptr<ast::TreeNode>& parse
     case ast::TreeNodeType::DeleteStmt:
     {
         auto x = static_cast<ast::DeleteStmt*>(parse.get());
+        if (!sm_manager_->db_.is_table(x->tab_name))
+        {
+            throw TableNotFoundError(x->tab_name);
+        }
         get_clause(x->conds, query->conds);
         std::vector<ColMeta> all_cols;
         std::vector<std::string> tab_names{x->tab_name};
@@ -503,7 +508,7 @@ void Analyze::get_all_cols(const std::vector<std::string> &tab_names,
     }
 }
 
-void Analyze::get_clause(const std::vector<ast::BinaryExpr> &sv_conds, std::vector<Condition> &conds)
+void Analyze::get_clause(std::vector<ast::BinaryExpr> &sv_conds, std::vector<Condition> &conds)
 {
     for (auto &expr : sv_conds)
     {
@@ -515,13 +520,13 @@ void Analyze::get_clause(const std::vector<ast::BinaryExpr> &sv_conds, std::vect
                                      expr.rhs->Nodetype() == ast::TreeNodeType::BoolLit ||
                                      expr.rhs->Nodetype() == ast::TreeNodeType::StringLit))
         {
-            auto rhs_val = static_cast<const ast::Value*>(expr.rhs.get());
+            auto rhs_val = static_cast<ast::Value*>(expr.rhs.get());
             cond.is_rhs_val = true;
             cond.rhs_val = convert_sv_value(rhs_val);
         }
         else if (expr.rhs && expr.rhs->Nodetype() == ast::TreeNodeType::Col)
         {
-            auto rhs_col = static_cast<const ast::Col*>(expr.rhs.get());
+            auto rhs_col = static_cast<ast::Col*>(expr.rhs.get());
             cond.is_rhs_val = false;
             cond.rhs_col = TabCol(rhs_col->tab_name, rhs_col->col_name, expr.lhs.agg_type);
         }

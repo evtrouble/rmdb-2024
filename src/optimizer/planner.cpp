@@ -713,7 +713,7 @@ std::unique_ptr<Plan> Planner::make_one_rel(std::unique_ptr<Query>& query, Conte
                 if ((lhs_tab == scan_i->tab_name_ && rhs_tab == scan_j->tab_name_) ||
                     (lhs_tab == scan_j->tab_name_ && rhs_tab == scan_i->tab_name_))
                 {
-                    join_conds.push_back(cond);
+                    join_conds.emplace_back(cond);
                 }
             }
         }
@@ -752,7 +752,7 @@ std::unique_ptr<Plan> Planner::make_one_rel(std::unique_ptr<Query>& query, Conte
 
                         if (lhs_tab == scan_plan->tab_name_ || rhs_tab == scan_plan->tab_name_)
                         {
-                            curr_conds.push_back(cond);
+                            curr_conds.emplace_back(cond);
                         }
                     }
                 }
@@ -857,8 +857,7 @@ std::unique_ptr<Plan> Planner::generate_sort_plan(std::unique_ptr<Query> &query,
         is_desc_orders.emplace_back(order_dir == ast::OrderByDir::OrderBy_DESC);
         if (order_col.tab_name.empty())
             order_col.tab_name = tables[0];
-        sort_cols.emplace_back(std::move(order_col.tab_name), 
-            std::move(order_col.col_name), std::move(order_col.agg_type));
+        sort_cols.emplace_back(order_col.tab_name,order_col.col_name, order_col.agg_type);
     }
 
     // 创建排序计划
@@ -1080,7 +1079,7 @@ std::vector<TabCol> Planner::get_table_all_cols(const std::string &table_name, s
     // 跳过隐藏列，将ColMeta转换为TabCol
     for (auto it = sel_tab_cols.begin() + hidden_column_count; it != sel_tab_cols.end(); ++it)
     {
-        table_cols.emplace_back(TabCol{table_name, it->name});
+        table_cols.emplace_back(table_name, it->name);
     }
 
     return table_cols;
